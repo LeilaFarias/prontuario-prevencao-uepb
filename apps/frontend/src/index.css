@@ -1,0 +1,51 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+:root {
+  --paper: #F3F4EF;
+  --raised: #FFFFFF;
+  --ink: #1E241F;
+  --ink-soft: #5B655D;
+  --ink-faint: #8B948A;
+  --line: #D8DBD2;
+  --line-soft: #E7E9E2;
+  --primary: #1F6F64;
+  --primary-tint: #E3EFEC;
+  --prof: #43527B;
+  --prof-tint: #E8EBF3;
+  --alt: #A6543C;
+  --alt-tint: #F2E2DC;
+}
+
+@layer base {
+  html, body { margin: 0; background: var(--line-soft); }
+  body { font-family: "IBM Plex Sans", system-ui, sans-serif; color: var(--ink); -webkit-font-smoothing: antialiased; }
+  button { font-family: inherit; }
+}
+
+@layer components {
+  .device {
+    @apply relative mx-auto flex w-[390px] max-w-full flex-col bg-paper;
+    min-height: 844px;
+  }
+  @media (min-width: 440px) {
+    .device { box-shadow: 0 0 0 1px var(--line); }
+  }
+  .label { @apply mb-1.5 block text-[12.5px] font-medium text-ink-soft; }
+  .hint { @apply mt-1.5 text-[12px] text-ink-faint; }
+  .field-error { @apply mt-1.5 text-[12px] text-alt; }
+  .input {
+    @apply h-12 w-full rounded-field border border-line bg-raised px-3.5 text-[15px] text-ink outline-none transition;
+  }
+  .input::placeholder { color: var(--ink-faint); }
+  .input:focus { border-color: var(--primary); box-shadow: 0 0 0 3px var(--primary-tint); }
+  .btn {
+    @apply inline-flex h-[50px] w-full items-center justify-center gap-2 rounded-field text-[15px] font-semibold transition disabled:opacity-60;
+  }
+  .btn-dark { @apply btn bg-ink text-white; }
+  .btn-primary { @apply btn bg-primary text-white; }
+  .btn-ghost { @apply btn border border-line bg-raised text-ink-soft; }
+  .banner-erro { @apply rounded-field bg-alt-tint px-3.5 py-2.5 text-[13px] text-alt; }
+  .banner-ok { @apply rounded-field bg-primary-tint px-3.5 py-2.5 text-[13px] text-primary; }
+}
