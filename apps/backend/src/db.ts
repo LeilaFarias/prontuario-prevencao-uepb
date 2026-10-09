@@ -13,7 +13,8 @@ CREATE TABLE IF NOT EXISTS Usuario (
   senhaHash  TEXT NOT NULL,
   perfil     TEXT NOT NULL,            -- 'ALUNO' | 'PROFESSOR'
   matricula  TEXT UNIQUE,
-  criadoEm   TEXT NOT NULL DEFAULT (${AGORA})
+  criadoEm   TEXT NOT NULL DEFAULT (${AGORA}),
+  ativo      INTEGER NOT NULL DEFAULT 1
 );
 
 CREATE TABLE IF NOT EXISTS Prontuario (
@@ -56,7 +57,27 @@ CREATE TABLE IF NOT EXISTS SyncOperationLog (
 );
 CREATE INDEX IF NOT EXISTS idx_log_entity ON SyncOperationLog(entityId);
 CREATE INDEX IF NOT EXISTS idx_log_ts ON SyncOperationLog(ts);
+
+CREATE TABLE IF NOT EXISTS PasswordResetToken (
+  id        TEXT PRIMARY KEY,
+  userId    TEXT NOT NULL,
+  tokenHash TEXT NOT NULL UNIQUE,
+  expiraEm  TEXT NOT NULL,
+  usadoEm   TEXT,
+  criadoEm  TEXT NOT NULL,
+  FOREIGN KEY (userId) REFERENCES Usuario(id) ON DELETE CASCADE
+);
+CREATE INDEX IF NOT EXISTS idx_reset_userId ON PasswordResetToken(userId);
+CREATE INDEX IF NOT EXISTS idx_reset_expiraEm ON PasswordResetToken(expiraEm);
 `;
+
+/** Bancos criados antes da Sprint 2 não têm Usuario.ativo; SQLite não tem ADD COLUMN IF NOT EXISTS. */
+function migrarColunaAtivo(db: DatabaseSync): void {
+  const colunas = db.prepare("PRAGMA table_info(Usuario)").all() as unknown as { name: string }[];
+  if (!colunas.some((c) => c.name === "ativo")) {
+    db.exec("ALTER TABLE Usuario ADD COLUMN ativo INTEGER NOT NULL DEFAULT 1");
+  }
+}
 
 /** Abre o arquivo SQLite (criando-o se preciso) e garante que o schema existe. */
 export function abrirBanco(): DatabaseSync {
@@ -64,6 +85,7 @@ export function abrirBanco(): DatabaseSync {
   const db = new DatabaseSync(arquivo);
   db.exec("PRAGMA journal_mode = WAL; PRAGMA foreign_keys = ON;");
   db.exec(SCHEMA);
+  migrarColunaAtivo(db);
   return db;
 }
 

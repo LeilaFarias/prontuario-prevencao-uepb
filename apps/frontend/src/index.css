@@ -24,7 +24,15 @@
   button { font-family: inherit; }
 }
 
+@keyframes sheet-up { from { transform: translateY(100%); } to { transform: translateY(0); } }
+@keyframes fade-in { from { opacity: 0; } to { opacity: 1; } }
+
 @layer components {
+  .sheet-overlay { animation: fade-in 180ms ease-out; background: rgba(30, 36, 31, 0.4); backdrop-filter: blur(3px); }
+  .sheet-panel { animation: sheet-up 260ms cubic-bezier(0.22, 1, 0.36, 1); }
+  @media (prefers-reduced-motion: reduce) {
+    .sheet-overlay, .sheet-panel { animation: none; }
+  }
   .device {
     @apply relative mx-auto flex w-[390px] max-w-full flex-col bg-paper;
     min-height: 844px;

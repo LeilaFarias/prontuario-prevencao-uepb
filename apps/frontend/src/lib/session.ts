@@ -24,18 +24,29 @@ export function saveSession(session: Session): void {
   localStorage.setItem(KEY, JSON.stringify(session));
 }
 
+export function updateSessionUser(user: SessionUser): void {
+  const atual = getSession();
+  if (atual) saveSession({ ...atual, user });
+}
+
 export function clearSession(): void {
   localStorage.removeItem(KEY);
 }
 
-/** RN-14: a sessão vale enquanto o refresh token (5h) não expirar. */
+export function sessionExpiresAt(session: Session): number | null {
+  const exps = [expDoToken(session.accessToken), expDoToken(session.refreshToken)].filter(
+    (e): e is number => e !== null,
+  );
+  return exps.length ? Math.min(...exps) * 1000 : null;
+}
+
 export function getSession(): Session | null {
   const raw = localStorage.getItem(KEY);
   if (!raw) return null;
   try {
     const session = JSON.parse(raw) as Session;
-    const exp = expDoToken(session.refreshToken);
-    if (exp !== null && exp * 1000 < Date.now()) {
+    const fim = sessionExpiresAt(session);
+    if (fim !== null && fim < Date.now()) {
       clearSession();
       return null;
     }

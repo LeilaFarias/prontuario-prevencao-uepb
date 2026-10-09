@@ -1,9 +1,9 @@
 import { useLiveQuery } from "dexie-react-hooks";
 import { useNavigate } from "react-router-dom";
-import { ChevronRight, LogOut, Plus } from "lucide-react";
+import { ChevronRight, Plus, UserRound } from "lucide-react";
 import Topbar from "../components/Topbar";
 import { db, type LocalStatus } from "../db/dexie";
-import { clearSession, getSession } from "../lib/session";
+import { getSession } from "../lib/session";
 import { criarProntuarioLocal } from "../sync/queue";
 
 const ROTULO_STATUS: Record<LocalStatus, string> = {
@@ -46,12 +46,6 @@ export default function ListaProntuarios() {
     navigate(`/prontuario/${id}`);
   }
 
-  function sair() {
-    if (!window.confirm("Deseja sair da sua conta?")) return;
-    clearSession();
-    navigate("/login", { replace: true });
-  }
-
   return (
     <div className="flex flex-1 flex-col">
       <Topbar
@@ -60,11 +54,11 @@ export default function ListaProntuarios() {
         acao={
           <button
             type="button"
-            onClick={sair}
-            aria-label="Sair"
+            onClick={() => navigate("/perfil")}
+            aria-label="Perfil"
             className="flex h-10 w-10 shrink-0 items-center justify-center rounded-full border border-line bg-raised text-ink-soft"
           >
-            <LogOut size={18} />
+            <UserRound size={18} />
           </button>
         }
       />

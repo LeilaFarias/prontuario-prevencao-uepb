@@ -6,6 +6,8 @@ import { signupSchema, type Perfil, type SignupInput } from "@prontuario/shared"
 import Topbar from "../components/Topbar";
 import { api } from "../lib/api";
 
+const MOSTRAR_PROFESSOR = false;
+
 export default function Cadastro() {
   const navigate = useNavigate();
   const [erro, setErro] = useState<string | null>(null);
@@ -58,8 +60,11 @@ export default function Cadastro() {
       <Topbar titulo="Criar conta" tituloClassName="text-[16px]" onVoltar={() => navigate("/login")} />
       <main className="flex flex-1 flex-col px-6 pb-8 pt-4">
         <h2 className="font-display text-[26px] font-medium leading-tight text-ink">Vamos criar sua conta</h2>
-        <p className="mt-1.5 text-[13.5px] text-ink-soft">Escolha seu perfil e preencha os dados de acesso.</p>
+        <p className="mt-1.5 text-[13.5px] text-ink-soft">
+          {MOSTRAR_PROFESSOR ? "Escolha seu perfil e preencha os dados de acesso." : "Preencha os dados de acesso."}
+        </p>
 
+        {MOSTRAR_PROFESSOR && (
         <div role="tablist" className="mt-6 grid grid-cols-2 gap-1 rounded-field border border-line-soft bg-paper p-1">
           {(["aluno", "professor"] as const).map((p) => (
             <button
@@ -76,6 +81,7 @@ export default function Cadastro() {
             </button>
           ))}
         </div>
+        )}
 
         <form onSubmit={handleSubmit(onSubmit)} className="mt-5 flex flex-col gap-4" noValidate>
           <div>
@@ -85,12 +91,20 @@ export default function Cadastro() {
           </div>
 
           <div>
-            <label htmlFor="email" className="label">E-mail ou usuário</label>
-            <input id="email" type="text" autoComplete="username" className="input" {...register("email")} />
+            <label htmlFor="email" className="label">E-mail</label>
+            <input
+              id="email"
+              type="email"
+              inputMode="email"
+              autoComplete="email"
+              autoCapitalize="none"
+              className="input"
+              {...register("email")}
+            />
             {errors.email && <p className="field-error">{errors.email.message}</p>}
           </div>
 
-          {perfil === "professor" && (
+          {MOSTRAR_PROFESSOR && perfil === "professor" && (
             <div>
               <label htmlFor="matricula" className="label">Matrícula</label>
               <input id="matricula" type="text" inputMode="numeric" className="input" {...register("matricula")} />

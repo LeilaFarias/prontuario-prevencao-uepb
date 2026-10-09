@@ -1,5 +1,5 @@
 import { useState } from "react";
-import { Link, useNavigate } from "react-router-dom";
+import { Link, useLocation, useNavigate, useSearchParams } from "react-router-dom";
 import { useForm } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
 import { Eye, EyeOff } from "lucide-react";
@@ -17,6 +17,12 @@ function Dente() {
 
 export default function Login() {
   const navigate = useNavigate();
+  const location = useLocation();
+  const [params] = useSearchParams();
+  const senhaAlterada = (location.state as { senhaAlterada?: boolean } | null)?.senhaAlterada === true;
+  const sessaoExpirada =
+    params.get("sessao") === "expirada" ||
+    (location.state as { sessaoExpirada?: boolean } | null)?.sessaoExpirada === true;
   const [mostrarSenha, setMostrarSenha] = useState(false);
   const [erro, setErro] = useState<string | null>(null);
   const {
@@ -46,8 +52,16 @@ export default function Login() {
 
       <form onSubmit={handleSubmit(onSubmit)} className="mt-10 flex flex-col gap-4" noValidate>
         <div>
-          <label htmlFor="email" className="label">E-mail ou usuário</label>
-          <input id="email" type="text" autoComplete="username" className="input" {...register("email")} />
+          <label htmlFor="email" className="label">E-mail</label>
+          <input
+            id="email"
+            type="email"
+            inputMode="email"
+            autoComplete="email"
+            autoCapitalize="none"
+            className="input"
+            {...register("email")}
+          />
           {errors.email && <p className="field-error">{errors.email.message}</p>}
         </div>
 
@@ -74,9 +88,15 @@ export default function Login() {
         </div>
 
         <div className="-mt-1 text-right">
-          <button type="button" className="text-[13px] font-medium text-primary">Esqueci minha senha</button>
+          <Link to="/recuperar" className="text-[13px] font-medium text-primary">Esqueci minha senha</Link>
         </div>
 
+        {senhaAlterada && (
+          <div role="status" className="banner-ok">Senha alterada com sucesso. Faça login com a nova senha.</div>
+        )}
+        {sessaoExpirada && !senhaAlterada && (
+          <div role="status" className="banner-erro">Sua sessão expirou. Entre novamente.</div>
+        )}
         {erro && <div role="alert" className="banner-erro">{erro}</div>}
 
         <button type="submit" disabled={isSubmitting} className="btn-dark">

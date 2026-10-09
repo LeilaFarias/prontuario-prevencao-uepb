@@ -11,6 +11,7 @@ interface UsuarioRow {
   senhaHash: string;
   perfil: string;
   matricula: string | null;
+  ativo: number;
 }
 
 export const authRoutes: FastifyPluginAsync = async (app) => {
@@ -21,7 +22,7 @@ export const authRoutes: FastifyPluginAsync = async (app) => {
     const matricula = dados.perfil === "professor" ? dados.matricula || null : null;
 
     if (db.prepare("SELECT 1 FROM Usuario WHERE email = ?").get(dados.email)) {
-      return reply.status(409).send({ message: "Já existe uma conta com este e-mail ou usuário." });
+      return reply.status(409).send({ message: "Já existe uma conta com este e-mail." });
     }
     if (matricula && db.prepare("SELECT 1 FROM Usuario WHERE matricula = ?").get(matricula)) {
       return reply.status(409).send({ message: "Esta matrícula já está cadastrada." });
@@ -42,7 +43,11 @@ export const authRoutes: FastifyPluginAsync = async (app) => {
       | undefined;
     const ok = usuario ? await verificarSenha(dados.senha, usuario.senhaHash) : false;
     if (!usuario || !ok) {
-      return reply.status(401).send({ message: "E-mail/usuário ou senha incorretos." });
+      return reply.status(401).send({ message: "E-mail ou senha incorretos." });
+    }
+
+    if (!usuario.ativo) {
+      return reply.status(401).send({ message: "Conta desativada." });
     }
 
     const perfil = usuario.perfil.toLowerCase() as "aluno" | "professor";

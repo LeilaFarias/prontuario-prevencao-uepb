@@ -99,7 +99,6 @@ export const syncRoutes: FastifyPluginAsync = async (app) => {
       const descartada = transacao(db, () => {
         const pront = buscarPront.get(op.prontuarioId) as unknown as ProntRow | undefined;
 
-        // RN-12: operação posterior à revogação do acesso é descartada
         let descartar =
           !!pront?.acessoRevogadoEm && op.ts > new Date(pront.acessoRevogadoEm).getTime();
 
