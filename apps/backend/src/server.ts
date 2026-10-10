@@ -9,6 +9,7 @@ import { authRoutes } from "./routes/auth";
 import { recuperacaoRoutes } from "./routes/recuperacao";
 import { syncRoutes } from "./routes/sync";
 import { userRoutes } from "./routes/users";
+import debugRoute from "./routes/debug.js";
 
 const app = Fastify({ logger: true });
 
