@@ -5,3 +5,7 @@ dev-dist
 *.db
 *.db-journal
 .DS_Store
+*.db
+*.db-shm
+*.db-wal
+*.db-journal
