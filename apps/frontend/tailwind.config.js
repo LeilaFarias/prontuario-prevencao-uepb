@@ -11,6 +11,7 @@ export default {
         primary: { DEFAULT: "var(--primary)", tint: "var(--primary-tint)" },
         prof: { DEFAULT: "var(--prof)", tint: "var(--prof-tint)" },
         alt: { DEFAULT: "var(--alt)", tint: "var(--alt-tint)" },
+        sync: { DEFAULT: "var(--sync)", tint: "var(--sync-tint)" },
       },
       fontFamily: {
         display: ['"Fraunces"', "Georgia", "serif"],

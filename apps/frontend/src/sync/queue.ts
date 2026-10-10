@@ -8,8 +8,17 @@ import { db } from "../db/dexie";
 import { api } from "../lib/api";
 
 export const SYNC_EVENT = "sync:changed";
+export const ULTIMO_SALVAMENTO_KEY = "prontuario:ultimoSalvamento";
 const INTERVALO_MS = 30_000;
 const LOTE = 200;
+
+function registrarSalvamento(ts: number): void {
+  try {
+    localStorage.setItem(ULTIMO_SALVAMENTO_KEY, String(ts));
+  } catch {
+    // armazenamento indisponível: a pill apenas não mostra a hora
+  }
+}
 
 export function notifyChanged(): void {
   window.dispatchEvent(new CustomEvent(SYNC_EVENT));
@@ -59,6 +68,7 @@ export async function criarProntuarioLocal(pacienteNome: string, alunoTitularId:
     });
   });
 
+  registrarSalvamento(agora);
   notifyChanged();
   void flush();
   return id;
@@ -91,6 +101,7 @@ export async function salvarSecaoLocal(
     });
   });
 
+  registrarSalvamento(agora);
   notifyChanged();
   void flush();
 }

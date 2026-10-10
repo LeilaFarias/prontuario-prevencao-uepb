@@ -16,6 +16,8 @@
   --prof-tint: #E8EBF3;
   --alt: #A6543C;
   --alt-tint: #F2E2DC;
+  --sync: #4F5F87;
+  --sync-tint: #E7E9F1;
 }
 
 @layer base {

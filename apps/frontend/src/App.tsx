@@ -1,6 +1,5 @@
 import type { ReactElement } from "react";
 import { Navigate, Route, Routes } from "react-router-dom";
-import StatusBar from "./components/StatusBar";
 import { getSession } from "./lib/session";
 import Login from "./routes/Login";
 import Cadastro from "./routes/Cadastro";
@@ -22,7 +21,6 @@ function SomenteVisitante({ children }: { children: ReactElement }) {
 export default function App() {
   return (
     <div className="device">
-      <StatusBar />
       <SessaoAviso />
       <Routes>
         <Route path="/login" element={<SomenteVisitante><Login /></SomenteVisitante>} />

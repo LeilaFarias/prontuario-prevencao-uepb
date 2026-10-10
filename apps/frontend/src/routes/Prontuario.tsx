@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import { useNavigate, useParams } from "react-router-dom";
 import { SECOES, type SecaoId } from "@prontuario/shared";
+import StatusBar from "../components/StatusBar";
 import Topbar from "../components/Topbar";
 import { db, type LocalProntuario } from "../db/dexie";
 import { salvarSecaoLocal } from "../sync/queue";
@@ -93,6 +94,7 @@ export default function Prontuario() {
         tituloClassName="text-[18px]"
         onVoltar={() => navigate("/prontuarios")}
       />
+      <StatusBar className="mx-5 mb-2" />
 
       <nav aria-label="Seções" className="flex gap-2 overflow-x-auto px-5 pb-3 pt-1 [scrollbar-width:none]">
         {SECOES.map((s, i) => (

@@ -1,29 +1,11 @@
 import { useLiveQuery } from "dexie-react-hooks";
 import { useNavigate } from "react-router-dom";
-import { ChevronRight, Plus, UserRound } from "lucide-react";
-import Topbar from "../components/Topbar";
-import { db, type LocalStatus } from "../db/dexie";
+import { Plus, UserRound } from "lucide-react";
+import ProntuarioCard from "../components/ProntuarioCard";
+import StatusBar from "../components/StatusBar";
+import { db } from "../db/dexie";
 import { getSession } from "../lib/session";
 import { criarProntuarioLocal } from "../sync/queue";
-
-const ROTULO_STATUS: Record<LocalStatus, string> = {
-  em_andamento: "Em andamento",
-  enviado: "Enviado",
-  assinado: "Assinado",
-  devolvido: "Devolvido",
-};
-
-const pad = (n: number) => String(n).padStart(2, "0");
-
-function formatarQuando(ts: number): string {
-  const d = new Date(ts);
-  const hora = `${pad(d.getHours())}:${pad(d.getMinutes())}`;
-  const inicioDoDia = (x: Date) => new Date(x.getFullYear(), x.getMonth(), x.getDate()).getTime();
-  const dias = Math.round((inicioDoDia(new Date()) - inicioDoDia(d)) / 86_400_000);
-  if (dias === 0) return `hoje às ${hora}`;
-  if (dias === 1) return `ontem às ${hora}`;
-  return `${pad(d.getDate())}/${pad(d.getMonth() + 1)} às ${hora}`;
-}
 
 export default function ListaProntuarios() {
   const navigate = useNavigate();
@@ -38,6 +20,14 @@ export default function ListaProntuarios() {
     [usuario?.id],
   );
 
+  const rotuloContagem = !prontuarios
+    ? ""
+    : prontuarios.length === 0
+      ? "nenhum prontuário"
+      : prontuarios.length === 1
+        ? "1 prontuário"
+        : `${prontuarios.length} prontuários`;
+
   async function novo() {
     if (!usuario) return;
     const nome = window.prompt("Nome do paciente:")?.trim();
@@ -48,10 +38,17 @@ export default function ListaProntuarios() {
 
   return (
     <div className="flex flex-1 flex-col">
-      <Topbar
-        titulo="Meus prontuários"
-        subtitulo={usuario ? `${usuario.nome} · ${usuario.perfil === "aluno" ? "Aluno" : "Professor"}` : undefined}
-        acao={
+      <header className="border-b border-line px-5 pb-4 pt-5">
+        <div className="flex items-start justify-between gap-3">
+          <div className="min-w-0 flex-1">
+            <p className="mb-2.5 text-[11px] font-bold uppercase tracking-[0.07em] text-primary">
+              Clínica de Prevenção em Saúde Bucal · UEPB
+            </p>
+            <h1 className="font-display text-[18px] font-semibold leading-[1.15] text-ink">Meus prontuários</h1>
+            <p className="mt-0.5 truncate text-[12px] text-ink-soft">
+              {[usuario?.nome, rotuloContagem].filter(Boolean).join(" · ")}
+            </p>
+          </div>
           <button
             type="button"
             onClick={() => navigate("/perfil")}
@@ -60,8 +57,9 @@ export default function ListaProntuarios() {
           >
             <UserRound size={18} />
           </button>
-        }
-      />
+        </div>
+        <StatusBar className="mt-2.5" />
+      </header>
 
       <main className="flex flex-1 flex-col px-5 pb-4 pt-2">
         {prontuarios && prontuarios.length === 0 && (
@@ -80,22 +78,7 @@ export default function ListaProntuarios() {
           <ul className="flex flex-col gap-2.5">
             {prontuarios.map((p) => (
               <li key={p.id}>
-                <button
-                  type="button"
-                  onClick={() => navigate(`/prontuario/${p.id}`)}
-                  className="flex w-full items-center gap-3 rounded-card border border-line-soft bg-raised p-3.5 text-left"
-                >
-                  <span className="flex h-10 w-10 shrink-0 items-center justify-center rounded-full bg-primary-tint font-semibold text-primary">
-                    {p.pacienteNome.charAt(0).toUpperCase()}
-                  </span>
-                  <span className="min-w-0 flex-1">
-                    <span className="block truncate text-[15px] font-semibold text-ink">{p.pacienteNome}</span>
-                    <span className="block text-[12.5px] text-ink-soft">
-                      {ROTULO_STATUS[p.status]} · {formatarQuando(p.atualizadoEm)}
-                    </span>
-                  </span>
-                  <ChevronRight size={18} className="shrink-0 text-ink-faint" />
-                </button>
+                <ProntuarioCard prontuario={p} onAbrir={() => navigate(`/prontuario/${p.id}`)} />
               </li>
             ))}
           </ul>
