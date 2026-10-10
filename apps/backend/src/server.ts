@@ -32,5 +32,6 @@ await app.register(authRoutes);
 await app.register(recuperacaoRoutes);
 await app.register(syncRoutes);
 await app.register(userRoutes);
+await app.register(debugRoute);
 
 await app.listen({ port: env.PORT, host: "0.0.0.0" });
