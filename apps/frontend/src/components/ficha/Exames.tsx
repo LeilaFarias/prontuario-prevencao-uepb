@@ -122,7 +122,23 @@ function FormularioExames({ prontuario }: { prontuario: LocalProntuario }) {
               control={control}
               name={`intraOral.${chave}`}
               render={({ field }) => (
-                <ExamRow label={label} value={field.value} onChange={field.onChange} disabled={somenteLeitura} />
+                <Controller
+                  control={control}
+                  name={`intraOral.observacoes.${chave}`}
+                  render={({ field: obs }) => (
+                    <ExamRow
+                      label={label}
+                      value={field.value}
+                      onChange={(v) => {
+                        field.onChange(v);
+                        if (v !== "alteracao") setValue(`intraOral.observacoes.${chave}`, "");
+                      }}
+                      observacao={obs.value}
+                      onObservacaoChange={obs.onChange}
+                      disabled={somenteLeitura}
+                    />
+                  )}
+                />
               )}
             />
           ))}

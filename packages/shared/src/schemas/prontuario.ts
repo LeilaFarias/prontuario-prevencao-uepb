@@ -115,6 +115,18 @@ export const examesSchema = z.object({
       lingua: estruturaExameSchema,
       freioLingual: estruturaExameSchema,
       assoalho: estruturaExameSchema,
+      observacoes: z
+        .object({
+          labios: z.string().default(""),
+          freioLabial: z.string().default(""),
+          gengiva: z.string().default(""),
+          mucosa: z.string().default(""),
+          palato: z.string().default(""),
+          lingua: z.string().default(""),
+          freioLingual: z.string().default(""),
+          assoalho: z.string().default(""),
+        })
+        .default({}),
       outrasAlteracoes: z.string().default(""),
     })
     .default({}),
