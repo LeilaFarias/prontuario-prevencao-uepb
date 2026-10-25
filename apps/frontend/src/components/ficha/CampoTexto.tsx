@@ -12,6 +12,7 @@ export interface CampoTextoProps {
   maxLength?: number;
   multiline?: boolean;
   rows?: number;
+  obrigatorio?: boolean;
 }
 
 export default function CampoTexto({
@@ -26,12 +27,18 @@ export default function CampoTexto({
   maxLength,
   multiline = false,
   rows = 3,
+  obrigatorio = false,
 }: CampoTextoProps) {
   const id = useId();
   return (
     <div>
       <label htmlFor={id} className="field-label">
         {label}
+        {obrigatorio && (
+          <span aria-hidden="true" className="ml-0.5 text-alt">
+            *
+          </span>
+        )}
       </label>
       {multiline ? (
         <textarea

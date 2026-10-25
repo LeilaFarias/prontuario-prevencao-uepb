@@ -162,3 +162,59 @@ export const historiaOdontologicaSchema = z.object({
 export type HistoriaOdontologica = z.infer<typeof historiaOdontologicaSchema>;
 
 export const vazioHistoriaOdontologica = (): HistoriaOdontologica => historiaOdontologicaSchema.parse({});
+
+export const procedimentoItemSchema = z.object({
+  id: z.string(),
+  data: z.string().default(""),
+  descricao: z.string().default(""),
+});
+
+export type ProcedimentoItem = z.infer<typeof procedimentoItemSchema>;
+
+export const procedimentosSchema = z.object({
+  itens: z.array(procedimentoItemSchema).default([]),
+});
+
+export type Procedimentos = z.infer<typeof procedimentosSchema>;
+
+export const vazioProcedimentos = (): Procedimentos => procedimentosSchema.parse({});
+
+export const fotoAnexoSchema = z.object({
+  id: z.string(),
+  nome: z.string(),
+  dataUrl: z.string(),
+  adicionadaEm: z.string(),
+});
+
+export type FotoAnexo = z.infer<typeof fotoAnexoSchema>;
+
+export const conclusaoSchema = z.object({
+  tipoDesfecho: z.enum(["concluido", "encaminhado"]).nullable().default(null),
+  concluidoEm: z.string().default(""),
+  encaminhamentoEm: z.string().default(""),
+  encaminhamentoPara: z.string().default(""),
+  fotos: z.array(fotoAnexoSchema).default([]),
+});
+
+export type Conclusao = z.infer<typeof conclusaoSchema>;
+
+export const vazioConclusao = (): Conclusao => conclusaoSchema.parse({});
+
+export const sessaoPlanoSchema = z.object({
+  numero: z.number(),
+  descricao: z.string().default(""),
+});
+
+export type SessaoPlano = z.infer<typeof sessaoPlanoSchema>;
+
+export const planoSchema = z.object({
+  sessoes: z.array(sessaoPlanoSchema).default([
+    { numero: 1, descricao: "" },
+    { numero: 2, descricao: "" },
+    { numero: 3, descricao: "" },
+  ]),
+});
+
+export type Plano = z.infer<typeof planoSchema>;
+
+export const vazioPlano = (): Plano => planoSchema.parse({});

@@ -5,6 +5,7 @@ import {
 } from "@prontuario/shared";
 import { db } from "../db/dexie";
 import { api } from "../lib/api";
+import { uuid } from "../lib/uuid";
 
 export const SYNC_EVENT = "sync:changed";
 export const ULTIMO_SALVAMENTO_KEY = "prontuario:ultimoSalvamento";
@@ -25,15 +26,6 @@ export function notifyChanged(): void {
 
 export function contarPendentes(): Promise<number> {
   return db.syncQueue.count();
-}
-
-// crypto.randomUUID só existe em contexto seguro (https/localhost)
-function uuid(): string {
-  if (typeof crypto.randomUUID === "function") return crypto.randomUUID();
-  return "xxxxxxxx-xxxx-4xxx-yxxx-xxxxxxxxxxxx".replace(/[xy]/g, (c) => {
-    const r = (Math.random() * 16) | 0;
-    return (c === "x" ? r : (r & 0x3) | 0x8).toString(16);
-  });
 }
 
 export async function criarProntuarioLocal(alunoTitularId: string): Promise<string> {
@@ -122,6 +114,8 @@ export async function salvarSecaoLocal(
       });
     }
 
+    // Cada operação de seção leva o conteúdo COMPLETO (upsert). Ops pendentes da mesma seção ficam
+    // obsoletas: mantê-las só incharia a fila (e o corpo do /sync, se a seção tiver foto).
     const entityIdSecao = `${dados.prontuarioId}:${dados.secaoId}`;
     const obsoletas = await db.syncQueue
       .where("prontuarioId")

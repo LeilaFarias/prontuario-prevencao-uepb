@@ -3,10 +3,13 @@ import { useLiveQuery } from "dexie-react-hooks";
 import { useNavigate, useParams } from "react-router-dom";
 import { SECOES, type SecaoId } from "@prontuario/shared";
 import Consentimento from "../components/ficha/Consentimento";
+import Conclusao from "../components/ficha/Conclusao";
 import DadosPessoais from "../components/ficha/DadosPessoais";
 import Exames from "../components/ficha/Exames";
 import HistoriaMedica from "../components/ficha/HistoriaMedica";
 import HistoriaOdontologica from "../components/ficha/HistoriaOdontologica";
+import Plano from "../components/ficha/Plano";
+import Procedimentos from "../components/ficha/Procedimentos";
 import StatusBar from "../components/StatusBar";
 import Topbar from "../components/Topbar";
 import { db, type LocalProntuario } from "../db/dexie";
@@ -136,6 +139,12 @@ export default function Prontuario() {
           />
         ) : secao.id === "historia-odontologica" ? (
           <HistoriaOdontologica key={pront.id} prontuarioId={pront.id} />
+        ) : secao.id === "plano-preventivo" ? (
+          <Plano key={pront.id} prontuarioId={pront.id} />
+        ) : secao.id === "procedimentos" ? (
+          <Procedimentos key={pront.id} prontuarioId={pront.id} />
+        ) : secao.id === "conclusao" ? (
+          <Conclusao key={pront.id} prontuarioId={pront.id} />
         ) : secao.id === "exames" ? (
           <Exames key={pront.id} prontuarioId={pront.id} />
         ) : secao.id === "historia-medica" ? (

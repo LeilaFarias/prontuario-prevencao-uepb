@@ -28,7 +28,7 @@ function bytesDaDataURL(dataUrl: string): number {
   return Math.floor((base64.length * 3) / 4);
 }
 
-export async function comprimirImagem(arquivo: File): Promise<string> {
+export async function comprimirImagem(arquivo: File, qualidadeInicial: number = QUALIDADE): Promise<string> {
   if (!arquivo.type.startsWith("image/")) {
     throw new ErroImagem("O arquivo selecionado não é uma imagem.");
   }
@@ -52,7 +52,7 @@ export async function comprimirImagem(arquivo: File): Promise<string> {
   ctx.fillRect(0, 0, largura, altura);
   ctx.drawImage(img, 0, 0, largura, altura);
 
-  let qualidade = QUALIDADE;
+  let qualidade = qualidadeInicial;
   let resultado = canvas.toDataURL("image/jpeg", qualidade);
   while (bytesDaDataURL(resultado) > ALVO_MAX_BYTES && qualidade > 0.4) {
     qualidade -= 0.1;
