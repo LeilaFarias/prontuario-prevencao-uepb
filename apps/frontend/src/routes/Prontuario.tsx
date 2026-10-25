@@ -125,7 +125,11 @@ export default function Prontuario() {
 
       <main className="flex-1 px-5 pb-4 pt-2">
         {secao.id === "consentimento" ? (
-          <Consentimento key={pront.id} prontuarioId={pront.id} />
+          <Consentimento
+            key={pront.id}
+            prontuarioId={pront.id}
+            onIrParaDadosPessoais={() => irPara(SECOES.findIndex((x) => x.id === "dados-pessoais"))}
+          />
         ) : secao.id === "dados-pessoais" ? (
           <DadosPessoais key={pront.id} prontuarioId={pront.id} />
         ) : (

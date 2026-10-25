@@ -1,7 +1,7 @@
 import { useState } from "react";
 import { Controller, useWatch } from "react-hook-form";
 import { useLiveQuery } from "dexie-react-hooks";
-import { Check, ChevronDown, ChevronUp, Clock } from "lucide-react";
+import { AlertCircle, Check, ChevronDown, ChevronUp, Clock } from "lucide-react";
 import {
   consentimentoSchema,
   type Consentimento as ConsentimentoValores,
@@ -11,26 +11,17 @@ import { db, type LocalProntuario } from "../../db/dexie";
 import { useSecao } from "../../hooks/useSecao";
 import { useSyncStatus } from "../../hooks/useSyncStatus";
 import { hojeISO, formatarDataHora } from "../../lib/data";
-import { apenasDigitos } from "../../lib/mascaras";
 import CampoData from "./CampoData";
 import CampoTexto, { type CampoTextoProps } from "./CampoTexto";
 import GrupoFicha from "./GrupoFicha";
 import UploadAssinatura from "./UploadAssinatura";
 
-type ChaveTexto =
-  | "semestreLetivo"
-  | "telefone"
-  | "professorSupervisor"
-  | "alunoOperador"
-  | "alunoAuxiliar"
-  | "pacienteNome"
-  | "responsavelNome"
-  | "responsavelParentesco";
+type ChaveTexto = "semestreLetivo" | "professorSupervisor" | "alunoOperador" | "alunoAuxiliar";
 
 type ExtraTexto = Partial<Pick<CampoTextoProps, "placeholder" | "inputMode" | "autoComplete" | "maxLength" | "type">>;
 
 const PARAGRAFOS_TERMO: ReadonlyArray<string> = [
-  "Como responsável pelo(a) menor {IDADE} anos, concordo com o seu atendimento pelos acadêmicos, monitores, alunos de pós-graduação e professores vinculados à Clínica de Prevenção em Saúde Bucal do Departamento de Odontologia da Universidade Estadual da Paraíba. Sei que ocorre o apoio de outros funcionários (quadro técnico) e que poderá existir a participação de outros pesquisadores autorizados previamente.",
+  "Como responsável pelo(a) menor {IDADE}, concordo com o seu atendimento pelos acadêmicos, monitores, alunos de pós-graduação e professores vinculados à Clínica de Prevenção em Saúde Bucal do Departamento de Odontologia da Universidade Estadual da Paraíba. Sei que ocorre o apoio de outros funcionários (quadro técnico) e que poderá existir a participação de outros pesquisadores autorizados previamente.",
   "Também aceito a documentação do caso (imagens, radiografias, modelos e outros meios) com a finalidade exclusivamente acadêmica (apresentação em eventos científicos da área e publicação em periódicos científicos), se respeitada a idade da criança/adolescente em questão.",
   "Estou certo(a) de que durante as consultas serão utilizados materiais e técnicas objetivando promover melhor qualidade de saúde bucal, assim como medidas para reduzir a possibilidade de riscos ou danos durante a prática clínica. Fui informado(a) de que a minha colaboração é muito importante para o sucesso no tratamento desse paciente. Desse modo, aceito participar das palestras ou atividades de orientação sobre saúde bucal a fim de esclarecer as dúvidas que possuo e apresentar sugestões sobre o tema/assunto.",
   "Procurarei cumprir a pontualidade no horário agendado para a consulta, pois recebi o comunicado que, após 20 (vinte) minutos do início das atividades, caso o paciente não tenha chegado, um paciente novo será encaminhado para o atendimento do dia. Declaro estar ciente de que se tiver duas faltas, sem avisar com antecedência, este paciente será substituído por outro, seguindo uma lista de triagem efetuada anteriormente.",
@@ -38,21 +29,36 @@ const PARAGRAFOS_TERMO: ReadonlyArray<string> = [
   "Por último, da mesma forma assumo, com a assinatura deste documento, a responsabilidade pelas informações quanto à identificação, à história médica e à história buco-dental deste(a) paciente.",
 ];
 
-function idadeEmAnos(idade: string | undefined): string {
-  const m = /^(\d+)\s*anos?$/i.exec((idade ?? "").trim());
-  return m ? m[1]! : "";
-}
-
 function preencher(v: ConsentimentoValores, p: LocalProntuario): ConsentimentoValores {
-  const dp = p.secoes["dados-pessoais"] as Partial<DadosPessoaisValores> | undefined;
   return {
     ...v,
-    pacienteNome: v.pacienteNome || p.pacienteNome || "",
-    responsavelNome: v.responsavelNome || dp?.responsavelNome || "",
-    responsavelParentesco: v.responsavelParentesco || dp?.responsavelParentesco || "",
-    idadeMenor: v.idadeMenor || idadeEmAnos(dp?.idade),
     dataAssinatura: v.dataAssinatura || (p.status === "assinado" ? "" : hojeISO()),
   };
+}
+
+function DadoLeitura({ rotulo, principal, secundario }: { rotulo: string; principal: string; secundario?: string }) {
+  return (
+    <div className="py-3 first:pt-0 last:pb-0">
+      <p className="text-[10.5px] font-semibold uppercase tracking-[0.06em] text-ink-faint">{rotulo}</p>
+      {principal ? (
+        <p className="mt-1 text-[14px] leading-snug text-ink">
+          <span className="font-medium">{principal}</span>
+          {secundario && <span className="text-ink-soft"> · {secundario}</span>}
+        </p>
+      ) : secundario ? (
+        <p className="mt-1 text-[14px] leading-snug text-ink-soft">{secundario}</p>
+      ) : (
+        <p className="mt-1 text-[14px] leading-snug text-ink-faint">Não informado</p>
+      )}
+    </div>
+  );
+}
+
+function formatarTelefone(valor: string): string {
+  const d = valor.replace(/\D/g, "");
+  if (d.length === 11) return `(${d.slice(0, 2)}) ${d[2]} ${d.slice(3, 7)}-${d.slice(7)}`;
+  if (d.length === 10) return `(${d.slice(0, 2)}) ${d.slice(2, 6)}-${d.slice(6)}`;
+  return valor;
 }
 
 function IndicadorSalvamento({ salvando, jaSalvou }: { salvando: boolean; jaSalvou: boolean }) {
@@ -70,22 +76,40 @@ function IndicadorSalvamento({ salvando, jaSalvou }: { salvando: boolean; jaSalv
   );
 }
 
-function FormularioConsentimento({ prontuario }: { prontuario: LocalProntuario }) {
-  const cabecalho = (v: ConsentimentoValores) =>
-    prontuario.pacienteNome.trim() ? {} : { pacienteNome: v.pacienteNome };
-
+function FormularioConsentimento({
+  prontuario,
+  onIrParaDadosPessoais,
+}: {
+  prontuario: LocalProntuario;
+  onIrParaDadosPessoais: () => void;
+}) {
   const { control, setValue, salvando, salvoEm, somenteLeitura } = useSecao(
     prontuario,
     "consentimento",
     consentimentoSchema,
-    { preencher, cabecalho },
+    { preencher },
   );
 
-  const idadeMenor = useWatch({ control, name: "idadeMenor" });
+  const dp = (prontuario.secoes?.["dados-pessoais"] || {}) as Partial<DadosPessoaisValores>;
+  const pacienteNome = (dp.nomeCompleto || "").trim();
+  const idadeMenor = (dp.idade || "").trim();
+  const responsavelNome = (dp.responsavelNome || "").trim();
+  const responsavelParentesco = (dp.responsavelParentesco || "").trim();
+  const telefone = (dp.telefone || "").trim();
+
+  const faltando = [
+    !pacienteNome && "nome do paciente",
+    !idadeMenor && "idade (data de nascimento)",
+    !responsavelNome && "nome do responsável",
+    !responsavelParentesco && "parentesco do responsável",
+    !telefone && "telefone",
+  ].filter((x): x is string => Boolean(x));
+  const dadosCompletos = faltando.length === 0;
+  const bloqueado = !dadosCompletos && !somenteLeitura;
+
   const termoAceito = useWatch({ control, name: "termoAceito" });
   const assinaturaFoto = useWatch({ control, name: "assinaturaFoto" });
   const assinaturaAnexadaEm = useWatch({ control, name: "assinaturaAnexadaEm" });
-  const responsavelNome = useWatch({ control, name: "responsavelNome" });
 
   const [termoExpandido, setTermoExpandido] = useState(false);
 
@@ -105,8 +129,8 @@ function FormularioConsentimento({ prontuario }: { prontuario: LocalProntuario }
     />
   );
 
-  const idadeNoTermo = idadeMenor.trim() || "___";
-  const nomeAssinante = responsavelNome.trim();
+  const idadeNoTermo = idadeMenor || "___ anos";
+  const nomeAssinante = responsavelNome;
   const temFoto = Boolean(assinaturaFoto);
 
   const pillAceito = temFoto && termoAceito;
@@ -116,38 +140,37 @@ function FormularioConsentimento({ prontuario }: { prontuario: LocalProntuario }
 
   return (
     <div className="flex flex-col gap-3 pb-2">
-      <GrupoFicha titulo="Identificação do atendimento">
-        <div className="grid grid-cols-2 gap-3">
-          {texto("semestreLetivo", "Semestre letivo", { placeholder: "2026.2" })}
-          {texto("telefone", "Telefone", {
-            type: "tel",
-            inputMode: "tel",
-            autoComplete: "tel",
-            placeholder: "(83) 9 9999-0000",
-          })}
+      {bloqueado && (
+        <div role="alert" className="flex flex-col gap-3 rounded-card border border-alt/30 bg-alt-tint p-4">
+          <div className="flex items-start gap-2.5 text-alt">
+            <AlertCircle size={18} className="mt-0.5 shrink-0" aria-hidden="true" />
+            <div>
+              <p className="text-[13.5px] font-medium leading-snug">Complete os dados em Dados Pessoais para assinar o termo</p>
+              <p className="mt-1 text-[12.5px] leading-snug">Falta preencher: {faltando.join(", ")}.</p>
+            </div>
+          </div>
+          <button type="button" className="btn-ghost !h-10 !text-[13.5px]" onClick={onIrParaDadosPessoais}>
+            Ir para Dados Pessoais
+          </button>
         </div>
+      )}
+
+      <GrupoFicha titulo="Identificação do atendimento">
+        <div className="rounded-field bg-paper px-3.5 py-3.5">
+          <div className="divide-y divide-line-soft">
+            <DadoLeitura rotulo="Paciente" principal={pacienteNome} secundario={idadeMenor} />
+            <DadoLeitura rotulo="Responsável legal" principal={responsavelNome} secundario={responsavelParentesco} />
+            <DadoLeitura rotulo="Telefone" principal={telefone ? formatarTelefone(telefone) : ""} />
+          </div>
+          <p className="mt-3 border-t border-line-soft pt-3 text-[11.5px] text-ink-faint">
+            Estes dados vêm da seção Dados Pessoais.
+          </p>
+        </div>
+
+        {texto("semestreLetivo", "Semestre letivo", { placeholder: "2026.2" })}
         {texto("professorSupervisor", "Professor supervisor", { placeholder: "Nome do professor responsável" })}
         {texto("alunoOperador", "Aluno operador")}
         {texto("alunoAuxiliar", "Aluno auxiliar")}
-        {texto("pacienteNome", "Nome do paciente", { autoComplete: "off" })}
-        {texto("responsavelNome", "Nome do responsável")}
-        <div className="grid grid-cols-[1fr_110px] gap-3">
-          {texto("responsavelParentesco", "Parentesco", { placeholder: "Ex.: Mãe, Avó, Tio" })}
-          <Controller
-            control={control}
-            name="idadeMenor"
-            render={({ field }) => (
-              <CampoTexto
-                label="Idade do menor"
-                value={field.value}
-                onChange={(v) => field.onChange(apenasDigitos(v).slice(0, 2))}
-                inputMode="numeric"
-                maxLength={2}
-                disabled={somenteLeitura}
-              />
-            )}
-          />
-        </div>
       </GrupoFicha>
 
       <section aria-labelledby="titulo-termo" className="rounded-card border border-line bg-raised p-4">
@@ -190,7 +213,7 @@ function FormularioConsentimento({ prontuario }: { prontuario: LocalProntuario }
           render={({ field }) => (
             <label
               className={`mt-3 flex items-start gap-3 rounded-field border border-line-soft p-3 ${
-                somenteLeitura ? "cursor-not-allowed" : "cursor-pointer"
+                somenteLeitura || bloqueado ? "cursor-not-allowed opacity-70" : "cursor-pointer"
               }`}
             >
               <input
@@ -198,7 +221,7 @@ function FormularioConsentimento({ prontuario }: { prontuario: LocalProntuario }
                 className="peer sr-only"
                 checked={field.value}
                 onChange={(e) => field.onChange(e.target.checked)}
-                disabled={somenteLeitura}
+                disabled={somenteLeitura || bloqueado}
               />
               <span
                 aria-hidden="true"
@@ -224,6 +247,7 @@ function FormularioConsentimento({ prontuario }: { prontuario: LocalProntuario }
           foto={assinaturaFoto}
           anexadaEm={assinaturaAnexadaEm}
           somenteLeitura={somenteLeitura}
+          desabilitado={bloqueado}
           onAnexar={(dataUrl, em) => {
             setValue("assinaturaFoto", dataUrl);
             setValue("assinaturaAnexada", true);
@@ -265,7 +289,7 @@ function FormularioConsentimento({ prontuario }: { prontuario: LocalProntuario }
               value={field.value}
               onChange={(v) => {
                 const hoje = hojeISO();
-                field.onChange(v > hoje ? hoje : v); // não pode ser futura
+                field.onChange(v > hoje ? hoje : v);
               }}
               max={hojeISO()}
               disabled={somenteLeitura}
@@ -279,12 +303,14 @@ function FormularioConsentimento({ prontuario }: { prontuario: LocalProntuario }
   );
 }
 
-/**
- * Seção "Consentimento". Lê o prontuário direto do Dexie (live), igual a "Dados pessoais":
- * reabrir a seção mostra o que foi salvo e o que chega do sync down aparece sozinho.
- */
-export default function Consentimento({ prontuarioId }: { prontuarioId: string }) {
+export default function Consentimento({
+  prontuarioId,
+  onIrParaDadosPessoais,
+}: {
+  prontuarioId: string;
+  onIrParaDadosPessoais: () => void;
+}) {
   const prontuario = useLiveQuery(() => db.prontuarios.get(prontuarioId), [prontuarioId]);
   if (!prontuario) return null;
-  return <FormularioConsentimento prontuario={prontuario} />;
+  return <FormularioConsentimento prontuario={prontuario} onIrParaDadosPessoais={onIrParaDadosPessoais} />;
 }

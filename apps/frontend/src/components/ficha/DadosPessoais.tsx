@@ -22,6 +22,7 @@ type ChaveTexto =
   | "serie"
   | "responsavelNome"
   | "responsavelParentesco"
+  | "telefone"
   | "responsavelOcupacao"
   | "paiNome"
   | "paiOcupacao"
@@ -30,7 +31,7 @@ type ChaveTexto =
 
 type ChaveEscolaridade = "responsavelEscolaridade" | "paiEscolaridade" | "maeEscolaridade";
 
-type ExtraTexto = Partial<Pick<CampoTextoProps, "placeholder" | "inputMode" | "autoComplete" | "maxLength">>;
+type ExtraTexto = Partial<Pick<CampoTextoProps, "placeholder" | "inputMode" | "autoComplete" | "maxLength" | "type">>;
 
 const OPCOES_SEXO = [
   { value: "feminino", label: "Feminino" },
@@ -241,6 +242,12 @@ function FormularioDadosPessoais({ prontuario }: { prontuario: LocalProntuario }
       <GrupoFicha titulo="Responsável legal">
         {texto("responsavelNome", "Nome")}
         {texto("responsavelParentesco", "Parentesco", { placeholder: "Ex.: Mãe, Avó, Tio" })}
+        {texto("telefone", "Telefone", {
+          type: "tel",
+          inputMode: "tel",
+          autoComplete: "tel",
+          placeholder: "(83) 9 9999-0000",
+        })}
         {texto("responsavelOcupacao", "Ocupação")}
         {escolaridade("responsavelEscolaridade")}
       </GrupoFicha>

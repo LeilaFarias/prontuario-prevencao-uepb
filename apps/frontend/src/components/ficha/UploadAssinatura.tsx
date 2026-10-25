@@ -9,6 +9,7 @@ interface Props {
   onAnexar: (dataUrl: string, anexadaEm: string) => void;
   onRemover: () => void;
   somenteLeitura?: boolean;
+  desabilitado?: boolean;
   rotulo?: string;
   children?: ReactNode;
 }
@@ -19,6 +20,7 @@ export default function UploadAssinatura({
   onAnexar,
   onRemover,
   somenteLeitura = false,
+  desabilitado = false,
   rotulo = "assinatura",
   children,
 }: Props) {
@@ -29,7 +31,7 @@ export default function UploadAssinatura({
 
   async function aoEscolher(e: React.ChangeEvent<HTMLInputElement>) {
     const arquivo = e.target.files?.[0];
-    e.target.value = ""; 
+    e.target.value = "";
     if (!arquivo) return;
 
     setErro(null);
@@ -99,7 +101,7 @@ export default function UploadAssinatura({
                 type="button"
                 className={botaoPequeno}
                 onClick={() => inputGaleria.current?.click()}
-                disabled={processando}
+                disabled={processando || desabilitado}
               >
                 {processando ? "Processando…" : "Substituir foto"}
               </button>
@@ -122,7 +124,7 @@ export default function UploadAssinatura({
               type="button"
               className={botaoPequeno}
               onClick={() => inputCamera.current?.click()}
-              disabled={processando}
+              disabled={processando || desabilitado}
             >
               {processando ? "Processando…" : "Usar câmera"}
             </button>
@@ -130,7 +132,7 @@ export default function UploadAssinatura({
               type="button"
               className={botaoPequeno}
               onClick={() => inputGaleria.current?.click()}
-              disabled={processando}
+              disabled={processando || desabilitado}
             >
               Escolher da galeria
             </button>

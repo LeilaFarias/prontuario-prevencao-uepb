@@ -38,6 +38,7 @@ export const dadosPessoaisSchema = z.object({
 
   responsavelNome: z.string().default(""),
   responsavelParentesco: z.string().default(""),
+  telefone: z.string().default(""),
   responsavelOcupacao: z.string().default(""),
   responsavelEscolaridade: z.string().default(""),
 
@@ -58,14 +59,9 @@ export function vazioDadosPessoais(): DadosPessoais {
 
 export const consentimentoSchema = z.object({
   semestreLetivo: z.string().default(""),
-  telefone: z.string().default(""),
   professorSupervisor: z.string().default(""),
   alunoOperador: z.string().default(""),
   alunoAuxiliar: z.string().default(""),
-  pacienteNome: z.string().default(""),
-  responsavelNome: z.string().default(""),
-  responsavelParentesco: z.string().default(""),
-  idadeMenor: z.string().default(""),
 
   termoAceito: z.boolean().default(false),
   dataAssinatura: z.string().default(""),

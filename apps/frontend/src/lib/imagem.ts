@@ -28,7 +28,6 @@ function bytesDaDataURL(dataUrl: string): number {
   return Math.floor((base64.length * 3) / 4);
 }
 
-
 export async function comprimirImagem(arquivo: File): Promise<string> {
   if (!arquivo.type.startsWith("image/")) {
     throw new ErroImagem("O arquivo selecionado não é uma imagem.");
