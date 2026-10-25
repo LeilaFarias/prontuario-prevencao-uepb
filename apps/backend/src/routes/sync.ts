@@ -5,7 +5,7 @@ import { syncBatchSchema, type SyncOperation, type SyncResponse } from "@prontua
 import { transacao } from "../db";
 
 const prontuarioPayload = z.object({
-  pacienteNome: z.string().min(1).optional(),
+  pacienteNome: z.string().optional(), 
   pacienteDataNascimento: z.string().optional(),
   status: z.string().optional(),
   alunoTitularId: z.string().optional(),
@@ -67,10 +67,10 @@ export const syncRoutes: FastifyPluginAsync = async (app) => {
       const status = p.status?.toUpperCase() ?? null;
 
       if (!existe) {
-        if (!p.alunoTitularId || !p.pacienteNome) throw new Error("Payload incompleto para criar prontuário");
+        if (!p.alunoTitularId || p.pacienteNome === undefined) throw new Error("Payload incompleto para criar prontuário");
         inserirPront.run(op.entityId, p.pacienteNome, nascimento, p.alunoTitularId, status);
       } else {
-        atualizarPront.run(p.pacienteNome ?? null, nascimento, status, agora, op.entityId);
+        atualizarPront.run(p.pacienteNome || null, nascimento, status, agora, op.entityId);
       }
       return;
     }

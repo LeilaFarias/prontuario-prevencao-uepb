@@ -38,13 +38,18 @@ interface ProntuarioCardProps {
 export default function ProntuarioCard({ prontuario, onAbrir }: ProntuarioCardProps) {
   const { pacienteNome, status, atualizadoEm } = prontuario;
   const badge = BADGE_POR_STATUS[status];
-  const acao = ACAO_POR_STATUS[status];
+  const semNome = pacienteNome.trim() === "";
+  const acao = semNome && status === "em_andamento" ? { label: "Preencher →", cor: "text-primary" } : ACAO_POR_STATUS[status];
   const Icone = badge.icone;
 
   const tempo = tempoRelativo(atualizadoEm);
   const idade = calcularIdade(prontuario.pacienteDataNascimento);
-  const subtitulo = idade !== null ? `${idade} anos · atualizado ${tempo}` : `atualizado ${tempo}`;
-  const inicial = pacienteNome.trim().charAt(0).toUpperCase();
+  const subtitulo = semNome
+    ? "Aguardando preenchimento"
+    : idade !== null
+      ? `${idade} anos · atualizado ${tempo}`
+      : `atualizado ${tempo}`;
+  const inicial = semNome ? "?" : pacienteNome.trim().charAt(0).toUpperCase();
 
   return (
     <button
@@ -57,7 +62,9 @@ export default function ProntuarioCard({ prontuario, onAbrir }: ProntuarioCardPr
           {inicial}
         </div>
         <div className="min-w-0 flex-1">
-          <div className="truncate text-[14.5px] font-semibold text-ink">{pacienteNome}</div>
+          <div className={`truncate text-[14.5px] font-semibold ${semNome ? "text-ink-soft" : "text-ink"}`}>
+            {semNome ? "Novo prontuário" : pacienteNome}
+          </div>
           <div className="mt-0.5 truncate text-[12px] text-ink-soft">{subtitulo}</div>
         </div>
         <span

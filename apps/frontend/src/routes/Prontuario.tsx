@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useRef, useState } from "react";
+import { useLiveQuery } from "dexie-react-hooks";
 import { useNavigate, useParams } from "react-router-dom";
 import { SECOES, type SecaoId } from "@prontuario/shared";
 import DadosPessoais from "../components/ficha/DadosPessoais";
@@ -18,6 +19,7 @@ export default function Prontuario() {
   const [estado, setEstado] = useState<"carregando" | "ok" | "nao-encontrado">("carregando");
   const [pront, setPront] = useState<LocalProntuario | null>(null);
   const [indice, setIndice] = useState(0);
+  const nomeAoVivo = useLiveQuery(async () => (id ? (await db.prontuarios.get(id))?.pacienteNome : undefined), [id]);
   const [valores, setValores] = useState<Record<string, string>>({});
 
   const timer = useRef<number | undefined>(undefined);
@@ -72,6 +74,7 @@ export default function Prontuario() {
 
   function aoDigitar(texto: string) {
     const secao = SECOES[indice]!;
+  const nomeExibido = (nomeAoVivo ?? pront.pacienteNome).trim();
     setValores((v) => ({ ...v, [secao.id]: texto }));
     pendente.current = { secaoId: secao.id, texto };
     window.clearTimeout(timer.current);
@@ -96,8 +99,8 @@ export default function Prontuario() {
   return (
     <div className="flex flex-1 flex-col">
       <Topbar
-        titulo={pront.pacienteNome}
-        subtitulo={secao.titulo}
+        titulo={nomeExibido || "Novo prontuário"}
+        subtitulo={nomeExibido ? secao.titulo : "Preencha os dados para começar"}
         tituloClassName="text-[18px]"
         onVoltar={() => navigate("/prontuarios")}
       />

@@ -33,9 +33,7 @@ export default function ListaProntuarios() {
 
   async function novo() {
     if (!usuario) return;
-    const nome = window.prompt("Nome do paciente:")?.trim();
-    if (!nome || nome.length < 2) return;
-    const id = await criarProntuarioLocal(nome, usuario.id);
+    const id = await criarProntuarioLocal(usuario.id);
     navigate(`/prontuario/${id}`);
   }
 

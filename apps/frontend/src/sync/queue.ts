@@ -1,5 +1,4 @@
 import {
-  criarProntuarioSchema,
   salvarSecaoSchema,
   type SecaoId,
   type SyncResponse,
@@ -37,15 +36,14 @@ function uuid(): string {
   });
 }
 
-export async function criarProntuarioLocal(pacienteNome: string, alunoTitularId: string): Promise<string> {
+export async function criarProntuarioLocal(alunoTitularId: string): Promise<string> {
   const id = uuid();
-  const dados = criarProntuarioSchema.parse({ id, pacienteNome });
   const agora = Date.now();
 
   await db.transaction("rw", db.prontuarios, db.syncQueue, async () => {
     await db.prontuarios.add({
       id,
-      pacienteNome: dados.pacienteNome,
+      pacienteNome: "",
       status: "em_andamento",
       secoes: {},
       criadoEm: agora,
@@ -59,7 +57,7 @@ export async function criarProntuarioLocal(pacienteNome: string, alunoTitularId:
       entity: "prontuario",
       entityId: id,
       payload: {
-        pacienteNome: dados.pacienteNome,
+        pacienteNome: "",
         status: "em_andamento",
         alunoTitularId,
         criadoEm: agora,
