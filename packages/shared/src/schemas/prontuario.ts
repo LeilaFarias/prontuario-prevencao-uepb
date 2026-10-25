@@ -74,3 +74,21 @@ export const consentimentoSchema = z.object({
 export type Consentimento = z.infer<typeof consentimentoSchema>;
 
 export const vazioConsentimento = (): Consentimento => consentimentoSchema.parse({});
+
+export const historiaMedicaSchema = z.object({
+  temDoenca: z.boolean().nullable().default(null),
+  qualDoenca: z.string().default(""),
+
+  emTratamento: z.boolean().nullable().default(null),
+  qualTratamento: z.string().default(""),
+
+  usaMedicamento: z.boolean().nullable().default(null),
+  qualMedicamento: z.string().default(""),
+  tempoMedicamento: z.string().default(""),
+
+  antecedentesFamiliares: z.string().default(""),
+});
+
+export type HistoriaMedica = z.infer<typeof historiaMedicaSchema>;
+
+export const vazioHistoriaMedica = (): HistoriaMedica => historiaMedicaSchema.parse({});

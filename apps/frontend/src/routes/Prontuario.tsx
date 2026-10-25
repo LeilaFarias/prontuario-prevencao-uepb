@@ -4,6 +4,7 @@ import { useNavigate, useParams } from "react-router-dom";
 import { SECOES, type SecaoId } from "@prontuario/shared";
 import Consentimento from "../components/ficha/Consentimento";
 import DadosPessoais from "../components/ficha/DadosPessoais";
+import HistoriaMedica from "../components/ficha/HistoriaMedica";
 import StatusBar from "../components/StatusBar";
 import Topbar from "../components/Topbar";
 import { db, type LocalProntuario } from "../db/dexie";
@@ -54,6 +55,7 @@ export default function Prontuario() {
     await salvarSecaoLocal(id, p.secaoId, { texto: p.texto });
   }, [id]);
 
+  // Garante que nada digitado se perde ao sair da tela ou ocultar o app
   useEffect(() => {
     const aoOcultar = () => document.visibilityState === "hidden" && void salvarPendente();
     document.addEventListener("visibilitychange", aoOcultar);
@@ -130,6 +132,8 @@ export default function Prontuario() {
             prontuarioId={pront.id}
             onIrParaDadosPessoais={() => irPara(SECOES.findIndex((x) => x.id === "dados-pessoais"))}
           />
+        ) : secao.id === "historia-medica" ? (
+          <HistoriaMedica key={pront.id} prontuarioId={pront.id} />
         ) : secao.id === "dados-pessoais" ? (
           <DadosPessoais key={pront.id} prontuarioId={pront.id} />
         ) : (

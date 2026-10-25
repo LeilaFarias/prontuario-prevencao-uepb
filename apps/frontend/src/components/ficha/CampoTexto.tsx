@@ -10,6 +10,8 @@ export interface CampoTextoProps {
   inputMode?: InputHTMLAttributes<HTMLInputElement>["inputMode"];
   autoComplete?: string;
   maxLength?: number;
+  multiline?: boolean;
+  rows?: number;
 }
 
 export default function CampoTexto({
@@ -22,6 +24,8 @@ export default function CampoTexto({
   inputMode,
   autoComplete = "off",
   maxLength,
+  multiline = false,
+  rows = 3,
 }: CampoTextoProps) {
   const id = useId();
   return (
@@ -29,18 +33,31 @@ export default function CampoTexto({
       <label htmlFor={id} className="field-label">
         {label}
       </label>
-      <input
-        id={id}
-        type={type}
-        className="input disabled:bg-paper disabled:text-ink-soft"
-        value={value}
-        onChange={(e) => onChange(e.target.value)}
-        placeholder={placeholder}
-        disabled={disabled}
-        inputMode={inputMode}
-        autoComplete={autoComplete}
-        maxLength={maxLength}
-      />
+      {multiline ? (
+        <textarea
+          id={id}
+          className="input !h-auto min-h-[80px] resize-none py-3 leading-snug disabled:bg-paper disabled:text-ink-soft"
+          value={value}
+          onChange={(e) => onChange(e.target.value)}
+          placeholder={placeholder}
+          disabled={disabled}
+          maxLength={maxLength}
+          rows={rows}
+        />
+      ) : (
+        <input
+          id={id}
+          type={type}
+          className="input disabled:bg-paper disabled:text-ink-soft"
+          value={value}
+          onChange={(e) => onChange(e.target.value)}
+          placeholder={placeholder}
+          disabled={disabled}
+          inputMode={inputMode}
+          autoComplete={autoComplete}
+          maxLength={maxLength}
+        />
+      )}
     </div>
   );
 }
