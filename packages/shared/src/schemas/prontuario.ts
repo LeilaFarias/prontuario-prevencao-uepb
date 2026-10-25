@@ -135,3 +135,30 @@ export const examesSchema = z.object({
 export type Exames = z.infer<typeof examesSchema>;
 
 export const vazioExames = (): Exames => examesSchema.parse({});
+
+export const historiaOdontologicaSchema = z.object({
+  primeiraConsulta: z.boolean().nullable().default(null),
+  tempoUltimaConsulta: z.enum(["menos-6", "mais-6"]).nullable().default(null),
+  queixaPrincipal: z.string().default(""),
+  dorDente: z.boolean().nullable().default(null),
+  motivoUEPB: z.string().default(""),
+  comportamentoAnterior: z.enum(["cooperou", "nao-cooperou"]).nullable().default(null),
+
+  acoesPreventivasRecebidas: z.boolean().nullable().default(null),
+  quaisAcoesPreventivas: z.array(z.string()).default([]),
+
+  escovaDiariamente: z.boolean().nullable().default(null),
+  frequenciaEscovacao: z.enum(["1x", "2x", "3x", "4x"]).nullable().default(null),
+  recursosUtilizados: z.array(z.string()).default([]),
+
+  habitosParafuncionais: z.array(z.string()).default([]),
+  frequenciaHabitos: z.string().default(""),
+
+  dietaManha: z.string().default(""),
+  dietaTarde: z.string().default(""),
+  dietaNoite: z.string().default(""),
+});
+
+export type HistoriaOdontologica = z.infer<typeof historiaOdontologicaSchema>;
+
+export const vazioHistoriaOdontologica = (): HistoriaOdontologica => historiaOdontologicaSchema.parse({});

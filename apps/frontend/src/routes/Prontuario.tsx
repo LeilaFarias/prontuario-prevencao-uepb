@@ -6,6 +6,7 @@ import Consentimento from "../components/ficha/Consentimento";
 import DadosPessoais from "../components/ficha/DadosPessoais";
 import Exames from "../components/ficha/Exames";
 import HistoriaMedica from "../components/ficha/HistoriaMedica";
+import HistoriaOdontologica from "../components/ficha/HistoriaOdontologica";
 import StatusBar from "../components/StatusBar";
 import Topbar from "../components/Topbar";
 import { db, type LocalProntuario } from "../db/dexie";
@@ -133,6 +134,8 @@ export default function Prontuario() {
             prontuarioId={pront.id}
             onIrParaDadosPessoais={() => irPara(SECOES.findIndex((x) => x.id === "dados-pessoais"))}
           />
+        ) : secao.id === "historia-odontologica" ? (
+          <HistoriaOdontologica key={pront.id} prontuarioId={pront.id} />
         ) : secao.id === "exames" ? (
           <Exames key={pront.id} prontuarioId={pront.id} />
         ) : secao.id === "historia-medica" ? (
