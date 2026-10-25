@@ -4,6 +4,7 @@ import { useNavigate, useParams } from "react-router-dom";
 import { SECOES, type SecaoId } from "@prontuario/shared";
 import Consentimento from "../components/ficha/Consentimento";
 import DadosPessoais from "../components/ficha/DadosPessoais";
+import Exames from "../components/ficha/Exames";
 import HistoriaMedica from "../components/ficha/HistoriaMedica";
 import StatusBar from "../components/StatusBar";
 import Topbar from "../components/Topbar";
@@ -132,6 +133,8 @@ export default function Prontuario() {
             prontuarioId={pront.id}
             onIrParaDadosPessoais={() => irPara(SECOES.findIndex((x) => x.id === "dados-pessoais"))}
           />
+        ) : secao.id === "exames" ? (
+          <Exames key={pront.id} prontuarioId={pront.id} />
         ) : secao.id === "historia-medica" ? (
           <HistoriaMedica key={pront.id} prontuarioId={pront.id} />
         ) : secao.id === "dados-pessoais" ? (

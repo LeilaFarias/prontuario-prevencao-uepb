@@ -92,3 +92,34 @@ export const historiaMedicaSchema = z.object({
 export type HistoriaMedica = z.infer<typeof historiaMedicaSchema>;
 
 export const vazioHistoriaMedica = (): HistoriaMedica => historiaMedicaSchema.parse({});
+
+const estruturaExameSchema = z.enum(["normal", "alteracao"]).nullable().default(null);
+
+export const examesSchema = z.object({
+  extraOral: z
+    .object({
+      locomocao: z.string().default(""),
+      cicatrizesEdemas: z.string().default(""),
+      aberturaAnormal: z.boolean().nullable().default(null),
+      aberturaObservacao: z.string().default(""),
+    })
+    .default({}),
+
+  intraOral: z
+    .object({
+      labios: estruturaExameSchema,
+      freioLabial: estruturaExameSchema,
+      gengiva: estruturaExameSchema,
+      mucosa: estruturaExameSchema,
+      palato: estruturaExameSchema,
+      lingua: estruturaExameSchema,
+      freioLingual: estruturaExameSchema,
+      assoalho: estruturaExameSchema,
+      outrasAlteracoes: z.string().default(""),
+    })
+    .default({}),
+});
+
+export type Exames = z.infer<typeof examesSchema>;
+
+export const vazioExames = (): Exames => examesSchema.parse({});
