@@ -4,6 +4,7 @@ import { Plus, UserRound } from "lucide-react";
 import ProntuarioCard from "../components/ProntuarioCard";
 import StatusBar from "../components/StatusBar";
 import { db } from "../db/dexie";
+import { useSyncDown } from "../hooks/useSyncDown";
 import { getSession } from "../lib/session";
 import { criarProntuarioLocal } from "../sync/queue";
 
@@ -11,6 +12,8 @@ export default function ListaProntuarios() {
   const navigate = useNavigate();
   const sessao = getSession();
   const usuario = sessao?.user;
+
+  useSyncDown();
 
   const prontuarios = useLiveQuery(
     async () => {

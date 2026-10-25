@@ -4,6 +4,7 @@ import { SECOES, type SecaoId } from "@prontuario/shared";
 import StatusBar from "../components/StatusBar";
 import Topbar from "../components/Topbar";
 import { db, type LocalProntuario } from "../db/dexie";
+import { useProntuarioSync } from "../hooks/useProntuarioSync";
 import { salvarSecaoLocal } from "../sync/queue";
 
 const DEBOUNCE_MS = 800;
@@ -11,6 +12,7 @@ const DEBOUNCE_MS = 800;
 export default function Prontuario() {
   const { id } = useParams<{ id: string }>();
   const navigate = useNavigate();
+  const { carregando: sincronizando, versao } = useProntuarioSync(id);
 
   const [estado, setEstado] = useState<"carregando" | "ok" | "nao-encontrado">("carregando");
   const [pront, setPront] = useState<LocalProntuario | null>(null);
@@ -28,15 +30,17 @@ export default function Prontuario() {
       if (!ativo) return;
       if (!p) return setEstado("nao-encontrado");
       setPront(p);
-      setValores(
-        Object.fromEntries(Object.entries(p.secoes).map(([secao, c]) => [secao, String(c?.texto ?? "")])),
+      const doBanco = Object.fromEntries(
+        Object.entries(p.secoes).map(([secao, c]) => [secao, String(c?.texto ?? "")]),
       );
+      const digitando = pendente.current;
+      setValores(digitando ? { ...doBanco, [digitando.secaoId]: digitando.texto } : doBanco);
       setEstado("ok");
     });
     return () => {
       ativo = false;
     };
-  }, [id]);
+  }, [id, versao]);
 
   const salvarPendente = useCallback(async () => {
     window.clearTimeout(timer.current);
@@ -73,7 +77,9 @@ export default function Prontuario() {
     timer.current = window.setTimeout(() => void salvarPendente(), DEBOUNCE_MS);
   }
 
-  if (estado === "carregando") return <div className="flex-1" />;
+  if (estado === "carregando" || (estado === "nao-encontrado" && sincronizando)) {
+    return <div className="flex-1" />;
+  }
 
   if (estado === "nao-encontrado" || !pront) {
     return (

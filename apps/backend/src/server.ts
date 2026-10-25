@@ -8,6 +8,7 @@ import { healthRoutes } from "./routes/health";
 import { authRoutes } from "./routes/auth";
 import { recuperacaoRoutes } from "./routes/recuperacao";
 import { syncRoutes } from "./routes/sync";
+import { prontuariosRoutes } from "./routes/prontuarios";
 import { userRoutes } from "./routes/users";
 import debugRoute from "./routes/debug.js";
 
@@ -32,6 +33,7 @@ await app.register(healthRoutes);
 await app.register(authRoutes);
 await app.register(recuperacaoRoutes);
 await app.register(syncRoutes);
+await app.register(prontuariosRoutes);
 await app.register(userRoutes);
 await app.register(debugRoute);
 
