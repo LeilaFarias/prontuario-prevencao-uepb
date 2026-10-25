@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import { useNavigate, useParams } from "react-router-dom";
 import { SECOES, type SecaoId } from "@prontuario/shared";
+import DadosPessoais from "../components/ficha/DadosPessoais";
 import StatusBar from "../components/StatusBar";
 import Topbar from "../components/Topbar";
 import { db, type LocalProntuario } from "../db/dexie";
@@ -119,20 +120,24 @@ export default function Prontuario() {
         ))}
       </nav>
 
-      <main className="flex-1 px-5 pt-2">
-        <section className="rounded-card border border-line-soft bg-raised p-4">
-          <h2 className="font-display text-[18px] font-medium text-ink">{secao.titulo}</h2>
-          <label htmlFor="campo-secao" className="label mt-4">Anotações da seção</label>
-          <input
-            id="campo-secao"
-            type="text"
-            className="input"
-            value={valores[secao.id] ?? ""}
-            onChange={(e) => aoDigitar(e.target.value)}
-            placeholder="Digite aqui…"
-          />
-          <p className="hint">Autosave local ativo. As alterações entram na fila de sincronização.</p>
-        </section>
+      <main className="flex-1 px-5 pb-4 pt-2">
+        {secao.id === "dados-pessoais" ? (
+          <DadosPessoais key={pront.id} prontuarioId={pront.id} />
+        ) : (
+          <section className="rounded-card border border-line-soft bg-raised p-4">
+            <h2 className="font-display text-[18px] font-medium text-ink">{secao.titulo}</h2>
+            <label htmlFor="campo-secao" className="label mt-4">Anotações da seção</label>
+            <input
+              id="campo-secao"
+              type="text"
+              className="input"
+              value={valores[secao.id] ?? ""}
+              onChange={(e) => aoDigitar(e.target.value)}
+              placeholder="Digite aqui…"
+            />
+            <p className="hint">Autosave local ativo. As alterações entram na fila de sincronização.</p>
+          </section>
+        )}
       </main>
 
       <footer className="sticky bottom-0 mt-4 grid grid-cols-2 gap-3 border-t border-line bg-paper px-5 py-3">

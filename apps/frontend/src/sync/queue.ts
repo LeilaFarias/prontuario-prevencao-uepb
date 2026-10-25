@@ -74,10 +74,16 @@ export async function criarProntuarioLocal(pacienteNome: string, alunoTitularId:
   return id;
 }
 
+export interface CabecalhoPaciente {
+  pacienteNome?: string;
+  pacienteDataNascimento?: string;
+}
+
 export async function salvarSecaoLocal(
   prontuarioId: string,
   secaoId: SecaoId,
   conteudo: Record<string, unknown>,
+  cabecalho?: CabecalhoPaciente,
 ): Promise<void> {
   const dados = salvarSecaoSchema.parse({ prontuarioId, secaoId, conteudo });
   const agora = Date.now();
@@ -85,12 +91,39 @@ export async function salvarSecaoLocal(
   await db.transaction("rw", db.prontuarios, db.syncQueue, async () => {
     const atual = await db.prontuarios.get(dados.prontuarioId);
     if (!atual) throw new Error("Prontuário não encontrado no aparelho");
+
+    // Só entra no cabeçalho o que é válido e realmente mudou (vazio nunca apaga o nome/nascimento)
+    const nome = cabecalho?.pacienteNome?.trim();
+    const novoNome = nome && nome.length >= 2 && nome !== atual.pacienteNome ? nome : undefined;
+    const nascimento = cabecalho?.pacienteDataNascimento?.trim();
+    const novoNascimento =
+      nascimento && /^\d{4}-\d{2}-\d{2}$/.test(nascimento) && nascimento !== atual.pacienteDataNascimento
+        ? nascimento
+        : undefined;
+
     await db.prontuarios.put({
       ...atual,
+      ...(novoNome ? { pacienteNome: novoNome } : {}),
+      ...(novoNascimento ? { pacienteDataNascimento: novoNascimento } : {}),
       secoes: { ...atual.secoes, [dados.secaoId]: dados.conteudo },
       atualizadoEm: agora,
       sincronizado: false,
     });
+
+    if (novoNome || novoNascimento) {
+      await db.syncQueue.add({
+        prontuarioId: dados.prontuarioId,
+        op: "update",
+        entity: "prontuario",
+        entityId: dados.prontuarioId,
+        payload: {
+          ...(novoNome ? { pacienteNome: novoNome } : {}),
+          ...(novoNascimento ? { pacienteDataNascimento: novoNascimento } : {}),
+        },
+        ts: agora,
+      });
+    }
+
     await db.syncQueue.add({
       prontuarioId: dados.prontuarioId,
       op: "update",

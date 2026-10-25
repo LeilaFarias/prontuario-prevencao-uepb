@@ -43,6 +43,7 @@
     .device { box-shadow: 0 0 0 1px var(--line); }
   }
   .label { @apply mb-1.5 block text-[12.5px] font-medium text-ink-soft; }
+  .field-label { @apply mb-1.5 block text-[11px] font-semibold uppercase tracking-[0.06em] text-ink-soft; }
   .hint { @apply mt-1.5 text-[12px] text-ink-faint; }
   .field-error { @apply mt-1.5 text-[12px] text-alt; }
   .input {
