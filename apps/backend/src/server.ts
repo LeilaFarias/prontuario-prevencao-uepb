@@ -12,7 +12,7 @@ import { prontuariosRoutes } from "./routes/prontuarios";
 import { userRoutes } from "./routes/users";
 import debugRoute from "./routes/debug.js";
 
-const app = Fastify({ logger: true });
+const app = Fastify({ logger: true, bodyLimit: 10 * 1024 * 1024 });
 
 await app.register(cors, {
   origin: env.CORS_ORIGIN.split(",").map((o) => o.trim()),

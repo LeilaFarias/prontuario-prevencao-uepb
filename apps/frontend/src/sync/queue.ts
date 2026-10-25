@@ -122,11 +122,19 @@ export async function salvarSecaoLocal(
       });
     }
 
+    const entityIdSecao = `${dados.prontuarioId}:${dados.secaoId}`;
+    const obsoletas = await db.syncQueue
+      .where("prontuarioId")
+      .equals(dados.prontuarioId)
+      .filter((o) => o.entity === "secao" && o.entityId === entityIdSecao && o.op === "update")
+      .primaryKeys();
+    if (obsoletas.length > 0) await db.syncQueue.bulkDelete(obsoletas);
+
     await db.syncQueue.add({
       prontuarioId: dados.prontuarioId,
       op: "update",
       entity: "secao",
-      entityId: `${dados.prontuarioId}:${dados.secaoId}`,
+      entityId: entityIdSecao,
       payload: { secaoId: dados.secaoId, conteudo: dados.conteudo },
       ts: agora,
     });

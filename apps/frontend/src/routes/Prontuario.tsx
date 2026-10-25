@@ -2,6 +2,7 @@ import { useCallback, useEffect, useRef, useState } from "react";
 import { useLiveQuery } from "dexie-react-hooks";
 import { useNavigate, useParams } from "react-router-dom";
 import { SECOES, type SecaoId } from "@prontuario/shared";
+import Consentimento from "../components/ficha/Consentimento";
 import DadosPessoais from "../components/ficha/DadosPessoais";
 import StatusBar from "../components/StatusBar";
 import Topbar from "../components/Topbar";
@@ -53,7 +54,6 @@ export default function Prontuario() {
     await salvarSecaoLocal(id, p.secaoId, { texto: p.texto });
   }, [id]);
 
-  // Garante que nada digitado se perde ao sair da tela ou ocultar o app
   useEffect(() => {
     const aoOcultar = () => document.visibilityState === "hidden" && void salvarPendente();
     document.addEventListener("visibilitychange", aoOcultar);
@@ -74,7 +74,6 @@ export default function Prontuario() {
 
   function aoDigitar(texto: string) {
     const secao = SECOES[indice]!;
-  const nomeExibido = (nomeAoVivo ?? pront.pacienteNome).trim();
     setValores((v) => ({ ...v, [secao.id]: texto }));
     pendente.current = { secaoId: secao.id, texto };
     window.clearTimeout(timer.current);
@@ -95,6 +94,7 @@ export default function Prontuario() {
   }
 
   const secao = SECOES[indice]!;
+  const nomeExibido = (nomeAoVivo ?? pront.pacienteNome).trim();
 
   return (
     <div className="flex flex-1 flex-col">
@@ -124,7 +124,9 @@ export default function Prontuario() {
       </nav>
 
       <main className="flex-1 px-5 pb-4 pt-2">
-        {secao.id === "dados-pessoais" ? (
+        {secao.id === "consentimento" ? (
+          <Consentimento key={pront.id} prontuarioId={pront.id} />
+        ) : secao.id === "dados-pessoais" ? (
           <DadosPessoais key={pront.id} prontuarioId={pront.id} />
         ) : (
           <section className="rounded-card border border-line-soft bg-raised p-4">

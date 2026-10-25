@@ -55,3 +55,26 @@ export type DadosPessoais = z.infer<typeof dadosPessoaisSchema>;
 export function vazioDadosPessoais(): DadosPessoais {
   return dadosPessoaisSchema.parse({});
 }
+
+export const consentimentoSchema = z.object({
+  semestreLetivo: z.string().default(""),
+  telefone: z.string().default(""),
+  professorSupervisor: z.string().default(""),
+  alunoOperador: z.string().default(""),
+  alunoAuxiliar: z.string().default(""),
+  pacienteNome: z.string().default(""),
+  responsavelNome: z.string().default(""),
+  responsavelParentesco: z.string().default(""),
+  idadeMenor: z.string().default(""),
+
+  termoAceito: z.boolean().default(false),
+  dataAssinatura: z.string().default(""),
+
+  assinaturaAnexada: z.boolean().default(false),
+  assinaturaFoto: z.string().nullable().default(null),
+  assinaturaAnexadaEm: z.string().nullable().default(null),
+});
+
+export type Consentimento = z.infer<typeof consentimentoSchema>;
+
+export const vazioConsentimento = (): Consentimento => consentimentoSchema.parse({});
