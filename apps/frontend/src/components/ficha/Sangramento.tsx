@@ -1,14 +1,15 @@
-import { useMemo } from "react";
-import { Controller, useWatch } from "react-hook-form";
+import { useWatch } from "react-hook-form";
 import { useLiveQuery } from "dexie-react-hooks";
-import { sangramentoSchema } from "@prontuario/shared";
+import { Droplet, Plus } from "lucide-react";
+import { sangramentoSchema, type RegistroSangramentoDados } from "@prontuario/shared";
 import { db, type LocalProntuario } from "../../db/dexie";
 import { useSecao } from "../../hooks/useSecao";
 import { useSyncStatus } from "../../hooks/useSyncStatus";
-import { calcularSG, denteVazio, gerarDentesVazios, type Face } from "../../lib/odontograma";
-import CampoData from "./CampoData";
-import GridSangramento from "./GridSangramento";
+import { hojeISO } from "../../lib/data";
+import { gerarDentesVazios } from "../../lib/odontograma";
+import { uuid } from "../../lib/uuid";
 import GrupoFicha from "./GrupoFicha";
+import RegistroSangramento from "./RegistroSangramento";
 
 function IndicadorSalvamento({ salvando, jaSalvou }: { salvando: boolean; jaSalvou: boolean }) {
   const { pendentes, online } = useSyncStatus();
@@ -25,121 +26,73 @@ function IndicadorSalvamento({ salvando, jaSalvou }: { salvando: boolean; jaSalv
   );
 }
 
-function Swatch({ valor, sangrando }: { valor: string; sangrando: boolean }) {
-  return (
-    <span
-      aria-hidden="true"
-      className={`flex h-5 w-5 items-center justify-center rounded-md border text-[11px] font-bold ${
-        sangrando ? "border-alt bg-alt-tint text-alt" : "border-line-soft bg-raised text-ink-faint"
-      }`}
-    >
-      {valor}
-    </span>
-  );
-}
-
-function formatarPercentual(valor: number): string {
-  return `${valor.toLocaleString("pt-BR", { minimumFractionDigits: 1, maximumFractionDigits: 1 })}%`;
-}
-
 function FormularioSangramento({ prontuario }: { prontuario: LocalProntuario }) {
   const { control, setValue, getValues, salvando, salvoEm, somenteLeitura } = useSecao(
     prontuario,
     "sangramento",
     sangramentoSchema,
-    {
-      preencher: (v) => ({ ...v, dentes: { ...gerarDentesVazios(), ...v.dentes } }),
-    },
   );
 
-  const dentes = useWatch({ control, name: "dentes" });
-  const resultado = useMemo(() => calcularSG(dentes), [dentes]);
+  const registros = useWatch({ control, name: "registros" });
 
-  const alternarDente = (numero: number) => {
-    const atuais = getValues("dentes");
-    const chave = String(numero);
-    const atual = atuais[chave] ?? denteVazio();
-    setValue("dentes", {
-      ...atuais,
-      [chave]: atual.presente ? denteVazio() : { ...atual, presente: true },
-    });
-  };
+  const adicionar = () =>
+    setValue("registros", [
+      ...getValues("registros"),
+      { id: uuid(), data: hojeISO(), dentes: gerarDentesVazios() },
+    ]);
 
-  const alternarFace = (numero: number, face: Face) => {
-    const atuais = getValues("dentes");
-    const chave = String(numero);
-    const atual = atuais[chave] ?? denteVazio();
-    if (!atual.presente) return;
-    setValue("dentes", {
-      ...atuais,
-      [chave]: { ...atual, faces: { ...atual.faces, [face]: atual.faces[face] === 1 ? 0 : 1 } },
-    });
-  };
+  const atualizar = (id: string, parcial: Partial<RegistroSangramentoDados>) =>
+    setValue(
+      "registros",
+      getValues("registros").map((r) => (r.id === id ? { ...r, ...parcial } : r)),
+    );
 
-  const comSangramento = resultado.facesSangrantes > 0;
+  const remover = (id: string) =>
+    setValue(
+      "registros",
+      getValues("registros").filter((r) => r.id !== id),
+    );
 
   return (
     <div className="flex flex-col gap-3 pb-2">
-      <GrupoFicha titulo="Data do exame">
-        <Controller
-          control={control}
-          name="data"
-          render={({ field }) => (
-            <CampoData label="Data do exame" value={field.value} onChange={field.onChange} disabled={somenteLeitura} />
-          )}
-        />
+      <GrupoFicha
+        titulo="Sangramento gengival"
+        subtitulo="Registre o índice de sangramento a cada avaliação. Quanto maior o percentual, pior a saúde gengival."
+      >
+        {registros.length === 0 && (
+          <div className="flex flex-col items-center gap-3 rounded-field border border-line-soft bg-paper px-4 py-8 text-center">
+            <Droplet size={24} className="text-ink-faint" aria-hidden="true" />
+            <p className="text-[13px] text-ink-faint">Nenhum registro ainda.</p>
+            {!somenteLeitura && (
+              <button type="button" className="btn-primary" onClick={adicionar}>
+                Adicionar primeiro registro
+              </button>
+            )}
+          </div>
+        )}
       </GrupoFicha>
 
-      <GrupoFicha
-        titulo="Registro por face"
-        subtitulo="Toque no dente para marcá-lo como presente. Depois, toque nas faces para registrar sangramento."
-      >
-        <div className="flex flex-col gap-1.5 text-[11.5px] text-ink-soft">
-          <div className="flex items-center gap-2">
-            <Swatch valor="0" sangrando={false} />
-            <span>Face sem sangramento</span>
-            <Swatch valor="1" sangrando />
-            <span>Face com sangramento</span>
-          </div>
-          <p>Dente circulado = presente na boca</p>
-          <p>V = vestibular · P = palatina (superior) · L = lingual (inferior)</p>
-        </div>
-
-        <GridSangramento
-          dentes={dentes}
-          onToggleDente={alternarDente}
-          onToggleFace={alternarFace}
+      {registros.map((registro, indice) => (
+        <RegistroSangramento
+          key={registro.id}
+          registro={registro}
+          indice={indice}
+          onChange={(parcial) => atualizar(registro.id, parcial)}
+          onRemover={registros.length > 1 ? () => remover(registro.id) : undefined}
           disabled={somenteLeitura}
         />
-      </GrupoFicha>
+      ))}
 
-      <GrupoFicha titulo="Resultado">
-        <dl className="flex flex-col gap-1.5 text-[13px]">
-          <div className="flex items-center justify-between">
-            <dt className="text-ink-soft">Dentes presentes</dt>
-            <dd className="font-semibold text-ink">{resultado.dentesPresentes}</dd>
-          </div>
-          <div className="flex items-center justify-between">
-            <dt className="text-ink-soft">Faces com sangramento</dt>
-            <dd className="font-semibold text-ink">{resultado.facesSangrantes}</dd>
-          </div>
-        </dl>
-
-        <div
-          role="status"
-          aria-live="polite"
-          className={`mt-1 rounded-field border p-4 text-center ${
-            comSangramento ? "border-alt bg-alt-tint" : "border-primary bg-primary-tint"
-          }`}
+      {registros.length > 0 && !somenteLeitura && (
+        <button
+          type="button"
+          onClick={adicionar}
+          className="flex w-full items-center justify-center gap-1.5 rounded-xl border-2 border-dashed border-ink-faint bg-transparent py-3 text-[13px] font-semibold text-ink-soft"
         >
-          <p className="text-[11px] font-semibold uppercase tracking-wider text-ink-soft">Sangramento gengival (SG)</p>
-          <p className={`font-display text-[36px] font-medium leading-tight ${comSangramento ? "text-alt" : "text-primary"}`}>
-            {formatarPercentual(resultado.percentual)}
-          </p>
-          <p className="mt-1 text-[11px] text-ink-faint">SG = (faces sangrantes × 100) ÷ (dentes presentes × 2)</p>
-          <p className="mt-1 text-[11.5px] text-ink-soft">{resultado.interpretacao}</p>
-        </div>
-      </GrupoFicha>
+          <Plus size={16} aria-hidden="true" />
+          Adicionar registro de sangramento
+        </button>
+      )}
 
       <IndicadorSalvamento
         salvando={salvando}

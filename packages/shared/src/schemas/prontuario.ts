@@ -234,9 +234,16 @@ export type DenteSangramento = z.infer<typeof denteSangramentoSchema>;
 
 export const sangramentoDentesSchema = z.record(z.string(), denteSangramentoSchema);
 
-export const sangramentoSchema = z.object({
+export const registroSangramentoSchema = z.object({
+  id: z.string(),
   data: z.string().default(""),
   dentes: sangramentoDentesSchema.default({}),
+});
+
+export type RegistroSangramentoDados = z.infer<typeof registroSangramentoSchema>;
+
+export const sangramentoSchema = z.object({
+  registros: z.array(registroSangramentoSchema).default([]),
 });
 
 export type Sangramento = z.infer<typeof sangramentoSchema>;
