@@ -218,3 +218,27 @@ export const planoSchema = z.object({
 export type Plano = z.infer<typeof planoSchema>;
 
 export const vazioPlano = (): Plano => planoSchema.parse({});
+
+export const denteSangramentoSchema = z.object({
+  presente: z.boolean().default(false),
+  faces: z
+    .object({
+      V: z.number().int().min(0).max(1).default(0),
+      P: z.number().int().min(0).max(1).default(0),
+      L: z.number().int().min(0).max(1).default(0),
+    })
+    .default({}),
+});
+
+export type DenteSangramento = z.infer<typeof denteSangramentoSchema>;
+
+export const sangramentoDentesSchema = z.record(z.string(), denteSangramentoSchema);
+
+export const sangramentoSchema = z.object({
+  data: z.string().default(""),
+  dentes: sangramentoDentesSchema.default({}),
+});
+
+export type Sangramento = z.infer<typeof sangramentoSchema>;
+
+export const vazioSangramento = (): Sangramento => sangramentoSchema.parse({});

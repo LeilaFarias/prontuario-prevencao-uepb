@@ -9,6 +9,7 @@ import Exames from "../components/ficha/Exames";
 import HistoriaMedica from "../components/ficha/HistoriaMedica";
 import HistoriaOdontologica from "../components/ficha/HistoriaOdontologica";
 import Plano from "../components/ficha/Plano";
+import Sangramento from "../components/ficha/Sangramento";
 import Procedimentos from "../components/ficha/Procedimentos";
 import StatusBar from "../components/StatusBar";
 import Topbar from "../components/Topbar";
@@ -139,6 +140,8 @@ export default function Prontuario() {
           />
         ) : secao.id === "historia-odontologica" ? (
           <HistoriaOdontologica key={pront.id} prontuarioId={pront.id} />
+        ) : secao.id === "sangramento" ? (
+          <Sangramento key={pront.id} prontuarioId={pront.id} />
         ) : secao.id === "plano-preventivo" ? (
           <Plano key={pront.id} prontuarioId={pront.id} />
         ) : secao.id === "procedimentos" ? (
