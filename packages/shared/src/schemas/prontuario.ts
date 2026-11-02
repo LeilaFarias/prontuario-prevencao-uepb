@@ -276,3 +276,35 @@ export const ihosSchema = z.object({
 export type IHOS = z.infer<typeof ihosSchema>;
 
 export const vazioIHOS = (): IHOS => ihosSchema.parse({});
+
+const calculoManualCPODSchema = z.object({
+  C: z.string().default(""),
+  P: z.string().default(""),
+  O: z.string().default(""),
+  total: z.string().default(""),
+});
+
+const calculoManualCEODSchema = z.object({
+  c: z.string().default(""),
+  e: z.string().default(""),
+  o: z.string().default(""),
+  total: z.string().default(""),
+});
+
+export const registroCPODSchema = z.object({
+  id: z.string(),
+  data: z.string().default(""),
+  dentes: z.record(z.string(), z.string()).default({}),
+  cpodManual: calculoManualCPODSchema.default({}),
+  ceodManual: calculoManualCEODSchema.default({}),
+});
+
+export type RegistroCPODDados = z.infer<typeof registroCPODSchema>;
+
+export const cpodSchema = z.object({
+  registros: z.array(registroCPODSchema).default([]),
+});
+
+export type CPOD = z.infer<typeof cpodSchema>;
+
+export const vazioCPOD = (): CPOD => cpodSchema.parse({});

@@ -10,3 +10,8 @@ export function formatarDataHora(iso: string | null | undefined): string {
   if (Number.isNaN(d.getTime())) return "";
   return `${pad(d.getDate())}/${pad(d.getMonth() + 1)} ${pad(d.getHours())}:${pad(d.getMinutes())}`;
 }
+
+export function formatarDataBR(iso: string | null | undefined): string {
+  const m = /^(\d{4})-(\d{2})-(\d{2})$/.exec(iso ?? "");
+  return m ? `${m[3]}/${m[2]}/${m[1]}` : "";
+}

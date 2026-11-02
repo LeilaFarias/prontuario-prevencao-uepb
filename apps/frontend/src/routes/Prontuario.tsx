@@ -4,6 +4,7 @@ import { useNavigate, useParams } from "react-router-dom";
 import { SECOES, type SecaoId } from "@prontuario/shared";
 import Consentimento from "../components/ficha/Consentimento";
 import Conclusao from "../components/ficha/Conclusao";
+import CPOD from "../components/ficha/CPOD";
 import DadosPessoais from "../components/ficha/DadosPessoais";
 import Exames from "../components/ficha/Exames";
 import HistoriaMedica from "../components/ficha/HistoriaMedica";
@@ -141,6 +142,8 @@ export default function Prontuario() {
           />
         ) : secao.id === "historia-odontologica" ? (
           <HistoriaOdontologica key={pront.id} prontuarioId={pront.id} />
+        ) : secao.id === "cpod-ceod" ? (
+          <CPOD key={pront.id} prontuarioId={pront.id} />
         ) : secao.id === "ihos" ? (
           <IHOS key={pront.id} prontuarioId={pront.id} />
         ) : secao.id === "sangramento" ? (
