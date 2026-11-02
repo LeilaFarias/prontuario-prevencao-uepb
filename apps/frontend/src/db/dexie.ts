@@ -34,10 +34,16 @@ export interface LocalPlanoProfessor {
   atualizadoEm: number;
 }
 
+export interface LocalProfessor {
+  id: string;
+  nome: string;
+  matricula: string;
+}
+
 export interface LocalSyncOp {
   id?: number;
   prontuarioId: string;
-  op: "create" | "update" | "delete" | "enviar" | "reabrir";
+  op: "create" | "update" | "delete" | "enviar" | "reabrir" | "liberacao-manual";
   entity: "prontuario" | "secao" | "procedimento" | "anexo";
   entityId: string;
   payload: Record<string, unknown>;
@@ -48,6 +54,7 @@ class ProntuarioDB extends Dexie {
   prontuarios!: Table<LocalProntuario, string>;
   syncQueue!: Table<LocalSyncOp, number>;
   planosProfessor!: Table<LocalPlanoProfessor, string>;
+  professores!: Table<LocalProfessor, string>;
 
   constructor() {
     super("prontuario-digital");
@@ -57,6 +64,9 @@ class ProntuarioDB extends Dexie {
     });
     this.version(2).stores({
       planosProfessor: "prontuarioId, atualizadoEm",
+    });
+    this.version(3).stores({
+      professores: "id, matricula",
     });
   }
 }

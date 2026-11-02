@@ -126,6 +126,9 @@ export default function TelaBloqueio({
             Aguardando revisão do professor
           </button>
         )}
+        <button type="button" className="btn-ghost" onClick={onSolicitarManual}>
+          Solicitar acesso manual
+        </button>
       </footer>
     </div>
   );

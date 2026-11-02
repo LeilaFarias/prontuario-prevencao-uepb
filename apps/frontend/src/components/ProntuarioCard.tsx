@@ -1,7 +1,7 @@
 import type { KeyboardEvent, MouseEvent } from "react";
 import { Check, CircleAlert, Clock, Lock, PenLine, RefreshCw, RotateCcw, type LucideIcon } from "lucide-react";
 import type { LocalProntuario } from "../db/dexie";
-import { acessoVigente, pedidoPendente, pedidoRecusado } from "../lib/acesso";
+import { acessoVigente, pedidoPendente, pedidoRecusado, prontuarioBloqueado } from "../lib/acesso";
 import { formatarIdade } from "../lib/idade";
 import { tempoRelativo } from "../lib/tempo";
 import TimerRegressivo from "./TimerRegressivo";
@@ -37,7 +37,7 @@ export default function ProntuarioCard({ prontuario: p, onAbrir, onSolicitarAces
   const semNome = p.pacienteNome.trim() === "";
   const vigente = acessoVigente(p);
   const recusado = pedidoRecusado(p);
-  const bloqueado = p.status === "assinado" && !vigente && !recusado;
+  const bloqueado = prontuarioBloqueado(p) && !recusado;
   const pendente = pedidoPendente(p);
 
   const badge: Badge = recusado

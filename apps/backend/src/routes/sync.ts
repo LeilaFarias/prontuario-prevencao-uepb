@@ -8,7 +8,7 @@ import {
   type SyncResponse,
 } from "@prontuario/shared";
 import { transacao } from "../db";
-import { acessoCobreOperacao, type AcessoRow } from "../lib/acesso";
+import { ACESSO_DURACAO_MS, acessoCobreOperacao, type AcessoRow } from "../lib/acesso";
 import { enviarProntuario } from "../lib/envio";
 import { reabrirProntuario } from "../lib/reabertura";
 
@@ -22,6 +22,11 @@ const prontuarioPayload = z.object({
 const secaoPayload = z.object({
   secaoId: z.string().min(1),
   conteudo: z.unknown(),
+});
+
+const liberacaoManualPayload = z.object({
+  matricula: z.string().trim().min(1),
+  acessoExpiraEm: z.string().refine((v) => !Number.isNaN(new Date(v).getTime())),
 });
 
 interface ProntRow extends AcessoRow {
@@ -61,6 +66,18 @@ export const syncRoutes: FastifyPluginAsync = async (app) => {
      WHERE id = ?`,
   );
   const apagarPront = db.prepare("DELETE FROM Prontuario WHERE id = ?");
+  const buscarProfessorPorMatricula = db.prepare(
+    "SELECT id FROM Usuario WHERE matricula = ? AND UPPER(perfil) = 'PROFESSOR' AND ativo = 1",
+  );
+  const gravarLiberacaoManual = db.prepare(
+    `UPDATE Prontuario
+     SET acessoExpiraEm = ?, acessoRevogadoEm = NULL, acessoSolicitadoEm = NULL,
+         acessoRecusadoEm = NULL, atualizadoEm = ?
+     WHERE id = ?`,
+  );
+  const registrarAuditoria = db.prepare(
+    `INSERT INTO AuditLog (id, usuarioId, prontuarioId, acao, detalhe) VALUES (?, ?, ?, ?, ?)`,
+  );
   const upsertSecao = db.prepare(
     `INSERT INTO Secao (id, prontuarioId, secaoId, conteudo, atualizadoEm) VALUES (?, ?, ?, ?, ?)
      ON CONFLICT (prontuarioId, secaoId)
@@ -71,6 +88,28 @@ export const syncRoutes: FastifyPluginAsync = async (app) => {
     `INSERT INTO SyncOperationLog (id, prontuarioId, entity, entityId, op, ts, descartada)
      VALUES (?, (SELECT id FROM Prontuario WHERE id = ?), ?, ?, ?, ?, ?)`,
   );
+
+  function liberarManualmente(op: SyncOperation): boolean {
+    const p = liberacaoManualPayload.safeParse(op.payload);
+    if (!p.success) return false;
+
+    const professor = buscarProfessorPorMatricula.get(p.data.matricula) as unknown as { id: string } | undefined;
+    if (!professor) return false;
+
+    const expiraMs = new Date(p.data.acessoExpiraEm).getTime();
+    if (expiraMs > op.ts + ACESSO_DURACAO_MS) return false;
+
+    const agora = new Date().toISOString();
+    gravarLiberacaoManual.run(new Date(expiraMs).toISOString(), agora, op.prontuarioId);
+    registrarAuditoria.run(
+      randomUUID(),
+      professor.id,
+      op.prontuarioId,
+      "liberacao-manual-offline",
+      JSON.stringify({ matricula: p.data.matricula, acessoExpiraEm: p.data.acessoExpiraEm, ts: op.ts }),
+    );
+    return true;
+  }
 
   function aplicar(op: SyncOperation, existe: boolean): void {
     const agora = new Date().toISOString();
@@ -146,7 +185,14 @@ export const syncRoutes: FastifyPluginAsync = async (app) => {
           }
         }
 
-        if (!descartar && pront?.acessoRevogadoEm && op.ts > new Date(pront.acessoRevogadoEm).getTime()) {
+        const liberacaoManual = op.entity === "prontuario" && op.op === "liberacao-manual";
+
+        if (
+          !descartar &&
+          !liberacaoManual &&
+          pront?.acessoRevogadoEm &&
+          op.ts > new Date(pront.acessoRevogadoEm).getTime()
+        ) {
           descartar = true;
         }
 
@@ -156,6 +202,8 @@ export const syncRoutes: FastifyPluginAsync = async (app) => {
               const r = enviarProntuario(db, op.prontuarioId, req.user.sub);
               envios.push({ prontuarioId: op.prontuarioId, ...r });
               if (!r.ok) descartar = true;
+            } else if (liberacaoManual) {
+              if (!pront || !liberarManualmente(op)) descartar = true;
             } else if (op.entity === "prontuario" && op.op === "reabrir") {
               if (reabrirProntuario(db, op.prontuarioId, req.user.sub) !== "ok") descartar = true;
             } else {

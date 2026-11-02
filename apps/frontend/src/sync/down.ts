@@ -114,6 +114,12 @@ export async function aplicarRemoto(remoto: ProntuarioRemoto): Promise<boolean> 
 
     if (pendentes > 0) {
       if (!acessoMudou) return false;
+      const liberacaoPendente = await db.syncQueue
+        .where("prontuarioId")
+        .equals(local.id)
+        .filter((o) => o.op === "liberacao-manual")
+        .count();
+      if (liberacaoPendente > 0) return false;
 
       await db.prontuarios.put({
         ...local,

@@ -1,6 +1,7 @@
-import type { ReactElement } from "react";
-import { Navigate, Route, Routes } from "react-router-dom";
+import { useEffect, type ReactElement } from "react";
+import { Navigate, Route, Routes, useLocation } from "react-router-dom";
 import { getSession } from "./lib/session";
+import { atualizarCacheProfessores } from "./sync/professores";
 import { rotaInicial } from "./lib/rotas";
 import Login from "./routes/Login";
 import Cadastro from "./routes/Cadastro";
@@ -40,6 +41,16 @@ function Inicio() {
 }
 
 export default function App() {
+  useLocation();
+  const token = getSession()?.accessToken;
+
+  useEffect(() => {
+    void atualizarCacheProfessores();
+    const aoFicarOnline = () => void atualizarCacheProfessores();
+    window.addEventListener("online", aoFicarOnline);
+    return () => window.removeEventListener("online", aoFicarOnline);
+  }, [token]);
+
   return (
     <div className="device">
       <SessaoAviso />

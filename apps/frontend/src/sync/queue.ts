@@ -360,6 +360,33 @@ export async function reabrirParaCorrecao(prontuarioId: string): Promise<void> {
   void flush();
 }
 
+export async function liberarAcessoManual(prontuarioId: string, matricula: string): Promise<string> {
+  const agora = Date.now();
+  const acessoExpiraEm = new Date(agora + ACESSO_DURACAO_MS).toISOString();
+
+  await db.transaction("rw", db.prontuarios, db.syncQueue, async () => {
+    await db.prontuarios.update(prontuarioId, {
+      acessoExpiraEm,
+      acessoRevogadoEm: undefined,
+      acessoRecusadoEm: undefined,
+      sincronizado: false,
+    });
+    await db.syncQueue.add({
+      prontuarioId,
+      op: "liberacao-manual",
+      entity: "prontuario",
+      entityId: prontuarioId,
+      payload: { matricula, acessoExpiraEm },
+      ts: agora,
+    });
+  });
+
+  registrarSalvamento(agora);
+  notifyChanged();
+  void flush();
+  return acessoExpiraEm;
+}
+
 export async function marcarComoVisto(prontuarioId: string): Promise<void> {
   await db.prontuarios.update(prontuarioId, { vistoPeloAluno: true });
 }

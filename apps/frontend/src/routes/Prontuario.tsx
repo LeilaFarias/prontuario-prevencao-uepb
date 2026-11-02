@@ -22,7 +22,7 @@ import StatusBar from "../components/StatusBar";
 import TelaBloqueio from "../components/TelaBloqueio";
 import TimerAcesso from "../components/TimerAcesso";
 import Topbar from "../components/Topbar";
-import BottomSheet from "../components/BottomSheet";
+import LiberacaoManualModal from "../components/LiberacaoManualModal";
 import { db, type LocalProntuario, type LocalStatus } from "../db/dexie";
 import { useProntuarioSync } from "../hooks/useProntuarioSync";
 import { salvarSecoesPendentes } from "../hooks/useSecao";
@@ -339,20 +339,16 @@ export default function Prontuario() {
           />
         )}
         {modalManual && (
-          <BottomSheet
+          <LiberacaoManualModal
             open
             onClose={() => setModalManual(false)}
-            title="Solicitar acesso manual"
-            subtitle="Peça ao professor para liberar no seu aparelho."
-          >
-            <p className="text-[13px] leading-relaxed text-ink-soft">
-              Esta opção permite que o professor libere o acesso diretamente no seu aparelho, mesmo sem internet.
-            </p>
-            <p className="mt-3 text-[13px] leading-relaxed text-ink-soft">Funcionalidade em implementação.</p>
-            <button type="button" className="btn-ghost mt-4" onClick={() => setModalManual(false)}>
-              Fechar
-            </button>
-          </BottomSheet>
+            prontuarioId={atual.id}
+            pacienteNome={nomeExibido}
+            onLiberado={() => {
+              setModalManual(false);
+              void recarregar();
+            }}
+          />
         )}
       </>
     );

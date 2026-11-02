@@ -6,7 +6,7 @@ import DevolucaoAlunoModal from "../components/DevolucaoAlunoModal";
 import ProntuarioCard from "../components/ProntuarioCard";
 import { db, type LocalProntuario } from "../db/dexie";
 import { useSyncDown } from "../hooks/useSyncDown";
-import { ACESSO_EXPIRADO_EVENT, acessoVigente } from "../lib/acesso";
+import { ACESSO_EXPIRADO_EVENT, acessoVigente, prontuarioBloqueado } from "../lib/acesso";
 import { getSession } from "../lib/session";
 import { criarProntuarioLocal, marcarComoVisto, reabrirParaCorrecao } from "../sync/queue";
 
@@ -55,11 +55,11 @@ const FILTROS: Array<{ id: Filtro; label: string }> = [
 function passaNoFiltro(p: LocalProntuario, filtro: Filtro): boolean {
   switch (filtro) {
     case "rascunho":
-      return p.status === "em_andamento" || acessoVigente(p);
+      return acessoVigente(p);
     case "revisao":
       return p.status === "enviado";
     case "bloqueados":
-      return p.status === "assinado" && !acessoVigente(p);
+      return prontuarioBloqueado(p);
     default:
       return true;
   }
