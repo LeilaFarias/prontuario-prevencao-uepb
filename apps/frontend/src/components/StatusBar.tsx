@@ -1,4 +1,4 @@
-import { CloudOff, RefreshCw } from "lucide-react";
+import { RefreshCw, WifiOff } from "lucide-react";
 import { useSyncStatus } from "../hooks/useSyncStatus";
 
 const pad = (n: number) => String(n).padStart(2, "0");
@@ -11,40 +11,50 @@ function formatarHora(ts: number): string {
 export default function StatusBar({ className = "" }: { className?: string }) {
   const { online, pendentes, ultimoSalvamento } = useSyncStatus();
 
-  let texto: string;
-  let cores: string;
-  let Icone = RefreshCw;
-  let girando = false;
-
   if (!online) {
-    Icone = CloudOff;
-    cores = "bg-alt-tint text-alt";
-    texto =
+    const texto =
       pendentes === 0
-        ? "Offline — sem alterações pendentes"
-        : `Offline — ${pendentes} ${pendentes === 1 ? "alteração" : "alterações"} na fila`;
-  } else if (pendentes > 0) {
-    cores = "bg-sync-tint text-sync";
-    girando = true;
-    texto = `Sincronizando (${pendentes})…`;
-  } else if (ultimoSalvamento !== null) {
-    cores = "bg-sync-tint text-sync";
-    texto = `Sincronizado às ${formatarHora(ultimoSalvamento)}`;
-  } else {
-    return null;
+        ? "Você está sem internet"
+        : `Sem internet — ${pendentes} ${pendentes === 1 ? "alteração" : "alterações"} pendente${pendentes === 1 ? "" : "s"}`;
+
+    return (
+      <span
+        role="status"
+        className={`inline-flex w-fit items-center gap-1.5 rounded-pill border border-alt/20 bg-alt-tint py-1 pl-[7px] pr-[9px] text-[11.5px] font-semibold leading-none text-alt ${className}`}
+      >
+        <WifiOff size={12} className="shrink-0" aria-hidden="true" />
+        <span className="leading-none">{texto}</span>
+      </span>
+    );
   }
 
-  return (
-<span
-  role="status"
-  className={`inline-flex w-fit items-center gap-1.5 rounded-pill py-1 pl-[7px] pr-[9px] text-[11.5px] font-semibold leading-none ${cores} ${className}`}
->
-  <Icone
-    size={12}
-    className={`shrink-0 ${girando ? "animate-spin" : ""}`}
-    aria-hidden="true"
-  />
-  <span className="leading-none">{texto}</span>
-</span>
-  );
+  if (pendentes > 0) {
+    return (
+      <span
+        role="status"
+        className={`inline-flex w-fit items-center gap-1.5 rounded-pill bg-sync-tint py-1 pl-[7px] pr-[9px] text-[11.5px] font-semibold leading-none text-sync ${className}`}
+      >
+        <RefreshCw size={12} className="shrink-0 animate-spin" aria-hidden="true" />
+        <span className="leading-none">
+          Sincronizando ({pendentes})…
+        </span>
+      </span>
+    );
+  }
+
+  if (ultimoSalvamento !== null) {
+    return (
+      <span
+        role="status"
+        className={`inline-flex w-fit items-center gap-1.5 rounded-pill bg-sync-tint py-1 pl-[7px] pr-[9px] text-[11.5px] font-semibold leading-none text-sync ${className}`}
+      >
+        <RefreshCw size={12} className="shrink-0" aria-hidden="true" />
+        <span className="leading-none">
+          Salvo neste aparelho às {formatarHora(ultimoSalvamento)}
+        </span>
+      </span>
+    );
+  }
+
+  return null;
 }

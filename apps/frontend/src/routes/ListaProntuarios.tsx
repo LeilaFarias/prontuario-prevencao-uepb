@@ -1,7 +1,7 @@
 import { useEffect, useReducer, useState, type ReactNode } from "react";
 import { useLiveQuery } from "dexie-react-hooks";
 import { useNavigate } from "react-router-dom";
-import { Check, Plus, RefreshCw, RotateCcw, X } from "lucide-react";
+import { Check, Plus, RefreshCw, RotateCcw, WifiOff, X } from "lucide-react";
 import DevolucaoAlunoModal from "../components/DevolucaoAlunoModal";
 import ProntuarioCard from "../components/ProntuarioCard";
 import { db, type LocalProntuario } from "../db/dexie";
@@ -81,11 +81,23 @@ export default function ListaProntuarios() {
 
   const [devolvidoId, setDevolvidoId] = useState<string | null>(null);
   const [filtro, setFiltro] = useState<Filtro>("todos");
+  const [online, setOnline] = useState(() => navigator.onLine);
   const [, renderizar] = useReducer((n: number) => n + 1, 0);
 
   useEffect(() => {
     window.addEventListener(ACESSO_EXPIRADO_EVENT, renderizar);
     return () => window.removeEventListener(ACESSO_EXPIRADO_EVENT, renderizar);
+  }, []);
+
+  useEffect(() => {
+    const onOnline = () => setOnline(true);
+    const onOffline = () => setOnline(false);
+    window.addEventListener("online", onOnline);
+    window.addEventListener("offline", onOffline);
+    return () => {
+      window.removeEventListener("online", onOnline);
+      window.removeEventListener("offline", onOffline);
+    };
   }, []);
 
   const pendentesSync = useLiveQuery(async () => {
@@ -143,6 +155,8 @@ export default function ListaProntuarios() {
     navigate(`/prontuario/${id}`);
   }
 
+  const temPendentes = (pendentesSync?.operacoes ?? 0) > 0;
+
   return (
     <div className="flex flex-1 flex-col">
       <header className="px-5 pb-3 pt-5">
@@ -181,13 +195,30 @@ export default function ListaProntuarios() {
           ))}
         </div>
 
-        {pendentesSync && pendentesSync.operacoes > 0 && (
+        {!online && (
+          <div
+            role="status"
+            className="flex items-start gap-2.5 rounded-xl border border-alt/20 bg-alt-tint p-3 text-[12.5px] text-alt"
+          >
+            <WifiOff size={16} className="mt-0.5 shrink-0" aria-hidden="true" />
+            <span className="min-w-0 flex-1">
+              <strong className="block font-semibold text-alt">Você está sem internet</strong>
+              <span className="mt-0.5 block text-[11.5px] leading-relaxed text-ink-soft">
+                {temPendentes
+                  ? `${pendentesSync!.prontuarios} ${pendentesSync!.prontuarios === 1 ? "prontuário será sincronizado" : "prontuários serão sincronizados"} quando a conexão voltar.`
+                  : "Você pode continuar editando. As alterações serão sincronizadas quando a conexão voltar."}
+              </span>
+            </span>
+          </div>
+        )}
+
+        {online && temPendentes && (
           <div role="status" className="flex items-center gap-2 rounded-xl bg-sync-tint p-3 text-[12.5px] text-sync">
             <RefreshCw size={16} className="shrink-0 animate-spin" aria-hidden="true" />
             <span className="min-w-0 flex-1">
-              {pendentesSync.prontuarios === 1
-                ? "1 prontuário salvo apenas neste aparelho — sincroniza quando a internet voltar."
-                : `${pendentesSync.prontuarios} prontuários salvos apenas neste aparelho — sincronizam quando a internet voltar.`}
+              {pendentesSync!.prontuarios === 1
+                ? "1 prontuário salvo apenas neste aparelho — sincronizando…"
+                : `${pendentesSync!.prontuarios} prontuários salvos apenas neste aparelho — sincronizando…`}
             </span>
           </div>
         )}

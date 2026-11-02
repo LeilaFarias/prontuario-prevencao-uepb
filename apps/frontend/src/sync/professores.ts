@@ -13,7 +13,7 @@ export async function atualizarCacheProfessores(): Promise<void> {
   try {
     const lista = await api.get<ProfessorRemoto[]>("/professores");
     const professores: LocalProfessor[] = lista.flatMap((p) =>
-      p.matricula ? [{ id: p.id, nome: p.nome, matricula: p.matricula.trim() }] : [],
+      p.matricula ? [{ id: p.id, nome: p.nome, matricula: String(p.matricula).trim() }] : [],
     );
     await db.professores.bulkPut(professores);
   } catch {

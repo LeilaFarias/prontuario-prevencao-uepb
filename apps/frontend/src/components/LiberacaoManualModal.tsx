@@ -1,7 +1,7 @@
 import { useEffect, useState } from "react";
-import { CheckCircle2, ShieldAlert } from "lucide-react";
-import type { LocalProfessor } from "../db/dexie";
-import { buscarProfessorPorMatricula } from "../sync/professores";
+import { CheckCircle2, Eye, EyeOff, ShieldAlert } from "lucide-react";
+import { db, type LocalProfessor } from "../db/dexie";
+import { atualizarCacheProfessores, buscarProfessorPorMatricula } from "../sync/professores";
 import { liberarAcessoManual } from "../sync/queue";
 import BottomSheet from "./BottomSheet";
 
@@ -20,18 +20,28 @@ export default function LiberacaoManualModal({ open, onClose, prontuarioId, paci
   const [professor, setProfessor] = useState<LocalProfessor | null>(null);
   const [erro, setErro] = useState<string | null>(null);
   const [liberando, setLiberando] = useState(false);
+  const [mostrarMatricula, setMostrarMatricula] = useState(false);
 
   useEffect(() => {
     if (!open) {
       setMatricula("");
       setProfessor(null);
       setErro(null);
+      setMostrarMatricula(false);
     }
   }, [open]);
 
   useEffect(() => {
+    if (!open) return;
+    void (async () => {
+      if ((await db.professores.count()) > 0) return;
+      await atualizarCacheProfessores();
+    })();
+  }, [open]);
+
+  useEffect(() => {
     let ativo = true;
-    const valor = matricula.trim();
+    const valor = matricula.replace(/\D/g, "");
     setProfessor(null);
     setErro(null);
     if (valor.length < MIN_DIGITOS) return;
@@ -88,16 +98,27 @@ export default function LiberacaoManualModal({ open, onClose, prontuarioId, paci
       <label htmlFor="matricula-professor" className="label mt-4">
         Matrícula do professor
       </label>
-      <input
-        id="matricula-professor"
-        type="text"
-        inputMode="numeric"
-        autoComplete="off"
-        className="input"
-        value={matricula}
-        onChange={(e) => setMatricula(e.target.value.trim())}
-        placeholder="Digite a matrícula"
-      />
+      <div className="relative">
+        <input
+          id="matricula-professor"
+          type={mostrarMatricula ? "text" : "password"}
+          inputMode="numeric"
+          autoComplete="off"
+          className="input pr-12"
+          value={matricula}
+          onChange={(e) => setMatricula(e.target.value.replace(/\D/g, ""))}
+          placeholder="Digite a matrícula"
+        />
+        <button
+          type="button"
+          onClick={() => setMostrarMatricula((v) => !v)}
+          className="absolute right-2 top-1/2 -translate-y-1/2 flex h-8 w-8 items-center justify-center rounded-full text-ink-faint transition hover:bg-paper hover:text-ink-soft"
+          aria-label={mostrarMatricula ? "Ocultar matrícula" : "Mostrar matrícula"}
+          aria-pressed={mostrarMatricula}
+        >
+          {mostrarMatricula ? <EyeOff size={16} aria-hidden="true" /> : <Eye size={16} aria-hidden="true" />}
+        </button>
+      </div>
 
       {professor && (
         <p role="status" className="mt-2 flex items-center gap-1.5 text-[13px] font-medium text-primary">
