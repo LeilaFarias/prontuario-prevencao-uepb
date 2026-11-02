@@ -50,7 +50,7 @@ export default function Prontuario() {
   const modoLeitura = params.get("modo") === "leitura";
   const { carregando: sincronizando, versao, recarregar } = useProntuarioSync(id);
   const [verDevolucao, setVerDevolucao] = useState(false);
-  const [modalSolicitar, setModalSolicitar] = useState(false);
+  const [modalSolicitar, setModalSolicitar] = useState(() => params.get("solicitar") === "1");
   const [confirmacaoAberta, setConfirmacaoAberta] = useState(false);
   const resolverConfirmacao = useRef<((ok: boolean) => void) | null>(null);
   const [avisoAprovado, setAvisoAprovado] = useState(false);

@@ -1,12 +1,12 @@
-import { useState, type ReactNode } from "react";
+import { useEffect, useReducer, useState, type ReactNode } from "react";
 import { useLiveQuery } from "dexie-react-hooks";
 import { useNavigate } from "react-router-dom";
-import { Check, Plus, RotateCcw, UserRound, X } from "lucide-react";
+import { Check, Plus, RefreshCw, RotateCcw, X } from "lucide-react";
 import DevolucaoAlunoModal from "../components/DevolucaoAlunoModal";
 import ProntuarioCard from "../components/ProntuarioCard";
-import StatusBar from "../components/StatusBar";
 import { db, type LocalProntuario } from "../db/dexie";
 import { useSyncDown } from "../hooks/useSyncDown";
+import { ACESSO_EXPIRADO_EVENT, acessoVigente } from "../lib/acesso";
 import { getSession } from "../lib/session";
 import { criarProntuarioLocal, marcarComoVisto, reabrirParaCorrecao } from "../sync/queue";
 
@@ -43,6 +43,35 @@ function textoAviso(quantidade: number, singular: string, plural: string): strin
   return quantidade === 1 ? `1 prontuário ${singular}` : `${quantidade} prontuários ${plural}`;
 }
 
+type Filtro = "todos" | "rascunho" | "revisao" | "bloqueados";
+
+const FILTROS: Array<{ id: Filtro; label: string }> = [
+  { id: "todos", label: "Todos" },
+  { id: "rascunho", label: "Rascunho" },
+  { id: "revisao", label: "Aguardando revisão" },
+  { id: "bloqueados", label: "Bloqueados" },
+];
+
+function passaNoFiltro(p: LocalProntuario, filtro: Filtro): boolean {
+  switch (filtro) {
+    case "rascunho":
+      return p.status === "em_andamento" || acessoVigente(p);
+    case "revisao":
+      return p.status === "enviado";
+    case "bloqueados":
+      return p.status === "assinado" && !acessoVigente(p);
+    default:
+      return true;
+  }
+}
+
+function iniciais(nome: string | undefined): string {
+  const partes = (nome ?? "").trim().split(/\s+/).filter(Boolean);
+  if (partes.length === 0) return "?";
+  if (partes.length === 1) return partes[0]!.slice(0, 2).toUpperCase();
+  return (partes[0]![0]! + partes[partes.length - 1]![0]!).toUpperCase();
+}
+
 export default function ListaProntuarios() {
   const navigate = useNavigate();
   const sessao = getSession();
@@ -51,6 +80,18 @@ export default function ListaProntuarios() {
   useSyncDown();
 
   const [devolvidoId, setDevolvidoId] = useState<string | null>(null);
+  const [filtro, setFiltro] = useState<Filtro>("todos");
+  const [, renderizar] = useReducer((n: number) => n + 1, 0);
+
+  useEffect(() => {
+    window.addEventListener(ACESSO_EXPIRADO_EVENT, renderizar);
+    return () => window.removeEventListener(ACESSO_EXPIRADO_EVENT, renderizar);
+  }, []);
+
+  const pendentesSync = useLiveQuery(async () => {
+    const fila = await db.syncQueue.toArray();
+    return { operacoes: fila.length, prontuarios: new Set(fila.map((o) => o.prontuarioId)).size };
+  }, []);
 
   const prontuarios = useLiveQuery(
     async () => {
@@ -60,13 +101,8 @@ export default function ListaProntuarios() {
     [usuario?.id],
   );
 
-  const rotuloContagem = !prontuarios
-    ? ""
-    : prontuarios.length === 0
-      ? "nenhum prontuário"
-      : prontuarios.length === 1
-        ? "1 prontuário"
-        : `${prontuarios.length} prontuários`;
+  const visiveis = prontuarios?.filter((p) => passaNoFiltro(p, filtro)) ?? [];
+  const rotuloContagem = `${visiveis.length} ${visiveis.length === 1 ? "prontuário" : "prontuários"}`;
 
   const devolvido = prontuarios?.find((p) => p.id === devolvidoId);
   const devolvidosNovos = prontuarios?.filter((p) => p.status === "devolvido" && !p.vistoPeloAluno) ?? [];
@@ -96,6 +132,11 @@ export default function ListaProntuarios() {
     navigate(`/prontuario/${p.id}?modo=leitura`);
   }
 
+  function solicitarAcesso(p: LocalProntuario) {
+    void marcarComoVisto(p.id);
+    navigate(`/prontuario/${p.id}?solicitar=1`);
+  }
+
   async function novo() {
     if (!usuario) return;
     const id = await criarProntuarioLocal(usuario.id);
@@ -104,30 +145,53 @@ export default function ListaProntuarios() {
 
   return (
     <div className="flex flex-1 flex-col">
-      <header className="border-b border-line px-5 pb-4 pt-5">
-        <div className="flex items-start justify-between gap-3">
-          <div className="min-w-0 flex-1">
-            <p className="mb-2.5 text-[11px] font-bold uppercase tracking-[0.07em] text-primary">
-              Clínica de Prevenção em Saúde Bucal · UEPB
-            </p>
-            <h1 className="font-display text-[18px] font-semibold leading-[1.15] text-ink">Meus prontuários</h1>
-            <p className="mt-0.5 truncate text-[12px] text-ink-soft">
-              {[usuario?.nome, rotuloContagem].filter(Boolean).join(" · ")}
-            </p>
-          </div>
+      <header className="px-5 pb-3 pt-5">
+        <p className="mb-2 text-[11px] font-bold uppercase tracking-[0.07em] text-primary">
+          Clínica de Prevenção em Saúde Bucal · UEPB
+        </p>
+        <div className="flex items-center justify-between gap-3">
+          <h1 className="font-display text-[28px] font-semibold leading-tight text-ink">Prontuários</h1>
           <button
             type="button"
             onClick={() => navigate("/perfil")}
             aria-label="Perfil"
-            className="flex h-10 w-10 shrink-0 items-center justify-center rounded-full border border-line bg-raised text-ink-soft"
+            className="flex h-10 w-10 shrink-0 items-center justify-center rounded-full bg-primary-tint text-[14px] font-semibold text-primary"
           >
-            <UserRound size={18} />
+            {iniciais(usuario?.nome)}
           </button>
         </div>
-        <StatusBar className="mt-2.5" />
       </header>
 
-      <main className="flex flex-1 flex-col px-5 pb-4 pt-2">
+      <main className="flex flex-1 flex-col gap-3 px-5 pb-4 pt-1">
+        <div className="flex gap-2 overflow-x-auto pb-2 scrollbar-hide" role="group" aria-label="Filtrar prontuários">
+          {FILTROS.map((f) => (
+            <button
+              key={f.id}
+              type="button"
+              aria-pressed={filtro === f.id}
+              onClick={() => setFiltro(f.id)}
+              className={`shrink-0 whitespace-nowrap rounded-pill px-4 py-2 text-[12.5px] ${
+                filtro === f.id
+                  ? "bg-primary font-semibold text-white"
+                  : "border border-line bg-raised font-medium text-ink-soft"
+              }`}
+            >
+              {f.label}
+            </button>
+          ))}
+        </div>
+
+        {pendentesSync && pendentesSync.operacoes > 0 && (
+          <div role="status" className="flex items-center gap-2 rounded-xl bg-sync-tint p-3 text-[12.5px] text-sync">
+            <RefreshCw size={16} className="shrink-0 animate-spin" aria-hidden="true" />
+            <span className="min-w-0 flex-1">
+              {pendentesSync.prontuarios === 1
+                ? "1 prontuário salvo apenas neste aparelho — sincroniza quando a internet voltar."
+                : `${pendentesSync.prontuarios} prontuários salvos apenas neste aparelho — sincronizam quando a internet voltar.`}
+            </span>
+          </div>
+        )}
+
         {devolvidosNovos.length > 0 && (
           <Aviso
             tom="bg-alt-tint text-alt"
@@ -161,28 +225,45 @@ export default function ListaProntuarios() {
               <Plus size={26} />
             </div>
             <p className="mt-4 font-display text-[18px] font-medium text-ink">Nenhum prontuário ainda</p>
-            <p className="mt-1.5 text-[13px] text-ink-soft">
-              Toque em 'Novo prontuário' para começar a preencher a ficha.
-            </p>
+            <p className="mt-1.5 text-[13px] text-ink-soft">Comece preenchendo a ficha de um novo paciente.</p>
+            <button type="button" onClick={novo} className="btn-primary mt-5">
+              <Plus size={18} /> Novo prontuário
+            </button>
           </div>
         )}
 
         {prontuarios && prontuarios.length > 0 && (
-          <ul className="flex flex-col gap-2.5">
-            {prontuarios.map((p) => (
-              <li key={p.id}>
-                <ProntuarioCard prontuario={p} onAbrir={() => abrirProntuario(p)} />
-              </li>
-            ))}
-          </ul>
+          <>
+            <p className="text-[10px] font-bold uppercase tracking-[0.1em] text-ink-faint">{rotuloContagem}</p>
+            {visiveis.length === 0 ? (
+              <p className="rounded-card border border-line-soft bg-raised px-4 py-6 text-center text-[13px] text-ink-soft">
+                Nenhum prontuário neste filtro.
+              </p>
+            ) : (
+              <ul className="flex flex-col gap-2.5">
+                {visiveis.map((p) => (
+                  <li key={p.id}>
+                    <ProntuarioCard
+                      prontuario={p}
+                      onAbrir={() => abrirProntuario(p)}
+                      onSolicitarAcesso={() => solicitarAcesso(p)}
+                      onCorrigir={() => void corrigir(p)}
+                    />
+                  </li>
+                ))}
+              </ul>
+            )}
+          </>
         )}
       </main>
 
-      <footer className="sticky bottom-0 border-t border-line bg-paper px-5 py-3">
-        <button type="button" onClick={novo} className="btn-primary">
-          <Plus size={18} /> Novo prontuário
-        </button>
-      </footer>
+      {prontuarios && prontuarios.length > 0 && (
+        <footer className="sticky bottom-0 border-t border-line bg-paper px-5 py-3">
+          <button type="button" onClick={novo} className="btn-primary">
+            <Plus size={18} /> Novo prontuário
+          </button>
+        </footer>
+      )}
 
       {devolvido && (
         <DevolucaoAlunoModal
