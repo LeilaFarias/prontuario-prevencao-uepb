@@ -80,6 +80,14 @@ export interface HistoricoProntuario {
   secoes: Record<string, unknown>;
 }
 
+export interface Encaminhamento {
+  prontuarioId: string;
+  pacienteNome: string;
+  duplaNome: string;
+  encaminhamentoEm: string;
+  encaminhamentoPara: string;
+}
+
 export interface AssinarResponse {
   ok: true;
   assinadoEm: string;

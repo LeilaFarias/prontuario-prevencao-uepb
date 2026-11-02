@@ -1,8 +1,8 @@
-import { ClipboardList, KeyRound } from "lucide-react";
+import { ClipboardList, KeyRound, Send } from "lucide-react";
 import { useNavigate } from "react-router-dom";
 import { useAcessosCount } from "../hooks/useAcessosCount";
 
-type Aba = "fila" | "acessos";
+type Aba = "fila" | "acessos" | "encaminhar";
 
 export default function TabBarProfessor({ ativa }: { ativa: Aba }) {
   const navigate = useNavigate();
@@ -11,10 +11,11 @@ export default function TabBarProfessor({ ativa }: { ativa: Aba }) {
   const abas: Array<{ id: Aba; rota: string; rotulo: string; Icone: typeof ClipboardList; badge: number }> = [
     { id: "fila", rota: "/fila", rotulo: "Fila", Icone: ClipboardList, badge: 0 },
     { id: "acessos", rota: "/acessos", rotulo: "Acessos", Icone: KeyRound, badge: pedidos },
+    { id: "encaminhar", rota: "/encaminhamentos", rotulo: "Encaminhar", Icone: Send, badge: 0 },
   ];
 
   return (
-    <nav aria-label="Navegação do professor" className="sticky bottom-0 grid grid-cols-2 border-t border-line bg-paper">
+    <nav aria-label="Navegação do professor" className="sticky bottom-0 grid grid-cols-3 border-t border-line bg-paper">
       {abas.map(({ id, rota, rotulo, Icone, badge }) => {
         const selecionada = id === ativa;
         return (

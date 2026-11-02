@@ -6,6 +6,7 @@ import {
   manterTitularidadeSchema,
   transferirTitularidadeSchema,
   type DuplicidadeResponse,
+  type Encaminhamento,
   type HistoricoProntuario,
   type PartesDuplicidade,
   type AssinarResponse,
@@ -131,6 +132,14 @@ export const prontuariosRoutes: FastifyPluginAsync = async (app) => {
      JOIN Usuario u ON u.id = p.alunoTitularId
      LEFT JOIN Usuario pr ON pr.id = p.professorSupervisorId
      WHERE p.id = ?`,
+  );
+  const listarConclusoesDoProfessor = db.prepare(
+    `SELECT p.id, p.pacienteNome, u.nome AS alunoNome, s.conteudo
+     FROM Prontuario p
+     JOIN Secao s ON s.prontuarioId = p.id AND s.secaoId = 'conclusao'
+     JOIN Usuario u ON u.id = p.alunoTitularId
+     WHERE p.professorSupervisorId = ? AND p.status = 'ASSINADO'
+     ORDER BY p.atualizadoEm DESC`,
   );
   const buscarSecoes = db.prepare("SELECT secaoId, conteudo FROM Secao WHERE prontuarioId = ?");
   const buscarSecaoProcedimentos = db.prepare(
@@ -312,6 +321,41 @@ export const prontuariosRoutes: FastifyPluginAsync = async (app) => {
     const userId = req.user.sub;
     const linhas = (ehAluno(req.user.perfil) ? listarDoAluno.all(userId) : listarTodos.all()) as unknown as ProntuarioListaRow[];
     return linhas.map(comDestino);
+  });
+
+  app.get("/encaminhamentos", protegida, async (req, reply) => {
+    if (ehAluno(req.user.perfil)) {
+      return reply.status(403).send({ message: "Apenas professores podem consultar encaminhamentos." });
+    }
+
+    const linhas = listarConclusoesDoProfessor.all(req.user.sub) as unknown as Array<{
+      id: string;
+      pacienteNome: string;
+      alunoNome: string;
+      conteudo: string;
+    }>;
+
+    const encaminhamentos: Encaminhamento[] = [];
+    for (const linha of linhas) {
+      try {
+        const c = JSON.parse(linha.conteudo) as {
+          tipoDesfecho?: unknown;
+          encaminhamentoEm?: unknown;
+          encaminhamentoPara?: unknown;
+        };
+        if (c.tipoDesfecho !== "encaminhado") continue;
+        encaminhamentos.push({
+          prontuarioId: linha.id,
+          pacienteNome: linha.pacienteNome,
+          duplaNome: nomeDuplaDe(linha.id, linha.alunoNome),
+          encaminhamentoEm: typeof c.encaminhamentoEm === "string" ? c.encaminhamentoEm : "",
+          encaminhamentoPara: typeof c.encaminhamentoPara === "string" ? c.encaminhamentoPara.trim() : "",
+        });
+      } catch {
+        req.log.warn({ prontuarioId: linha.id }, "seção de conclusão com JSON inválido ignorada");
+      }
+    }
+    return encaminhamentos;
   });
 
   app.get<{ Params: { id: string } }>("/prontuarios/:id", protegida, async (req, reply) => {
