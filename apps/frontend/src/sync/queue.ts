@@ -1,10 +1,12 @@
 import {
   salvarSecaoSchema,
+  type EnvioSincronizado,
+  type ResultadoEnvio,
   type SecaoId,
   type SyncResponse,
 } from "@prontuario/shared";
 import { db } from "../db/dexie";
-import { api } from "../lib/api";
+import { ApiError, api } from "../lib/api";
 import { uuid } from "../lib/uuid";
 
 export const SYNC_EVENT = "sync:changed";
@@ -139,22 +141,30 @@ export async function salvarSecaoLocal(
   void flush();
 }
 
-let enviando = false;
+let emVoo: Promise<void> | null = null;
 
-/** Envia a fila ao servidor. Em caso de falha, os itens permanecem para o próximo ciclo. */
-export async function flush(): Promise<void> {
-  if (enviando || !navigator.onLine) return;
-  enviando = true;
+
+export function flush(): Promise<void> {
+  if (!navigator.onLine) return Promise.resolve();
+  if (emVoo) return emVoo;
+  emVoo = executarFlush().finally(() => {
+    emVoo = null;
+  });
+  return emVoo;
+}
+
+async function executarFlush(): Promise<void> {
   try {
     for (;;) {
       const lote = await db.syncQueue.toCollection().limit(LOTE).toArray();
       if (lote.length === 0) break;
 
-      await api.post<SyncResponse>("/sync", {
+      const resposta = await api.post<SyncResponse>("/sync", {
         operations: lote.map(({ id: _id, ...op }) => op),
       });
 
       await db.syncQueue.bulkDelete(lote.map((o) => o.id!));
+      await tratarEnviosRecusados(resposta.envios ?? []);
 
       for (const pid of new Set(lote.map((o) => o.prontuarioId))) {
         const restantes = await db.syncQueue.where("prontuarioId").equals(pid).count();
@@ -164,8 +174,100 @@ export async function flush(): Promise<void> {
     }
   } catch {
     // mantém a fila; tenta de novo no próximo ciclo ou quando voltar online
-  } finally {
-    enviando = false;
+  }
+}
+
+async function tratarEnviosRecusados(envios: EnvioSincronizado[]): Promise<void> {
+  for (const e of envios) {
+    if (e.ok || e.erro === "ja_enviado") continue;
+    await db.prontuarios
+      .where("id")
+      .equals(e.prontuarioId)
+      .modify((p) => {
+        p.status = "em_andamento";
+        p.atualizadoEm = Date.now();
+        p.erroEnvio = e.erro === "professor_nao_encontrado" ? "professor_nao_encontrado" : "falha";
+      });
+  }
+}
+
+export type ResultadoEnvioLocal =
+  | { tipo: "enviado"; resultado: ResultadoEnvio; enviadoEm: number }
+  | { tipo: "offline"; salvoEm: number }
+  | { tipo: "professor_nao_encontrado" }
+  | { tipo: "erro"; mensagem: string };
+
+const esperar = (ms: number) => new Promise<void>((resolve) => window.setTimeout(resolve, ms));
+
+async function marcarEnviadoLocal(prontuarioId: string, sincronizado: boolean, ts: number): Promise<void> {
+  await db.prontuarios
+    .where("id")
+    .equals(prontuarioId)
+    .modify((p) => {
+      p.status = "enviado";
+      p.atualizadoEm = ts;
+      p.sincronizado = sincronizado;
+      delete p.erroEnvio;
+    });
+}
+
+async function enfileirarEnvio(prontuarioId: string): Promise<number> {
+  const agora = Date.now();
+
+  await db.transaction("rw", db.prontuarios, db.syncQueue, async () => {
+    const naFila = await db.syncQueue.where("prontuarioId").equals(prontuarioId).toArray();
+    const ts = Math.max(agora, ...naFila.map((o) => o.ts + 1)); // o servidor aplica por ts: "enviar" tem de ser o último
+    await marcarEnviadoLocal(prontuarioId, false, ts);
+    if (!naFila.some((o) => o.op === "enviar")) {
+      await db.syncQueue.add({
+        prontuarioId,
+        op: "enviar",
+        entity: "prontuario",
+        entityId: prontuarioId,
+        payload: {},
+        ts,
+      });
+    }
+  });
+
+  registrarSalvamento(agora);
+  notifyChanged();
+  void flush();
+  return agora;
+}
+
+export async function enviarAoProfessor(prontuarioId: string): Promise<ResultadoEnvioLocal> {
+  if (!navigator.onLine) return { tipo: "offline", salvoEm: await enfileirarEnvio(prontuarioId) };
+
+  let pendentes = 0;
+  for (let tentativa = 0; tentativa < 3; tentativa++) {
+    await flush();
+    pendentes = await db.syncQueue.where("prontuarioId").equals(prontuarioId).count();
+    if (pendentes === 0) break;
+    await esperar(400);
+  }
+  if (pendentes > 0) return { tipo: "offline", salvoEm: await enfileirarEnvio(prontuarioId) };
+
+  try {
+    const resultado = await api.post<ResultadoEnvio>(`/prontuarios/${encodeURIComponent(prontuarioId)}/enviar`, {});
+    if (!resultado.ok) {
+      if (resultado.erro === "professor_nao_encontrado") return { tipo: "professor_nao_encontrado" };
+      return { tipo: "erro", mensagem: "Não foi possível enviar o prontuário. Tente novamente." };
+    }
+    const enviadoEm = Date.now();
+    await marcarEnviadoLocal(prontuarioId, true, enviadoEm);
+    notifyChanged();
+    return { tipo: "enviado", resultado, enviadoEm };
+  } catch (err) {
+    if (err instanceof ApiError) {
+      if (err.status === 0) return { tipo: "offline", salvoEm: await enfileirarEnvio(prontuarioId) };
+      if (err.status === 409) {
+        await marcarEnviadoLocal(prontuarioId, true, Date.now());
+        notifyChanged();
+      }
+      return { tipo: "erro", mensagem: err.message };
+    }
+    return { tipo: "erro", mensagem: "Não foi possível enviar o prontuário. Tente novamente." };
   }
 }
 

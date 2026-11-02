@@ -12,11 +12,12 @@ import { useSecao } from "../../hooks/useSecao";
 import { useSyncStatus } from "../../hooks/useSyncStatus";
 import { hojeISO, formatarDataHora } from "../../lib/data";
 import CampoData from "./CampoData";
+import CampoProfessor from "./CampoProfessor";
 import CampoTexto, { type CampoTextoProps } from "./CampoTexto";
 import GrupoFicha from "./GrupoFicha";
 import UploadAssinatura from "./UploadAssinatura";
 
-type ChaveTexto = "semestreLetivo" | "professorSupervisor" | "alunoOperador" | "alunoAuxiliar";
+type ChaveTexto = "semestreLetivo" | "alunoOperador" | "alunoAuxiliar";
 
 type ExtraTexto = Partial<Pick<CampoTextoProps, "placeholder" | "inputMode" | "autoComplete" | "maxLength" | "type">>;
 
@@ -168,7 +169,13 @@ function FormularioConsentimento({
         </div>
 
         {texto("semestreLetivo", "Semestre letivo", { placeholder: "2026.2" })}
-        {texto("professorSupervisor", "Professor supervisor", { placeholder: "Nome do professor responsável" })}
+        <Controller
+          control={control}
+          name="professorSupervisor"
+          render={({ field }) => (
+            <CampoProfessor value={field.value} onChange={field.onChange} disabled={somenteLeitura} />
+          )}
+        />
         {texto("alunoOperador", "Aluno operador")}
         {texto("alunoAuxiliar", "Aluno auxiliar")}
       </GrupoFicha>

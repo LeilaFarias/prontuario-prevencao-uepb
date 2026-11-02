@@ -10,6 +10,7 @@ import { recuperacaoRoutes } from "./routes/recuperacao";
 import { syncRoutes } from "./routes/sync";
 import { prontuariosRoutes } from "./routes/prontuarios";
 import { userRoutes } from "./routes/users";
+import { professoresRoutes } from "./routes/professores";
 import debugRoute from "./routes/debug.js";
 
 const app = Fastify({ logger: true, bodyLimit: 10 * 1024 * 1024 });
@@ -35,6 +36,7 @@ await app.register(recuperacaoRoutes);
 await app.register(syncRoutes);
 await app.register(prontuariosRoutes);
 await app.register(userRoutes);
+await app.register(professoresRoutes);
 await app.register(debugRoute);
 
 await app.listen({ port: env.PORT, host: "0.0.0.0" });

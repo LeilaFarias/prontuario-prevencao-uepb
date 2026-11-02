@@ -7,6 +7,12 @@ import { salvarSecaoLocal, type CabecalhoPaciente } from "../sync/queue";
 
 const DEBOUNCE_MS = 800;
 
+const salvadoresAtivos = new Set<() => Promise<void>>();
+
+export async function salvarSecoesPendentes(): Promise<void> {
+  await Promise.all([...salvadoresAtivos].map((salvar) => salvar()));
+}
+
 type SchemaSecao = z.ZodType<FieldValues, z.ZodTypeDef, any>;
 
 export interface OpcoesSecao<V> {
@@ -44,7 +50,7 @@ export function useSecao<T extends SchemaSecao>(
   const form = useForm<V>({ defaultValues: inicial as unknown as DefaultValues<V> });
   const { watch, getValues, reset } = form;
 
-  const somenteLeitura = prontuario.status === "assinado";
+  const somenteLeitura = prontuario.status === "assinado" || prontuario.status === "enviado";
 
   const [salvando, setSalvando] = useState(false);
   const [salvoEm, setSalvoEm] = useState<number | null>(null);
@@ -100,21 +106,22 @@ export function useSecao<T extends SchemaSecao>(
     return () => sub.unsubscribe();
   }, [watch, getValues, somenteLeitura]);
 
-  // Nada digitado se perde ao sair da tela ou ocultar o app
   useEffect(() => {
     montado.current = true;
     const aoOcultar = () => {
       if (document.visibilityState === "hidden") void salvarRef.current();
     };
+    const salvarAgora = () => salvarRef.current();
+    salvadoresAtivos.add(salvarAgora);
     document.addEventListener("visibilitychange", aoOcultar);
     return () => {
+      salvadoresAtivos.delete(salvarAgora);
       montado.current = false;
       document.removeEventListener("visibilitychange", aoOcultar);
       void salvarRef.current();
     };
   }, []);
 
-  // Dados novos no Dexie (ex.: sync down de outro aparelho): recarrega o form se não houver edição em curso
   const secaoNoDexie = prontuario.secoes[secaoId];
   const primeiraExecucao = useRef(true);
   useEffect(() => {

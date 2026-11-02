@@ -207,10 +207,9 @@ function FormularioConclusao({ prontuario }: { prontuario: LocalProntuario }) {
                     label="Para"
                     value={field.value}
                     onChange={field.onChange}
-                    placeholder="Ex.: Ortodontia — Profa. Helena"
+                    placeholder="Ex.: Ortodontia"
                     disabled={somenteLeitura}
                   />
-                  <p className="hint">Serviço, especialidade ou profissional de destino.</p>
                 </div>
               )}
             />

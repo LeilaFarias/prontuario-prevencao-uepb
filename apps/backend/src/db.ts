@@ -71,7 +71,6 @@ CREATE INDEX IF NOT EXISTS idx_reset_userId ON PasswordResetToken(userId);
 CREATE INDEX IF NOT EXISTS idx_reset_expiraEm ON PasswordResetToken(expiraEm);
 `;
 
-/** Bancos criados antes da Sprint 2 não têm Usuario.ativo; SQLite não tem ADD COLUMN IF NOT EXISTS. */
 function migrarColunaAtivo(db: DatabaseSync): void {
   const colunas = db.prepare("PRAGMA table_info(Usuario)").all() as unknown as { name: string }[];
   if (!colunas.some((c) => c.name === "ativo")) {
@@ -79,17 +78,23 @@ function migrarColunaAtivo(db: DatabaseSync): void {
   }
 }
 
-/** Abre o arquivo SQLite (criando-o se preciso) e garante que o schema existe. */
+function migrarColunaSinalizadoDuplicidade(db: DatabaseSync): void {
+  const colunas = db.prepare("PRAGMA table_info(Prontuario)").all() as unknown as { name: string }[];
+  if (!colunas.some((c) => c.name === "sinalizadoDuplicidade")) {
+    db.exec("ALTER TABLE Prontuario ADD COLUMN sinalizadoDuplicidade INTEGER NOT NULL DEFAULT 0");
+  }
+}
+
 export function abrirBanco(): DatabaseSync {
   const arquivo = path.resolve(process.cwd(), env.DATABASE_URL.replace(/^file:/, ""));
   const db = new DatabaseSync(arquivo);
   db.exec("PRAGMA journal_mode = WAL; PRAGMA foreign_keys = ON;");
   db.exec(SCHEMA);
   migrarColunaAtivo(db);
+  migrarColunaSinalizadoDuplicidade(db);
   return db;
 }
 
-/** Executa `fn` numa transação; desfaz tudo se lançar erro. */
 export function transacao<T>(db: DatabaseSync, fn: () => T): T {
   db.exec("BEGIN");
   try {

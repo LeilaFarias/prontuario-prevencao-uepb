@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import { useLiveQuery } from "dexie-react-hooks";
 import { useNavigate, useParams } from "react-router-dom";
+import { Check, Clock, Send } from "lucide-react";
 import { SECOES, type SecaoId } from "@prontuario/shared";
 import Consentimento from "../components/ficha/Consentimento";
 import Conclusao from "../components/ficha/Conclusao";
@@ -13,10 +14,12 @@ import IHOS from "../components/ficha/IHOS";
 import Plano from "../components/ficha/Plano";
 import Sangramento from "../components/ficha/Sangramento";
 import Procedimentos from "../components/ficha/Procedimentos";
+import EnviarProntuarioModal from "../components/EnviarProntuarioModal";
 import StatusBar from "../components/StatusBar";
 import Topbar from "../components/Topbar";
 import { db, type LocalProntuario } from "../db/dexie";
 import { useProntuarioSync } from "../hooks/useProntuarioSync";
+import { salvarSecoesPendentes } from "../hooks/useSecao";
 import { salvarSecaoLocal } from "../sync/queue";
 
 const DEBOUNCE_MS = 800;
@@ -29,7 +32,9 @@ export default function Prontuario() {
   const [estado, setEstado] = useState<"carregando" | "ok" | "nao-encontrado">("carregando");
   const [pront, setPront] = useState<LocalProntuario | null>(null);
   const [indice, setIndice] = useState(0);
-  const nomeAoVivo = useLiveQuery(async () => (id ? (await db.prontuarios.get(id))?.pacienteNome : undefined), [id]);
+  const vivo = useLiveQuery(async () => (id ? await db.prontuarios.get(id) : undefined), [id]);
+  const nomeAoVivo = vivo?.pacienteNome;
+  const [paraEnvio, setParaEnvio] = useState<LocalProntuario | null>(null);
   const [valores, setValores] = useState<Record<string, string>>({});
 
   const timer = useRef<number | undefined>(undefined);
@@ -82,6 +87,19 @@ export default function Prontuario() {
     setIndice(i);
   }
 
+  function irParaSecao(secaoId: SecaoId) {
+    const i = SECOES.findIndex((s) => s.id === secaoId);
+    if (i >= 0) irPara(i);
+  }
+
+  const abrirEnvio = useCallback(async () => {
+    if (!id) return;
+    await salvarPendente();
+    await salvarSecoesPendentes();
+    const fresco = await db.prontuarios.get(id);
+    if (fresco) setParaEnvio(fresco);
+  }, [id, salvarPendente]);
+
   function aoDigitar(texto: string) {
     const secao = SECOES[indice]!;
     setValores((v) => ({ ...v, [secao.id]: texto }));
@@ -105,6 +123,23 @@ export default function Prontuario() {
 
   const secao = SECOES[indice]!;
   const nomeExibido = (nomeAoVivo ?? pront.pacienteNome).trim();
+  const atual = vivo ?? pront;
+  const status = atual.status;
+  const somenteLeitura = status === "enviado" || status === "assinado";
+  const professor = String((atual.secoes["consentimento"] as { professorSupervisor?: unknown } | undefined)?.professorSupervisor ?? "").trim();
+
+  const pillStatus =
+    status === "enviado" ? (
+      <span className="inline-flex w-fit items-center gap-1.5 rounded-pill bg-sync-tint px-3 py-1 text-[12px] font-semibold text-sync">
+        <Clock size={12} aria-hidden="true" />
+        Aguardando revisão
+      </span>
+    ) : status === "assinado" ? (
+      <span className="inline-flex w-fit items-center gap-1.5 rounded-pill bg-primary-tint px-3 py-1 text-[12px] font-semibold text-primary">
+        <Check size={12} aria-hidden="true" />
+        {professor ? `Assinado por ${professor}` : "Assinado"}
+      </span>
+    ) : null;
 
   return (
     <div className="flex flex-1 flex-col">
@@ -115,6 +150,25 @@ export default function Prontuario() {
         onVoltar={() => navigate("/prontuarios")}
       />
       <StatusBar className="mx-5 mb-2" />
+
+      {pillStatus && <div className="mx-5 mb-2">{pillStatus}</div>}
+
+      {status === "em_andamento" && atual.erroEnvio && (
+        <div role="alert" className="banner-erro mx-5 mb-2">
+          {atual.erroEnvio === "professor_nao_encontrado"
+            ? "O envio feito sem conexão foi recusado: não encontramos o professor supervisor. Corrija o nome no Consentimento e envie de novo."
+            : "O envio feito sem conexão não foi concluído. Confira a ficha e envie novamente."}
+          {atual.erroEnvio === "professor_nao_encontrado" && (
+            <button
+              type="button"
+              onClick={() => irParaSecao("consentimento")}
+              className="mt-1.5 block font-semibold underline"
+            >
+              Ir para o Consentimento
+            </button>
+          )}
+        </div>
+      )}
 
       <nav aria-label="Seções" className="flex gap-2 overflow-x-auto px-5 pb-3 pt-1 [scrollbar-width:none]">
         {SECOES.map((s, i) => (
@@ -171,25 +225,46 @@ export default function Prontuario() {
               value={valores[secao.id] ?? ""}
               onChange={(e) => aoDigitar(e.target.value)}
               placeholder="Digite aqui…"
+              disabled={somenteLeitura}
             />
             <p className="hint">Autosave local ativo. As alterações entram na fila de sincronização.</p>
           </section>
         )}
       </main>
 
-      <footer className="sticky bottom-0 mt-4 grid grid-cols-2 gap-3 border-t border-line bg-paper px-5 py-3">
-        <button type="button" className="btn-ghost" disabled={indice === 0} onClick={() => irPara(indice - 1)}>
-          Anterior
-        </button>
-        <button
-          type="button"
-          className="btn-primary"
-          disabled={indice === SECOES.length - 1}
-          onClick={() => irPara(indice + 1)}
-        >
-          Próxima
-        </button>
+      <footer className="sticky bottom-0 mt-4 flex flex-col gap-2.5 border-t border-line bg-paper px-5 py-3">
+        <div className="grid grid-cols-2 gap-3">
+          <button type="button" className="btn-ghost" disabled={indice === 0} onClick={() => irPara(indice - 1)}>
+            Anterior
+          </button>
+          <button
+            type="button"
+            className="btn-primary"
+            disabled={indice === SECOES.length - 1}
+            onClick={() => irPara(indice + 1)}
+          >
+            Próxima
+          </button>
+        </div>
+        {status === "em_andamento" ? (
+          <button type="button" className="btn-primary" onClick={() => void abrirEnvio()}>
+            <Send size={16} aria-hidden="true" />
+            Enviar ao professor
+          </button>
+        ) : (
+          pillStatus && <div className="flex justify-center">{pillStatus}</div>
+        )}
       </footer>
+
+      {paraEnvio && (
+        <EnviarProntuarioModal
+          prontuario={paraEnvio}
+          onClose={() => setParaEnvio(null)}
+          onIrParaSecao={irParaSecao}
+          onVoltarParaLista={() => navigate("/prontuarios")}
+          onAbrirProntuario={(outroId) => navigate(`/prontuario/${outroId}`)}
+        />
+      )}
     </div>
   );
 }
