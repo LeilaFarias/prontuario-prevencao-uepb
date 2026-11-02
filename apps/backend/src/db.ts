@@ -96,6 +96,12 @@ CREATE TABLE IF NOT EXISTS Notificacao (
   lidaEm       TEXT
 );
 CREATE INDEX IF NOT EXISTS idx_notif_usuario ON Notificacao(usuarioId, lidaEm);
+
+CREATE TABLE IF NOT EXISTS Configuracao (
+  chave        TEXT PRIMARY KEY,
+  valor        TEXT NOT NULL,
+  atualizadoEm TEXT NOT NULL DEFAULT (${AGORA})
+);
 `;
 
 function migrarColunaAtivo(db: DatabaseSync): void {

@@ -5,3 +5,4 @@ export * from "./schemas/prontuario";
 export * from "./schemas/revisao";
 export * from "./schemas/sync";
 export * from "./schemas/user";
+export * from "./schemas/semestre";

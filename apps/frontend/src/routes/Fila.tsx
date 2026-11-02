@@ -5,6 +5,8 @@ import { ApiError } from "../lib/api";
 import { getSession } from "../lib/session";
 import TabBarProfessor from "../components/TabBarProfessor";
 import TransferirTitularidadeModal from "../components/TransferirTitularidadeModal";
+import { useIndicadorPacientes } from "../hooks/useIndicadorPacientes";
+import { formatarDataBR } from "../lib/data";
 import { calcularIdade, tempoRelativo } from "../lib/tempo";
 import { buscarResumos, normalizarStatus, type ProntuarioRemotoResumo } from "../sync/down";
 
@@ -93,6 +95,7 @@ export default function Fila() {
   const navigate = useNavigate();
   const usuario = getSession()?.user;
   const [estado, setEstado] = useState<Estado>({ situacao: "carregando" });
+  const { data: indicador } = useIndicadorPacientes();
   const [transferindo, setTransferindo] = useState<ProntuarioRemotoResumo | null>(null);
 
   const carregar = useCallback(() => {
@@ -147,6 +150,27 @@ export default function Fila() {
       </header>
 
       <main className="flex flex-1 flex-col px-5 pb-4 pt-3">
+        {indicador && (
+          <div className="mb-3 flex items-center gap-4 rounded-card border border-line bg-raised p-4">
+            <div className="font-display text-[38px] font-semibold leading-none text-prof">{indicador.total}</div>
+            <div className="min-w-0 flex-1">
+              <div className="text-[10.5px] font-bold uppercase tracking-wider text-ink-faint">Pacientes atendidos</div>
+              {indicador.periodo ? (
+                <div className="mt-1 text-[12px] text-ink-soft">
+                  no semestre {formatarDataBR(indicador.periodo.inicio)} a {formatarDataBR(indicador.periodo.fim)}
+                </div>
+              ) : (
+                <div className="mt-1 flex flex-wrap items-center gap-x-2 text-[12px] text-alt">
+                  Configure o semestre para calcular
+                  <button type="button" onClick={() => navigate("/perfil")} className="font-semibold text-prof">
+                    Configurar →
+                  </button>
+                </div>
+              )}
+            </div>
+          </div>
+        )}
+
         {estado.situacao === "erro" && (
           <div className="flex flex-col gap-3">
             <p role="alert" className="banner-erro">
