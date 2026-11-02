@@ -43,6 +43,7 @@ export const transferirTitularidadeSchema = z.object({
   prontuarioAntigoId: z.string().trim().min(1, "Informe o prontuário anterior"),
   prontuarioNovoId: z.string().trim().min(1, "Informe o prontuário novo"),
   quemRecebe: z.enum(QUEM_RECEBE, { errorMap: () => ({ message: "Escolha qual dupla recebe o prontuário" }) }),
+  professorEscolhidoId: z.string().trim().min(1).optional(),
 });
 
 export const manterTitularidadeSchema = z.object({

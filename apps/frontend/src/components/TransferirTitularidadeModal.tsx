@@ -2,6 +2,7 @@ import { useEffect, useState } from "react";
 import { AlertTriangle, ArrowRightLeft, Check, Loader2 } from "lucide-react";
 import type { DuplicidadeResponse, PartesDuplicidade, QuemRecebe } from "@prontuario/shared";
 import { ApiError, api } from "../lib/api";
+import { getSession } from "../lib/session";
 import BottomSheet from "./BottomSheet";
 import { Detalhes, IconeModal } from "./revisao/ModalPartes";
 
@@ -24,18 +25,20 @@ function duplaTexto(p: PartesDuplicidade): string {
   return [p.alunoOperador, p.alunoAuxiliar].filter(Boolean).join(" e ") || p.alunoNome;
 }
 
-function OpcaoDupla({
+function OpcaoCard({
+  nome,
   marcada,
   onChange,
   titulo,
-  dupla,
+  destaque,
   descricao,
 }: {
+  nome: string;
   marcada: boolean;
   onChange: () => void;
   titulo: string;
-  dupla: string;
-  descricao: string;
+  destaque: string;
+  descricao?: string;
 }) {
   return (
     <label
@@ -43,11 +46,11 @@ function OpcaoDupla({
         marcada ? "border-primary bg-primary-tint" : "border-line bg-raised"
       }`}
     >
-      <input type="radio" name="quemRecebe" checked={marcada} onChange={onChange} className="mt-1 accent-primary" />
+      <input type="radio" name={nome} checked={marcada} onChange={onChange} className="mt-1 accent-primary" />
       <span className="min-w-0 flex-1">
         <span className="block text-[13.5px] font-semibold text-ink">{titulo}</span>
-        <span className="mt-1.5 block text-[13px] font-medium text-ink">{dupla}</span>
-        <span className="mt-0.5 block text-[12px] text-ink-soft">{descricao}</span>
+        <span className="mt-1.5 block text-[13px] font-medium text-ink">{destaque}</span>
+        {descricao && <span className="mt-0.5 block text-[12px] text-ink-soft">{descricao}</span>}
       </span>
     </label>
   );
@@ -57,11 +60,14 @@ export default function TransferirTitularidadeModal({ open, onClose, prontuarioI
   const [fase, setFase] = useState<Fase>({ tipo: "carregando" });
   const [tentativa, setTentativa] = useState(0);
   const [escolha, setEscolha] = useState<QuemRecebe | null>(null);
+  const professorLogado = getSession()?.user;
+  const [professorId, setProfessorId] = useState(professorLogado?.id ?? "");
 
   useEffect(() => {
     let ativo = true;
     setFase({ tipo: "carregando" });
     setEscolha(null);
+    setProfessorId(professorLogado?.id ?? "");
     api
       .get<DuplicidadeResponse>(`/prontuarios/${encodeURIComponent(prontuarioId)}/duplicidade`)
       .then((dados) => {
@@ -78,11 +84,11 @@ export default function TransferirTitularidadeModal({ open, onClose, prontuarioI
     return () => {
       ativo = false;
     };
-  }, [prontuarioId, tentativa]);
+  }, [prontuarioId, tentativa, professorLogado?.id]);
 
   async function confirmar(dados: DuplicidadeResponse) {
     const { atual, existente } = dados;
-    if (existente && !escolha) return;
+    if (existente && (!escolha || !professorId)) return;
     setFase({ tipo: "enviando" });
     try {
       if (existente && escolha) {
@@ -90,6 +96,7 @@ export default function TransferirTitularidadeModal({ open, onClose, prontuarioI
           prontuarioAntigoId: existente.prontuarioId,
           prontuarioNovoId: atual.prontuarioId,
           quemRecebe: escolha,
+          professorEscolhidoId: professorId,
         });
         const ativa = escolha === "anterior" ? existente : atual;
         setFase({
@@ -190,6 +197,10 @@ export default function TransferirTitularidadeModal({ open, onClose, prontuarioI
 
   const { dados } = fase;
   const { atual, existente } = dados;
+  const professorAnterior =
+    existente?.professorId && existente.professorId !== professorLogado?.id
+      ? { id: existente.professorId, nome: existente.professorNome ?? "—" }
+      : null;
 
   return (
     <BottomSheet
@@ -210,18 +221,20 @@ export default function TransferirTitularidadeModal({ open, onClose, prontuarioI
         {existente ? (
           <fieldset className="flex flex-col gap-2">
             <legend className="sr-only">Dupla que recebe o prontuário ativo</legend>
-            <OpcaoDupla
+            <OpcaoCard
+              nome="quemRecebe"
               marcada={escolha === "anterior"}
               onChange={() => setEscolha("anterior")}
               titulo="Manter com a dupla anterior"
-              dupla={duplaTexto(existente)}
+              destaque={duplaTexto(existente)}
               descricao={`O prontuário atual fica ativo e recebe o histórico de ${duplaTexto(atual)}.`}
             />
-            <OpcaoDupla
+            <OpcaoCard
+              nome="quemRecebe"
               marcada={escolha === "novo"}
               onChange={() => setEscolha("novo")}
               titulo="Entregar para a nova dupla"
-              dupla={duplaTexto(atual)}
+              destaque={duplaTexto(atual)}
               descricao={`O prontuário novo fica ativo e recebe o histórico de ${duplaTexto(existente)}.`}
             />
           </fieldset>
@@ -232,17 +245,36 @@ export default function TransferirTitularidadeModal({ open, onClose, prontuarioI
           </p>
         )}
 
+        {existente && professorAnterior && (
+          <fieldset className="flex flex-col gap-2">
+            <legend className="field-label text-left">Professor responsável pela ficha</legend>
+            <OpcaoCard
+              nome="professor"
+              marcada={professorId === professorAnterior.id}
+              onChange={() => setProfessorId(professorAnterior.id)}
+              titulo={professorAnterior.nome}
+              destaque="Professor atual da dupla"
+            />
+            <OpcaoCard
+              nome="professor"
+              marcada={professorId === professorLogado?.id}
+              onChange={() => setProfessorId(professorLogado?.id ?? "")}
+              titulo={professorLogado?.nome ?? "Você"}
+              destaque="Você"
+            />
+          </fieldset>
+        )}
+
         {existente && (
           <p className="rounded-field bg-alt-tint p-3 text-left text-[11.5px] text-ink-soft">
-            O prontuário da outra dupla ficará bloqueado para edição. Poderá ser consultado apenas com acesso liberado.
-            Nenhum dado será apagado.
+            Nenhum dado será apagado. O prontuário arquivado ficará disponível para consulta apenas com acesso liberado.
           </p>
         )}
 
         <button
           type="button"
           className="btn-prof"
-          disabled={existente ? !escolha : !atual.professorId}
+          disabled={existente ? !escolha || !professorId : !atual.professorId}
           onClick={() => void confirmar(dados)}
         >
           {existente ? "Confirmar transferência" : "Remover alerta"}

@@ -655,7 +655,9 @@ export const prontuariosRoutes: FastifyPluginAsync = async (app) => {
     "/prontuarios/:id/transferir-titularidade",
     protegida,
     async (req, reply) => {
-      const { prontuarioAntigoId, prontuarioNovoId, quemRecebe } = transferirTitularidadeSchema.parse(req.body);
+      const { prontuarioAntigoId, prontuarioNovoId, quemRecebe, professorEscolhidoId } = transferirTitularidadeSchema.parse(
+        req.body,
+      );
       if (req.params.id !== prontuarioAntigoId) {
         return reply.status(400).send({ error: "O prontuário da URL não é o prontuário anterior informado." });
       }
@@ -677,6 +679,12 @@ export const prontuariosRoutes: FastifyPluginAsync = async (app) => {
           return JA_TRANSFERIDO;
         }
 
+        const professorResponsavelId = professorEscolhidoId ?? req.user.sub;
+        const professorResponsavel = buscarProfessor.get(professorResponsavelId) as unknown as
+          | { nome: string }
+          | undefined;
+        if (!professorResponsavel) return PROFESSOR_INVALIDO;
+
         const recebe = quemRecebe === "anterior" ? antigo : novo;
         const arquiva = quemRecebe === "anterior" ? novo : antigo;
         const duplaRecebe = resumirPartes(recebe);
@@ -684,7 +692,7 @@ export const prontuariosRoutes: FastifyPluginAsync = async (app) => {
         const agora = new Date().toISOString();
 
         gravarTransferenciaArquivado.run(recebe.prontuarioId, agora, arquiva.prontuarioId);
-        gravarTransferenciaAtivo.run(arquiva.prontuarioId, req.user.sub, agora, recebe.prontuarioId);
+        gravarTransferenciaAtivo.run(arquiva.prontuarioId, professorResponsavelId, agora, recebe.prontuarioId);
 
         registrarAuditoria.run(
           randomUUID(),
@@ -695,14 +703,14 @@ export const prontuariosRoutes: FastifyPluginAsync = async (app) => {
             idRecebe: recebe.prontuarioId,
             idArquiva: arquiva.prontuarioId,
             quemRecebe,
+            professorEscolhidoId: professorResponsavelId,
           }),
         );
         const agoraMs = Date.now();
         registrarLog.run(randomUUID(), arquiva.prontuarioId, arquiva.prontuarioId, "transferir-titularidade", agoraMs);
         registrarLog.run(randomUUID(), recebe.prontuarioId, recebe.prontuarioId, "transferir-titularidade", agoraMs);
 
-        const responsavel = (buscarNomeProfessor.get(req.user.sub) as unknown as { nome: string } | undefined)?.nome;
-        const sufixoProfessor = responsavel ? ` Professor responsável: ${responsavel}.` : "";
+        const sufixoProfessor = ` Professor responsável: ${professorResponsavel.nome}.`;
         notificar(
           arquiva.alunoId,
           arquiva.prontuarioId,
@@ -720,7 +728,7 @@ export const prontuariosRoutes: FastifyPluginAsync = async (app) => {
 
       if ("falha" in resultado) return responderFalha(reply, resultado);
       req.log.info(
-        { prontuarioAntigoId, prontuarioNovoId, quemRecebe, professorId: req.user.sub },
+        { prontuarioAntigoId, prontuarioNovoId, quemRecebe, professorId: req.user.sub, professorEscolhidoId },
         "titularidade transferida",
       );
       return resultado;
