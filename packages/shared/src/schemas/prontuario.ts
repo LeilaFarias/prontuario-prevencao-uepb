@@ -201,23 +201,38 @@ export type Conclusao = z.infer<typeof conclusaoSchema>;
 export const vazioConclusao = (): Conclusao => conclusaoSchema.parse({});
 
 export const sessaoPlanoSchema = z.object({
+  /** UUID da sessão. Fica com default "" só para ler dados antigos (sem id); o formulário gera o id ao carregar. */
+  id: z.string().default(""),
   numero: z.number(),
   descricao: z.string().default(""),
 });
 
 export type SessaoPlano = z.infer<typeof sessaoPlanoSchema>;
 
+// Sem UUID no default do schema (ele roda em todo parse). Os 3 slots iniciais nascem em vazioPlano().
 export const planoSchema = z.object({
-  sessoes: z.array(sessaoPlanoSchema).default([
-    { numero: 1, descricao: "" },
-    { numero: 2, descricao: "" },
-    { numero: 3, descricao: "" },
-  ]),
+  sessoes: z.array(sessaoPlanoSchema).default([]),
 });
 
 export type Plano = z.infer<typeof planoSchema>;
 
-export const vazioPlano = (): Plano => planoSchema.parse({});
+/** `crypto` não existe nos tipos deste pacote (lib ES2022 sem DOM), por isso o acesso via globalThis. */
+const gerarIdPadrao = (): string => {
+  const c = (globalThis as { crypto?: { randomUUID?: () => string } }).crypto;
+  if (c?.randomUUID) return c.randomUUID();
+  return "xxxxxxxx-xxxx-4xxx-yxxx-xxxxxxxxxxxx".replace(/[xy]/g, (ch) => {
+    const r = (Math.random() * 16) | 0;
+    return (ch === "x" ? r : (r & 0x3) | 0x8).toString(16);
+  });
+};
+
+export const vazioPlano = (gerarId: () => string = gerarIdPadrao): Plano => ({
+  sessoes: [
+    { id: gerarId(), numero: 1, descricao: "" },
+    { id: gerarId(), numero: 2, descricao: "" },
+    { id: gerarId(), numero: 3, descricao: "" },
+  ],
+});
 
 export const denteSangramentoSchema = z.object({
   presente: z.boolean().default(false),

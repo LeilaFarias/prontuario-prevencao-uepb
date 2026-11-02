@@ -1,9 +1,11 @@
 import { Controller, useWatch } from "react-hook-form";
 import { useLiveQuery } from "dexie-react-hooks";
-import { planoSchema } from "@prontuario/shared";
+import { Plus } from "lucide-react";
+import { planoSchema, vazioPlano, type Plano as PlanoDados, type SessaoPlano } from "@prontuario/shared";
 import { db, type LocalProntuario } from "../../db/dexie";
-import { useSecao } from "../../hooks/useSecao";
+import { useSecao, type OpcoesSecao } from "../../hooks/useSecao";
 import { useSyncStatus } from "../../hooks/useSyncStatus";
+import { uuid } from "../../lib/uuid";
 import CampoTexto from "./CampoTexto";
 import GrupoFicha from "./GrupoFicha";
 
@@ -22,10 +24,40 @@ function IndicadorSalvamento({ salvando, jaSalvou }: { salvando: boolean; jaSalv
   );
 }
 
-function FormularioPlano({ prontuario }: { prontuario: LocalProntuario }) {
-  const { control, salvando, salvoEm, somenteLeitura } = useSecao(prontuario, "plano-preventivo", planoSchema);
+/**
+ * Prontuário novo (sem sessões salvas) começa com as 3 sessões padrão do design.
+ * Dados antigos, sem `id`, ganham um; os números são sempre 1, 2, 3… sem buracos.
+ */
+function garantirSessoes(plano: PlanoDados): PlanoDados {
+  if (plano.sessoes.length === 0) return vazioPlano(uuid);
+  return {
+    sessoes: plano.sessoes.map((s, idx) => ({ ...s, id: s.id || uuid(), numero: idx + 1 })),
+  };
+}
 
-  const sessoes = useWatch({ control, name: "sessoes" });
+const opcoesPlano: OpcoesSecao<PlanoDados> = { preencher: garantirSessoes };
+
+function FormularioPlano({ prontuario }: { prontuario: LocalProntuario }) {
+  const { control, setValue, salvando, salvoEm, somenteLeitura } = useSecao(
+    prontuario,
+    "plano-preventivo",
+    planoSchema,
+    opcoesPlano,
+  );
+
+  const sessoes: SessaoPlano[] = useWatch({ control, name: "sessoes" });
+
+  const adicionarSessao = () => {
+    const nova: SessaoPlano = { id: uuid(), numero: sessoes.length + 1, descricao: "" };
+    setValue("sessoes", [...sessoes, nova]);
+  };
+
+  const removerSessao = (id: string) => {
+    const novas = sessoes.filter((s) => s.id !== id).map((s, idx) => ({ ...s, numero: idx + 1 }));
+    setValue("sessoes", novas);
+  };
+
+  const podeRemover = !somenteLeitura && sessoes.length > 1;
 
   return (
     <div className="flex flex-col gap-3 pb-2">
@@ -35,9 +67,24 @@ function FormularioPlano({ prontuario }: { prontuario: LocalProntuario }) {
       >
         {sessoes.map((sessao, idx) => (
           <div
-            key={sessao.numero}
-            className={`flex flex-col gap-2 ${idx > 0 ? "mt-1 border-t border-line-soft pt-4" : ""}`}
+            key={sessao.id}
+            className={`relative flex flex-col gap-2 ${idx > 0 ? "mt-1 border-t border-line-soft pt-4" : ""}`}
           >
+            {podeRemover && (
+              <button
+                type="button"
+                onClick={(e) => {
+                  e.stopPropagation();
+                  removerSessao(sessao.id);
+                }}
+                className={`absolute right-0 text-[11px] text-ink-faint hover:text-alt ${
+                  idx > 0 ? "top-[22px]" : "top-1.5"
+                }`}
+              >
+                Remover
+              </button>
+            )}
+
             <div className="flex items-center gap-2">
               <div className="flex h-7 w-7 shrink-0 items-center justify-center rounded-full bg-primary-tint font-display text-[13px] font-semibold text-primary">
                 {sessao.numero}
@@ -65,6 +112,17 @@ function FormularioPlano({ prontuario }: { prontuario: LocalProntuario }) {
             />
           </div>
         ))}
+
+        {!somenteLeitura && (
+          <button
+            type="button"
+            onClick={adicionarSessao}
+            className="flex w-full items-center justify-center gap-1.5 rounded-xl border-2 border-dashed border-ink-faint bg-transparent py-3 text-[13px] font-semibold text-ink-soft"
+          >
+            <Plus size={16} aria-hidden="true" />
+            Adicionar sessão
+          </button>
+        )}
       </GrupoFicha>
 
       <IndicadorSalvamento
