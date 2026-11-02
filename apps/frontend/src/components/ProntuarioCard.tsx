@@ -1,5 +1,5 @@
 import type { KeyboardEvent, MouseEvent } from "react";
-import { Check, CircleAlert, Clock, Lock, PenLine, RefreshCw, RotateCcw, type LucideIcon } from "lucide-react";
+import { AlertTriangle, Check, CircleAlert, Clock, Lock, PenLine, RefreshCw, RotateCcw, type LucideIcon } from "lucide-react";
 import type { LocalProntuario } from "../db/dexie";
 import { acessoVigente, pedidoPendente, pedidoRecusado, prontuarioBloqueado } from "../lib/acesso";
 import { formatarIdade } from "../lib/idade";
@@ -17,6 +17,7 @@ const BADGES = {
   aguardando: { icone: Clock, classes: "bg-amber-tint text-amber", label: "Aguardando revisão" },
   devolvido: { icone: RotateCcw, classes: "bg-alt-tint text-alt", label: "Devolvido" },
   bloqueado: { icone: Lock, classes: "bg-alt-tint text-alt", label: "Bloqueado" },
+  duplicidade: { icone: AlertTriangle, classes: "bg-alt-tint text-alt", label: "Duplicidade em análise" },
   assinado: { icone: Check, classes: "bg-primary-tint text-primary", label: "Assinado" },
   recusado: { icone: CircleAlert, classes: "bg-alt-tint text-alt", label: "Acesso recusado" },
 } satisfies Record<string, Badge>;
@@ -39,20 +40,23 @@ export default function ProntuarioCard({ prontuario: p, onAbrir, onSolicitarAces
   const recusado = pedidoRecusado(p);
   const bloqueado = prontuarioBloqueado(p) && !recusado;
   const pendente = pedidoPendente(p);
+  const emDuplicidade = p.status === "enviado" && Boolean(p.sinalizadoDuplicidade);
 
   const badge: Badge = recusado
     ? BADGES.recusado
-    : vigente
-      ? BADGES.rascunho
-      : bloqueado
-        ? BADGES.bloqueado
-        : p.status === "em_andamento"
-          ? BADGES.rascunho
-          : p.status === "enviado"
-            ? BADGES.aguardando
-            : p.status === "devolvido"
-              ? BADGES.devolvido
-              : BADGES.assinado;
+    : emDuplicidade
+      ? BADGES.duplicidade
+      : vigente && p.status !== "enviado"
+        ? BADGES.rascunho
+        : bloqueado
+          ? BADGES.bloqueado
+          : p.status === "em_andamento"
+            ? BADGES.rascunho
+            : p.status === "enviado"
+              ? BADGES.aguardando
+              : p.status === "devolvido"
+                ? BADGES.devolvido
+                : BADGES.assinado;
   const Icone = badge.icone;
 
   const idade = p.pacienteDataNascimento ? formatarIdade(p.pacienteDataNascimento) : "";
@@ -62,7 +66,9 @@ export default function ProntuarioCard({ prontuario: p, onAbrir, onSolicitarAces
     : p.status === "em_andamento"
       ? `editado ${tempo}`
       : p.status === "enviado"
-        ? `enviado ${tempo}`
+        ? emDuplicidade
+          ? `enviado ${tempo} · aguardando análise de duplicidade`
+          : `enviado ${tempo}`
         : p.status === "devolvido"
           ? `devolvido pelo professor · ${tempo}`
           : p.assinadoPorNome
@@ -72,13 +78,15 @@ export default function ProntuarioCard({ prontuario: p, onAbrir, onSolicitarAces
               : "assinado";
   const meta = semNome ? "Aguardando preenchimento" : [idade, marco].filter(Boolean).join(" · ");
 
-  const acao = recusado
-    ? "Toque para solicitar novamente"
-    : bloqueado
-      ? pendente
-        ? "Aguardando aprovação do professor"
-        : "Toque para solicitar acesso"
-      : null;
+  const acao = emDuplicidade
+    ? "O professor está avaliando a duplicidade"
+    : recusado
+      ? "Toque para solicitar novamente"
+      : bloqueado
+        ? pendente
+          ? "Aguardando aprovação do professor"
+          : "Toque para solicitar acesso"
+        : null;
 
   const mostrarCadeado = bloqueado || recusado;
 
@@ -121,7 +129,7 @@ export default function ProntuarioCard({ prontuario: p, onAbrir, onSolicitarAces
               <Lock size={14} aria-hidden="true" className="mt-0.5 shrink-0 text-ink-faint" />
             ))}
         </div>
-        {vigente && (
+        {vigente && p.status !== "enviado" && (
           <span className="shrink-0 whitespace-nowrap text-[12px] font-semibold text-[#DC2626]">
             Acesso expira em: <TimerRegressivo expiraEm={p.acessoExpiraEm!} />
           </span>

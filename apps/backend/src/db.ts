@@ -85,6 +85,17 @@ CREATE TABLE IF NOT EXISTS AuditLog (
 CREATE INDEX IF NOT EXISTS idx_audit_pront ON AuditLog(prontuarioId);
 CREATE INDEX IF NOT EXISTS idx_audit_usuario ON AuditLog(usuarioId);
 CREATE INDEX IF NOT EXISTS idx_audit_acao ON AuditLog(acao);
+
+CREATE TABLE IF NOT EXISTS Notificacao (
+  id           TEXT PRIMARY KEY,
+  usuarioId    TEXT NOT NULL REFERENCES Usuario(id) ON DELETE CASCADE,
+  prontuarioId TEXT REFERENCES Prontuario(id) ON DELETE SET NULL,
+  tipo         TEXT NOT NULL,
+  mensagem     TEXT NOT NULL,
+  criadoEm     TEXT NOT NULL DEFAULT (${AGORA}),
+  lidaEm       TEXT
+);
+CREATE INDEX IF NOT EXISTS idx_notif_usuario ON Notificacao(usuarioId, lidaEm);
 `;
 
 function migrarColunaAtivo(db: DatabaseSync): void {

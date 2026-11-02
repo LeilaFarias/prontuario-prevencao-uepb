@@ -1,9 +1,10 @@
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useState, type KeyboardEvent } from "react";
 import { useNavigate } from "react-router-dom";
-import { Clock, UserRound } from "lucide-react";
+import { AlertTriangle, Clock, UserRound } from "lucide-react";
 import { ApiError } from "../lib/api";
 import { getSession } from "../lib/session";
 import TabBarProfessor from "../components/TabBarProfessor";
+import TransferirTitularidadeModal from "../components/TransferirTitularidadeModal";
 import { calcularIdade, tempoRelativo } from "../lib/tempo";
 import { buscarResumos, normalizarStatus, type ProntuarioRemotoResumo } from "../sync/down";
 
@@ -16,20 +17,40 @@ function CardFila({
   item,
   meu,
   onAbrir,
+  onAvaliarTransferencia,
 }: {
   item: ProntuarioRemotoResumo;
   meu: boolean;
   onAbrir: () => void;
+  onAvaliarTransferencia: () => void;
 }) {
+  const duplicado = item.sinalizadoDuplicidade === 1;
+  const acaoBloqueada = duplicado && !meu;
   const idade = calcularIdade(item.pacienteDataNascimento ?? undefined);
   const tempo = tempoRelativo(new Date(item.atualizadoEm).getTime());
   const inicial = item.pacienteNome.trim().charAt(0).toUpperCase() || "?";
 
+  function aoClicar() {
+    if (!duplicado) return onAbrir();
+    if (!acaoBloqueada) onAvaliarTransferencia();
+  }
+
+  function aoTeclar(e: KeyboardEvent<HTMLDivElement>) {
+    if (e.key !== "Enter" && e.key !== " ") return;
+    e.preventDefault();
+    aoClicar();
+  }
+
   return (
-    <button
-      type="button"
-      onClick={onAbrir}
-      className="w-full rounded-card border border-line bg-raised p-4 text-left transition active:bg-paper"
+    <div
+      role="button"
+      tabIndex={0}
+      aria-disabled={acaoBloqueada}
+      onClick={aoClicar}
+      onKeyDown={aoTeclar}
+      className={`w-full cursor-pointer rounded-card border border-line bg-raised p-4 text-left transition active:bg-paper ${
+        acaoBloqueada ? "cursor-not-allowed" : ""
+      }`}
     >
       <div className="flex items-start gap-3">
         <div className="flex h-[42px] w-[42px] shrink-0 items-center justify-center rounded-full bg-prof-tint font-display text-[15px] font-semibold text-prof">
@@ -41,10 +62,18 @@ function CardFila({
             {[idade !== null ? `${idade} anos` : null, item.alunoNome].filter(Boolean).join(" · ")}
           </div>
         </div>
-        <span className="inline-flex shrink-0 items-center gap-1 rounded-pill bg-sync-tint px-2.5 py-1 text-[11px] font-semibold text-sync">
-          <Clock size={10} aria-hidden="true" />
-          Aguardando revisão
-        </span>
+        <div className="flex shrink-0 flex-col items-end gap-1">
+          <span className="inline-flex items-center gap-1 rounded-pill bg-sync-tint px-2.5 py-1 text-[11px] font-semibold text-sync">
+            <Clock size={10} aria-hidden="true" />
+            Aguardando revisão
+          </span>
+          {duplicado && (
+            <span className="inline-flex items-center gap-1 rounded-pill bg-alt-tint px-2 py-0.5 text-[10px] font-semibold text-alt">
+              <AlertTriangle size={10} aria-hidden="true" />
+              Possível duplicidade
+            </span>
+          )}
+        </div>
       </div>
 
       <div className="mt-2.5 flex items-center justify-between gap-2.5 border-t border-line-soft pt-2.5">
@@ -52,9 +81,11 @@ function CardFila({
           Enviado {tempo}
           {meu && <span className="ml-2 font-semibold text-prof">· Sob sua supervisão</span>}
         </span>
-        <span className="text-[12.5px] font-semibold text-prof">Revisar →</span>
+        <span className={`text-[12.5px] font-semibold text-prof ${acaoBloqueada ? "opacity-50" : ""}`}>
+          {duplicado ? "Avaliar transferência →" : "Revisar →"}
+        </span>
       </div>
-    </button>
+    </div>
   );
 }
 
@@ -62,6 +93,7 @@ export default function Fila() {
   const navigate = useNavigate();
   const usuario = getSession()?.user;
   const [estado, setEstado] = useState<Estado>({ situacao: "carregando" });
+  const [transferindo, setTransferindo] = useState<ProntuarioRemotoResumo | null>(null);
 
   const carregar = useCallback(() => {
     setEstado({ situacao: "carregando" });
@@ -141,12 +173,23 @@ export default function Fila() {
                   item={item}
                   meu={item.professorSupervisorId === usuario?.id}
                   onAbrir={() => navigate(`/fila/${item.id}`)}
+                  onAvaliarTransferencia={() => setTransferindo(item)}
                 />
               </li>
             ))}
           </ul>
         )}
       </main>
+
+      {transferindo && (
+        <TransferirTitularidadeModal
+          open
+          onClose={() => setTransferindo(null)}
+          prontuarioId={transferindo.id}
+          pacienteNome={transferindo.pacienteNome}
+          onSucesso={carregar}
+        />
+      )}
 
       <TabBarProfessor ativa="fila" />
     </div>

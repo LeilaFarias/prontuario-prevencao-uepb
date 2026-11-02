@@ -1,10 +1,11 @@
 import { useEffect, useReducer, useState, type ReactNode } from "react";
 import { useLiveQuery } from "dexie-react-hooks";
 import { useNavigate } from "react-router-dom";
-import { Check, Plus, RefreshCw, RotateCcw, WifiOff, X } from "lucide-react";
+import { Bell, Check, Plus, RefreshCw, RotateCcw, WifiOff, X } from "lucide-react";
 import DevolucaoAlunoModal from "../components/DevolucaoAlunoModal";
 import ProntuarioCard from "../components/ProntuarioCard";
 import { db, type LocalProntuario } from "../db/dexie";
+import { useNotificacoes } from "../hooks/useNotificacoes";
 import { useSyncDown } from "../hooks/useSyncDown";
 import { ACESSO_EXPIRADO_EVENT, acessoVigente, prontuarioBloqueado } from "../lib/acesso";
 import { getSession } from "../lib/session";
@@ -20,7 +21,7 @@ function Aviso({
   tom: string;
   icone: ReactNode;
   texto: string;
-  onVer: () => void;
+  onVer?: () => void;
   onDispensar: () => void;
 }) {
   return (
@@ -29,9 +30,11 @@ function Aviso({
         {icone}
       </span>
       <span className="min-w-0 flex-1">{texto}</span>
-      <button type="button" onClick={onVer} className="shrink-0 font-semibold underline">
-        Ver
-      </button>
+      {onVer && (
+        <button type="button" onClick={onVer} className="shrink-0 font-semibold underline">
+          Ver
+        </button>
+      )}
       <button type="button" onClick={onDispensar} aria-label="Dispensar aviso" className="shrink-0 opacity-70">
         <X size={16} />
       </button>
@@ -78,6 +81,7 @@ export default function ListaProntuarios() {
   const usuario = sessao?.user;
 
   useSyncDown();
+  const { notificacoes, dispensar: dispensarNotificacao } = useNotificacoes();
 
   const [devolvidoId, setDevolvidoId] = useState<string | null>(null);
   const [filtro, setFiltro] = useState<Filtro>("todos");
@@ -223,6 +227,15 @@ export default function ListaProntuarios() {
           </div>
         )}
 
+        {notificacoes.map((n) => (
+          <Aviso
+            key={n.id}
+            tom="bg-alt-tint text-alt"
+            icone={<Bell size={16} />}
+            texto={n.mensagem}
+            onDispensar={() => dispensarNotificacao(n.id)}
+          />
+        ))}
         {devolvidosNovos.length > 0 && (
           <Aviso
             tom="bg-alt-tint text-alt"

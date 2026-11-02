@@ -20,6 +20,22 @@ interface DuplicadoRow {
   status: string;
 }
 
+export function buscarDuplicado(
+  db: DatabaseSync,
+  pront: Pick<ProntuarioEnvioRow, "id" | "pacienteNome" | "pacienteDataNascimento">,
+  alunoId: string,
+): DuplicadoRow | undefined {
+  if (!pront.pacienteDataNascimento) return undefined;
+  return db
+    .prepare(
+      `SELECT id, alunoTitularId, criadoEm, status FROM Prontuario
+       WHERE pacienteNome = ? AND pacienteDataNascimento = ?
+         AND id != ? AND alunoTitularId != ? AND status != 'EM_ANDAMENTO'
+       ORDER BY criadoEm ASC LIMIT 1`,
+    )
+    .get(pront.pacienteNome, pront.pacienteDataNascimento, pront.id, alunoId) as unknown as DuplicadoRow | undefined;
+}
+
 export function enviarProntuario(db: DatabaseSync, prontuarioId: string, alunoId: string): ResultadoEnvio {
   const pront = db
     .prepare(
@@ -49,17 +65,7 @@ export function enviarProntuario(db: DatabaseSync, prontuarioId: string, alunoId
     .get(nomeProfessor) as unknown as ProfessorRow | undefined;
   if (!professor) return { ok: false, erro: "professor_nao_encontrado" };
 
-  let duplicado: DuplicadoRow | undefined;
-  if (pront.pacienteDataNascimento) {
-    duplicado = db
-      .prepare(
-        `SELECT id, alunoTitularId, criadoEm, status FROM Prontuario
-         WHERE pacienteNome = ? AND pacienteDataNascimento = ?
-           AND id != ? AND status != 'EM_ANDAMENTO'
-         ORDER BY criadoEm ASC LIMIT 1`,
-      )
-      .get(pront.pacienteNome, pront.pacienteDataNascimento, pront.id) as unknown as DuplicadoRow | undefined;
-  }
+  const duplicado = buscarDuplicado(db, pront, alunoId);
 
   db.prepare(
     `UPDATE Prontuario

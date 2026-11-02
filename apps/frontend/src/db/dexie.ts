@@ -26,6 +26,7 @@ export interface LocalProntuario {
   motivoDevolucao?: string;
   comentarioDevolucao?: string;
   vistoPeloAluno?: boolean;
+  sinalizadoDuplicidade?: boolean;
 }
 
 export interface LocalPlanoProfessor {

@@ -52,7 +52,8 @@ export function useSecao<T extends SchemaSecao>(
   const form = useForm<V>({ defaultValues: inicial as unknown as DefaultValues<V> });
   const { watch, getValues, reset } = form;
 
-  const somenteLeitura = prontuario.status !== "em_andamento" && !acessoVigente(prontuario);
+  const somenteLeitura =
+    prontuario.status === "enviado" || (prontuario.status !== "em_andamento" && !acessoVigente(prontuario));
   const assinadoRef = useRef(false);
   assinadoRef.current = prontuario.status === "assinado";
 

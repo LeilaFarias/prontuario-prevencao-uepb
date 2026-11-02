@@ -54,8 +54,8 @@ export const syncRoutes: FastifyPluginAsync = async (app) => {
      WHERE id = ?`,
   );
   const inserirPront = db.prepare(
-    `INSERT INTO Prontuario (id, pacienteNome, pacienteDataNascimento, alunoTitularId, status)
-     VALUES (?, ?, ?, ?, COALESCE(?, 'EM_ANDAMENTO'))`,
+    `INSERT INTO Prontuario (id, pacienteNome, pacienteDataNascimento, alunoTitularId, status, acessoExpiraEm)
+     VALUES (?, ?, ?, ?, COALESCE(?, 'EM_ANDAMENTO'), ?)`,
   );
   const atualizarPront = db.prepare(
     `UPDATE Prontuario SET
@@ -130,7 +130,8 @@ export const syncRoutes: FastifyPluginAsync = async (app) => {
 
       if (!existe) {
         if (!p.alunoTitularId || p.pacienteNome === undefined) throw new Error("Payload incompleto para criar prontuário");
-        inserirPront.run(op.entityId, p.pacienteNome, nascimento, p.alunoTitularId, status);
+        const acessoExpiraEm = new Date(op.ts + ACESSO_DURACAO_MS).toISOString();
+        inserirPront.run(op.entityId, p.pacienteNome, nascimento, p.alunoTitularId, status, acessoExpiraEm);
       } else {
         atualizarPront.run(p.pacienteNome || null, nascimento, null, agora, op.entityId);
       }
@@ -179,9 +180,9 @@ export const syncRoutes: FastifyPluginAsync = async (app) => {
               descartar = true;
               acessoExpirado.add(op.prontuarioId);
             }
-          } else if (enviado && !acessoCobreOperacao(pront, op.ts)) {
+          } else if (enviado) {
             descartar = true;
-            acessoExpirado.add(op.prontuarioId);
+            if (!acessoCobreOperacao(pront, op.ts)) acessoExpirado.add(op.prontuarioId);
           }
         }
 

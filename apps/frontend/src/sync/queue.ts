@@ -230,6 +230,7 @@ async function executarFlush(): Promise<void> {
 
 async function tratarEnviosRecusados(envios: EnvioSincronizado[]): Promise<void> {
   for (const e of envios) {
+    if (e.ok && e.duplicado) await db.prontuarios.update(e.prontuarioId, { sinalizadoDuplicidade: true });
     if (e.ok || e.erro === "ja_enviado") continue;
     await db.prontuarios
       .where("id")
@@ -255,7 +256,12 @@ export type ResultadoEnvioLocal =
 
 const esperar = (ms: number) => new Promise<void>((resolve) => window.setTimeout(resolve, ms));
 
-async function marcarEnviadoLocal(prontuarioId: string, sincronizado: boolean, ts: number): Promise<void> {
+async function marcarEnviadoLocal(
+  prontuarioId: string,
+  sincronizado: boolean,
+  ts: number,
+  duplicado?: boolean,
+): Promise<void> {
   await db.prontuarios
     .where("id")
     .equals(prontuarioId)
@@ -263,6 +269,7 @@ async function marcarEnviadoLocal(prontuarioId: string, sincronizado: boolean, t
       p.status = "enviado";
       p.atualizadoEm = ts;
       p.sincronizado = sincronizado;
+      if (duplicado !== undefined) p.sinalizadoDuplicidade = duplicado;
       delete p.erroEnvio;
     });
 }
@@ -311,7 +318,7 @@ export async function enviarAoProfessor(prontuarioId: string): Promise<Resultado
       return { tipo: "erro", mensagem: "Não foi possível enviar o prontuário. Tente novamente." };
     }
     const enviadoEm = Date.now();
-    await marcarEnviadoLocal(prontuarioId, true, enviadoEm);
+    await marcarEnviadoLocal(prontuarioId, true, enviadoEm, Boolean(resultado.duplicado));
     notifyChanged();
     return { tipo: "enviado", resultado, enviadoEm };
   } catch (err) {

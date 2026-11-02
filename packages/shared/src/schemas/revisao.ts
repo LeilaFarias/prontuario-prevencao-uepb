@@ -35,8 +35,36 @@ export const devolverSchema = z.object({
     .max(COMENTARIO_DEVOLUCAO_MAX, `O comentário pode ter no máximo ${COMENTARIO_DEVOLUCAO_MAX} caracteres`),
 });
 
+export const transferirTitularidadeSchema = z.object({
+  novoAlunoTitularId: z.string().trim().min(1, "Selecione a nova dupla"),
+  novoProfessorSupervisorId: z.string().trim().min(1).optional(),
+});
+
+export const manterTitularidadeSchema = z.object({
+  professorSupervisorId: z.string().trim().min(1, "Selecione o professor responsável"),
+});
+
 export type AssinarInput = z.infer<typeof assinarSchema>;
 export type DevolverInput = z.infer<typeof devolverSchema>;
+export type TransferirTitularidadeInput = z.infer<typeof transferirTitularidadeSchema>;
+export type ManterTitularidadeInput = z.infer<typeof manterTitularidadeSchema>;
+
+export interface PartesDuplicidade {
+  prontuarioId: string;
+  alunoId: string;
+  alunoNome: string;
+  alunoOperador: string;
+  alunoAuxiliar: string;
+  professorId: string | null;
+  professorNome: string | null;
+  criadoEm: string;
+  status: string;
+}
+
+export interface DuplicidadeResponse {
+  atual: PartesDuplicidade;
+  existente: PartesDuplicidade | null;
+}
 
 export interface AssinarResponse {
   ok: true;
@@ -56,3 +84,12 @@ export type CodigoErroRevisao =
   | "SENHA_INCORRETA"
   | "NAO_SUPERVISOR"
   | "NAO_AGUARDANDO";
+
+
+export interface NotificacaoAluno {
+  id: string;
+  prontuarioId: string | null;
+  tipo: string;
+  mensagem: string;
+  criadoEm: string;
+}

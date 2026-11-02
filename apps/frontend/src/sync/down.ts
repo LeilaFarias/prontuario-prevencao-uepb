@@ -1,5 +1,6 @@
 import { db, type LocalProntuario, type LocalStatus } from "../db/dexie";
 import { api } from "../lib/api";
+import { getSession } from "../lib/session";
 import { notifyChanged } from "./queue";
 
 export const ULTIMO_SYNC_DOWN_KEY = "prontuario:ultimoSyncDown";
@@ -14,13 +15,14 @@ export interface ProntuarioRemotoResumo {
   alunoTitularId: string;
   professorSupervisorId: string | null;
   alunoNome: string;
+  professorSupervisorNome: string | null;
+  sinalizadoDuplicidade: number;
 }
 
 export interface ProntuarioRemoto extends ProntuarioRemotoResumo {
   secoes: Record<string, unknown>;
   assinadoEm: string | null;
   assinadoPorNome: string | null;
-  professorSupervisorNome: string | null;
   acessoSolicitadoEm: string | null;
   acessoExpiraEm: string | null;
   acessoRevogadoEm: string | null;
@@ -55,6 +57,7 @@ function camposDeRevisao(remoto: ProntuarioRemoto) {
     devolvidoPorNome: remoto.devolvidoPorNome ?? undefined,
     motivoDevolucao: remoto.motivoDevolucao ?? undefined,
     comentarioDevolucao: remoto.comentarioDevolucao ?? undefined,
+    sinalizadoDuplicidade: remoto.sinalizadoDuplicidade === 1,
   };
 }
 
@@ -108,7 +111,8 @@ export async function aplicarRemoto(remoto: ProntuarioRemoto): Promise<boolean> 
       remoto.acessoExpiraEm !== (local.acessoExpiraEm ?? null) ||
       remoto.acessoRevogadoEm !== (local.acessoRevogadoEm ?? null) ||
       remoto.acessoRecusadoEm !== (local.acessoRecusadoEm ?? null) ||
-      novoStatus !== local.status;
+      novoStatus !== local.status ||
+      (remoto.sinalizadoDuplicidade === 1) !== Boolean(local.sinalizadoDuplicidade);
 
     const pendentes = await db.syncQueue.where("prontuarioId").equals(local.id).count();
 
@@ -130,6 +134,7 @@ export async function aplicarRemoto(remoto: ProntuarioRemoto): Promise<boolean> 
         acessoRecusadoEm: remoto.acessoRecusadoEm ?? undefined,
         professorSupervisorId: remoto.professorSupervisorId ?? undefined,
         professorSupervisorNome: remoto.professorSupervisorNome ?? undefined,
+        sinalizadoDuplicidade: remoto.sinalizadoDuplicidade === 1,
         vistoPeloAluno: novoStatus === local.status ? local.vistoPeloAluno : false,
       });
       return true;
@@ -164,6 +169,18 @@ async function precisaAtualizar(resumo: ProntuarioRemotoResumo): Promise<boolean
 
 const SIMULTANEOS = 4;
 
+async function removerTransferidos(resumos: ProntuarioRemotoResumo[]): Promise<boolean> {
+  if (getSession()?.user.perfil !== "aluno") return false;
+  const idsRemotos = new Set(resumos.map((r) => r.id));
+  const pendentes = new Set((await db.syncQueue.toArray()).map((o) => o.prontuarioId));
+  const obsoletos = (await db.prontuarios.toArray()).filter(
+    (p) => p.sincronizado && !idsRemotos.has(p.id) && !pendentes.has(p.id),
+  );
+  if (obsoletos.length === 0) return false;
+  await db.prontuarios.bulkDelete(obsoletos.map((p) => p.id));
+  return true;
+}
+
 export async function sincronizarParaBaixo(): Promise<void> {
   const resumos = await buscarResumos();
   const alvos: ProntuarioRemotoResumo[] = [];
@@ -171,7 +188,7 @@ export async function sincronizarParaBaixo(): Promise<void> {
     if (await precisaAtualizar(r)) alvos.push(r);
   }
 
-  let alterou = false;
+  let alterou = await removerTransferidos(resumos);
   for (let i = 0; i < alvos.length; i += SIMULTANEOS) {
     const lote = alvos.slice(i, i + SIMULTANEOS);
     const resultados = await Promise.allSettled(

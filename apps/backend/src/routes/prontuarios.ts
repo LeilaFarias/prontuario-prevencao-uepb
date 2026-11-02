@@ -3,13 +3,17 @@ import type { FastifyPluginAsync, FastifyReply } from "fastify";
 import {
   assinarSchema,
   devolverSchema,
+  manterTitularidadeSchema,
+  transferirTitularidadeSchema,
+  type DuplicidadeResponse,
+  type PartesDuplicidade,
   type AssinarResponse,
   type CodigoErroRevisao,
   type DevolverResponse,
 } from "@prontuario/shared";
 import { transacao } from "../db";
 import { ACESSO_DURACAO_MS, estadoAcesso, pedidoPendente, type AcessoRow } from "../lib/acesso";
-import { enviarProntuario } from "../lib/envio";
+import { buscarDuplicado, enviarProntuario } from "../lib/envio";
 import { reabrirProntuario } from "../lib/reabertura";
 import { verificarSenha } from "../lib/senha";
 
@@ -23,6 +27,8 @@ interface ProntuarioListaRow {
   alunoTitularId: string;
   professorSupervisorId: string | null;
   alunoNome: string;
+  professorSupervisorNome: string | null;
+  sinalizadoDuplicidade: number;
 }
 
 interface SecaoRow {
@@ -91,7 +97,9 @@ const COLUNAS = `
   ${ATUALIZADO_EM_EFETIVO} AS atualizadoEm,
   p.alunoTitularId,
   p.professorSupervisorId,
-  u.nome AS alunoNome`;
+  p.sinalizadoDuplicidade,
+  u.nome AS alunoNome,
+  pr.nome AS professorSupervisorNome`;
 
 export const prontuariosRoutes: FastifyPluginAsync = async (app) => {
   const { db } = app;
@@ -101,12 +109,14 @@ export const prontuariosRoutes: FastifyPluginAsync = async (app) => {
     `SELECT ${COLUNAS}
      FROM Prontuario p
      JOIN Usuario u ON u.id = p.alunoTitularId
+     LEFT JOIN Usuario pr ON pr.id = p.professorSupervisorId
      ORDER BY atualizadoEm DESC`,
   );
   const listarDoAluno = db.prepare(
     `SELECT ${COLUNAS}
      FROM Prontuario p
      JOIN Usuario u ON u.id = p.alunoTitularId
+     LEFT JOIN Usuario pr ON pr.id = p.professorSupervisorId
      WHERE p.alunoTitularId = ?
      ORDER BY atualizadoEm DESC`,
   );
@@ -114,6 +124,7 @@ export const prontuariosRoutes: FastifyPluginAsync = async (app) => {
     `SELECT ${COLUNAS}
      FROM Prontuario p
      JOIN Usuario u ON u.id = p.alunoTitularId
+     LEFT JOIN Usuario pr ON pr.id = p.professorSupervisorId
      WHERE p.id = ?`,
   );
   const buscarSecoes = db.prepare("SELECT secaoId, conteudo FROM Secao WHERE prontuarioId = ?");
@@ -124,6 +135,38 @@ export const prontuariosRoutes: FastifyPluginAsync = async (app) => {
     `SELECT assinadoEm, assinadoPorNome, devolvidoEm, devolvidoPorNome, motivoDevolucao, comentarioDevolucao,
        acessoSolicitadoEm, acessoExpiraEm, acessoRevogadoEm, acessoRecusadoEm
       FROM Prontuario WHERE id = ?`,
+  );
+  const buscarParaTransferencia = db.prepare(
+    "SELECT alunoTitularId, professorSupervisorId FROM Prontuario WHERE id = ?",
+  );
+  const buscarPartes = db.prepare(
+    `SELECT p.id AS prontuarioId, p.pacienteNome, p.pacienteDataNascimento, p.status, p.criadoEm,
+            p.sinalizadoDuplicidade, p.alunoTitularId AS alunoId, u.nome AS alunoNome,
+            p.professorSupervisorId AS professorId, pr.nome AS professorNome
+     FROM Prontuario p
+     JOIN Usuario u ON u.id = p.alunoTitularId
+     LEFT JOIN Usuario pr ON pr.id = p.professorSupervisorId
+     WHERE p.id = ?`,
+  );
+  const buscarConsentimento = db.prepare(
+    "SELECT conteudo FROM Secao WHERE prontuarioId = ? AND secaoId = 'consentimento'",
+  );
+  const inserirNotificacao = db.prepare(
+    "INSERT INTO Notificacao (id, usuarioId, prontuarioId, tipo, mensagem) VALUES (?, ?, ?, ?, ?)",
+  );
+  const gravarManutencao = db.prepare(
+    `UPDATE Prontuario SET professorSupervisorId = ?, sinalizadoDuplicidade = 0, atualizadoEm = ? WHERE id = ?`,
+  );
+  const buscarAlunoAtivo = db.prepare(
+    "SELECT id, nome FROM Usuario WHERE id = ? AND UPPER(perfil) = 'ALUNO' AND ativo = 1",
+  );
+  const gravarTransferencia = db.prepare(
+    `UPDATE Prontuario
+     SET alunoTitularId = ?, professorSupervisorId = ?, sinalizadoDuplicidade = 0, atualizadoEm = ?
+     WHERE id = ?`,
+  );
+  const registrarAuditoria = db.prepare(
+    "INSERT INTO AuditLog (id, usuarioId, prontuarioId, acao, detalhe) VALUES (?, ?, ?, ?, ?)",
   );
   const buscarNomeProfessor = db.prepare("SELECT nome FROM Usuario WHERE id = ?");
   const buscarAcesso = db.prepare(
@@ -233,6 +276,7 @@ export const prontuariosRoutes: FastifyPluginAsync = async (app) => {
         acessoRecusadoEm: revisao.acessoRecusadoEm,
         professorSupervisorId: linha.professorSupervisorId,
         professorSupervisorNome,
+        sinalizadoDuplicidade: linha.sinalizadoDuplicidade,
         secoes: {},
       };
     }
@@ -433,6 +477,187 @@ export const prontuariosRoutes: FastifyPluginAsync = async (app) => {
     req.log.info({ prontuarioId: id, professorId: req.user.sub }, "pedido de acesso recusado");
     return resultado;
   });
+
+  const ALUNO_INVALIDO: FalhaAcesso = { falha: 400, error: "Aluno inválido ou inativo." };
+  const MESMO_ALUNO: FalhaAcesso = { falha: 409, error: "O aluno informado já é o titular deste prontuário." };
+
+  type PartesRow = PartesDuplicidade & {
+    pacienteNome: string;
+    pacienteDataNascimento: string | null;
+    sinalizadoDuplicidade: number;
+  };
+
+  const lerDupla = (prontuarioId: string): { alunoOperador: string; alunoAuxiliar: string } => {
+    const secao = buscarConsentimento.get(prontuarioId) as unknown as { conteudo: string } | undefined;
+    try {
+      const c = JSON.parse(secao?.conteudo ?? "{}") as { alunoOperador?: unknown; alunoAuxiliar?: unknown };
+      return {
+        alunoOperador: typeof c.alunoOperador === "string" ? c.alunoOperador.trim() : "",
+        alunoAuxiliar: typeof c.alunoAuxiliar === "string" ? c.alunoAuxiliar.trim() : "",
+      };
+    } catch {
+      return { alunoOperador: "", alunoAuxiliar: "" };
+    }
+  };
+
+  const textoDupla = (p: PartesDuplicidade): string =>
+    [p.alunoOperador, p.alunoAuxiliar].filter(Boolean).join(" e ") || p.alunoNome;
+
+  const notificar = (usuarioId: string, prontuarioId: string, tipo: string, mensagem: string): void => {
+    inserirNotificacao.run(randomUUID(), usuarioId, prontuarioId, tipo, mensagem);
+  };
+
+  const SEM_DUPLICIDADE: FalhaAcesso = { falha: 409, error: "Este prontuário não está sinalizado como duplicado." };
+
+  const montarDuplicidade = (id: string): { falha: FalhaAcesso } | { partes: PartesRow; resposta: DuplicidadeResponse } => {
+    const partes = buscarPartes.get(id) as unknown as PartesRow | undefined;
+    if (!partes) return { falha: NAO_ENCONTRADO };
+    const duplicado = buscarDuplicado(db, { ...partes, id: partes.prontuarioId }, partes.alunoId);
+    const existente = duplicado
+      ? (buscarPartes.get(duplicado.id) as unknown as PartesRow | undefined)
+      : undefined;
+    const resumir = (r: PartesRow): PartesDuplicidade => ({
+      prontuarioId: r.prontuarioId,
+      alunoId: r.alunoId,
+      alunoNome: r.alunoNome,
+      ...lerDupla(r.prontuarioId),
+      professorId: r.professorId,
+      professorNome: r.professorNome,
+      criadoEm: r.criadoEm,
+      status: r.status,
+    });
+    return { partes, resposta: { atual: resumir(partes), existente: existente ? resumir(existente) : null } };
+  };
+
+  app.get<{ Params: { id: string } }>("/prontuarios/:id/duplicidade", protegida, async (req, reply) => {
+    const r = montarDuplicidade(req.params.id);
+    if ("falha" in r) return responderFalha(reply, r.falha);
+    if (r.partes.professorId !== req.user.sub) return responderFalha(reply, NAO_SUPERVISOR);
+    return r.resposta;
+  });
+
+  app.post<{ Params: { id: string } }>(
+    "/prontuarios/:id/manter-titularidade",
+    protegida,
+    async (req, reply) => {
+      const { professorSupervisorId } = manterTitularidadeSchema.parse(req.body);
+      const { id } = req.params;
+
+      const resultado = transacao(db, () => {
+        const r = montarDuplicidade(id);
+        if ("falha" in r) return r.falha;
+        if (r.partes.professorId !== req.user.sub) return NAO_SUPERVISOR;
+        if (!r.partes.sinalizadoDuplicidade) return SEM_DUPLICIDADE;
+
+        const permitidos = new Set(
+          [r.resposta.atual.professorId, r.resposta.existente?.professorId].filter((v): v is string => !!v),
+        );
+        if (!permitidos.has(professorSupervisorId) || !buscarProfessor.get(professorSupervisorId)) {
+          return PROFESSOR_INVALIDO;
+        }
+
+        gravarManutencao.run(professorSupervisorId, new Date().toISOString(), id);
+        registrarAuditoria.run(
+          randomUUID(),
+          req.user.sub,
+          id,
+          "manutencao-titularidade",
+          JSON.stringify({
+            aluno: r.partes.alunoId,
+            professorAnterior: r.partes.professorId,
+            professorNovo: professorSupervisorId,
+          }),
+        );
+        registrarLog.run(randomUUID(), id, id, "manter-titularidade", Date.now());
+
+        const { atual, existente } = r.resposta;
+        const responsavel = (buscarNomeProfessor.get(professorSupervisorId) as unknown as { nome: string }).nome;
+        notificar(
+          atual.alunoId,
+          id,
+          "duplicidade-mantida",
+          `A duplicidade do prontuário de ${r.partes.pacienteNome} foi resolvida: ele permanece com ${textoDupla(atual)}. Professor responsável: ${responsavel}.`,
+        );
+        if (existente) {
+          notificar(
+            existente.alunoId,
+            existente.prontuarioId,
+            "duplicidade-mantida-outra-dupla",
+            `O prontuário de ${r.partes.pacienteNome} enviado por ${textoDupla(atual)} foi mantido com a outra dupla. O seu prontuário não foi alterado.`,
+          );
+        }
+        return { ok: true as const };
+      });
+
+      if ("falha" in resultado) return responderFalha(reply, resultado);
+      req.log.info({ prontuarioId: id, professorId: req.user.sub }, "titularidade mantida");
+      return resultado;
+    },
+  );
+
+  app.post<{ Params: { id: string } }>(
+    "/prontuarios/:id/transferir-titularidade",
+    protegida,
+    async (req, reply) => {
+      const { novoAlunoTitularId, novoProfessorSupervisorId } = transferirTitularidadeSchema.parse(req.body);
+      const { id } = req.params;
+
+      const resultado = transacao(db, () => {
+        const pront = buscarParaTransferencia.get(id) as unknown as
+          | { alunoTitularId: string; professorSupervisorId: string | null }
+          | undefined;
+        if (!pront) return NAO_ENCONTRADO;
+        if (pront.professorSupervisorId !== req.user.sub) return NAO_SUPERVISOR;
+        if (pront.alunoTitularId === novoAlunoTitularId) return MESMO_ALUNO;
+        const novoAluno = buscarAlunoAtivo.get(novoAlunoTitularId) as unknown as { nome: string } | undefined;
+        if (!novoAluno) return ALUNO_INVALIDO;
+        if (novoProfessorSupervisorId && !buscarProfessor.get(novoProfessorSupervisorId)) return PROFESSOR_INVALIDO;
+
+        const duplicidade = montarDuplicidade(id);
+        const professorNovo = novoProfessorSupervisorId ?? pront.professorSupervisorId;
+        gravarTransferencia.run(novoAlunoTitularId, professorNovo, new Date().toISOString(), id);
+        registrarAuditoria.run(
+          randomUUID(),
+          req.user.sub,
+          id,
+          "transferencia-titularidade",
+          JSON.stringify({
+            alunoAnterior: pront.alunoTitularId,
+            alunoNovo: novoAlunoTitularId,
+            professorAnterior: pront.professorSupervisorId,
+            professorNovo,
+          }),
+        );
+        registrarLog.run(randomUUID(), id, id, "transferir-titularidade", Date.now());
+
+        if (!("falha" in duplicidade)) {
+          const { atual, existente } = duplicidade.resposta;
+          const nomeNovaDupla = existente?.alunoId === novoAlunoTitularId ? textoDupla(existente) : novoAluno.nome;
+          const responsavel = professorNovo
+            ? (buscarNomeProfessor.get(professorNovo) as unknown as { nome: string } | undefined)?.nome
+            : undefined;
+          const sufixoProfessor = responsavel ? ` Professor responsável: ${responsavel}.` : "";
+          notificar(
+            pront.alunoTitularId,
+            id,
+            "titularidade-transferida",
+            `O prontuário de ${duplicidade.partes.pacienteNome} foi transferido para ${nomeNovaDupla}. Você não poderá mais editá-lo.${sufixoProfessor}`,
+          );
+          notificar(
+            novoAlunoTitularId,
+            id,
+            "titularidade-recebida",
+            `Você recebeu a titularidade do prontuário de ${duplicidade.partes.pacienteNome}, enviado por ${textoDupla(atual)}.${sufixoProfessor}`,
+          );
+        }
+        return { ok: true as const };
+      });
+
+      if ("falha" in resultado) return responderFalha(reply, resultado);
+      req.log.info({ prontuarioId: id, professorId: req.user.sub, novoAlunoTitularId }, "titularidade transferida");
+      return resultado;
+    },
+  );
 
   const recusar = (reply: FastifyReply, status: number, message: string, codigo: CodigoErroRevisao) =>
     reply.status(status).send({ message, codigo });
