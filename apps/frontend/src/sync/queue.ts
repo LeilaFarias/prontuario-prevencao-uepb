@@ -268,6 +268,43 @@ export async function enviarAoProfessor(prontuarioId: string): Promise<Resultado
   }
 }
 
+export async function reabrirParaCorrecao(prontuarioId: string): Promise<void> {
+  const agora = Date.now();
+
+  await db.transaction("rw", db.prontuarios, db.syncQueue, async () => {
+    const atual = await db.prontuarios.get(prontuarioId);
+    if (!atual || atual.status !== "devolvido") return;
+
+    await db.prontuarios.put({
+      ...atual,
+      status: "em_andamento",
+      devolvidoEm: undefined,
+      devolvidoPorNome: undefined,
+      motivoDevolucao: undefined,
+      comentarioDevolucao: undefined,
+      vistoPeloAluno: true,
+      atualizadoEm: agora,
+      sincronizado: false,
+    });
+    await db.syncQueue.add({
+      prontuarioId,
+      op: "reabrir",
+      entity: "prontuario",
+      entityId: prontuarioId,
+      payload: {},
+      ts: agora,
+    });
+  });
+
+  registrarSalvamento(agora);
+  notifyChanged();
+  void flush();
+}
+
+export async function marcarComoVisto(prontuarioId: string): Promise<void> {
+  await db.prontuarios.update(prontuarioId, { vistoPeloAluno: true });
+}
+
 let iniciado = false;
 
 export function startSyncLoop(): void {

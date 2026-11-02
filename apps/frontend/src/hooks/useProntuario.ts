@@ -6,12 +6,6 @@ export interface ProntuarioRevisao extends ProntuarioRemoto {
   podeAgir: boolean;
   ehSupervisor: boolean;
   enviadoEm: string | null;
-  assinadoEm: string | null;
-  assinadoPorNome: string | null;
-  devolvidoEm: string | null;
-  devolvidoPorNome: string | null;
-  motivoDevolucao: string | null;
-  comentarioDevolucao: string | null;
 }
 
 export type EstadoProntuario =

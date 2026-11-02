@@ -9,6 +9,7 @@ import {
 } from "@prontuario/shared";
 import { transacao } from "../db";
 import { enviarProntuario } from "../lib/envio";
+import { reabrirProntuario } from "../lib/reabertura";
 
 const prontuarioPayload = z.object({
   pacienteNome: z.string().optional(), 
@@ -76,7 +77,7 @@ export const syncRoutes: FastifyPluginAsync = async (app) => {
         if (!p.alunoTitularId || p.pacienteNome === undefined) throw new Error("Payload incompleto para criar prontuário");
         inserirPront.run(op.entityId, p.pacienteNome, nascimento, p.alunoTitularId, status);
       } else {
-        atualizarPront.run(p.pacienteNome || null, nascimento, status, agora, op.entityId);
+        atualizarPront.run(p.pacienteNome || null, nascimento, null, agora, op.entityId);
       }
       return;
     }
@@ -115,6 +116,8 @@ export const syncRoutes: FastifyPluginAsync = async (app) => {
               const r = enviarProntuario(db, op.prontuarioId, req.user.sub);
               envios.push({ prontuarioId: op.prontuarioId, ...r });
               if (!r.ok) descartar = true;
+            } else if (op.entity === "prontuario" && op.op === "reabrir") {
+              if (reabrirProntuario(db, op.prontuarioId, req.user.sub) !== "ok") descartar = true;
             } else {
               aplicar(op, !!pront);
             }

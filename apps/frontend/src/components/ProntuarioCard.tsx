@@ -20,7 +20,7 @@ const ACAO_POR_STATUS: Record<LocalStatus, { label: string; cor: string }> = {
   em_andamento: { label: "Continuar →", cor: "text-primary" },
   enviado: { label: "Ver ficha →", cor: "text-sync" },
   assinado: { label: "Consultar →", cor: "text-primary" },
-  devolvido: { label: "Corrigir →", cor: "text-alt" },
+  devolvido: { label: "Ver comentário →", cor: "text-alt" },
 };
 
 const PREFIXO_TEMPO: Record<LocalStatus, string> = {
@@ -42,13 +42,23 @@ export default function ProntuarioCard({ prontuario, onAbrir }: ProntuarioCardPr
   const acao = semNome && status === "em_andamento" ? { label: "Preencher →", cor: "text-primary" } : ACAO_POR_STATUS[status];
   const Icone = badge.icone;
 
-  const tempo = tempoRelativo(atualizadoEm);
+  const marcoEm = status === "assinado" ? prontuario.assinadoEm : status === "devolvido" ? prontuario.devolvidoEm : undefined;
+  const marcoTs = marcoEm ? new Date(marcoEm).getTime() : NaN;
+  const tempo = tempoRelativo(Number.isFinite(marcoTs) ? marcoTs : atualizadoEm);
   const idade = calcularIdade(prontuario.pacienteDataNascimento);
+  const professor =
+    status === "assinado" && prontuario.assinadoPorNome
+      ? `Assinado por ${prontuario.assinadoPorNome}`
+      : status === "devolvido" && prontuario.devolvidoPorNome
+        ? `Devolvido por ${prontuario.devolvidoPorNome}`
+        : null;
   const subtitulo = semNome
     ? "Aguardando preenchimento"
-    : idade !== null
-      ? `${idade} anos · atualizado ${tempo}`
-      : `atualizado ${tempo}`;
+    : professor
+      ? [idade !== null ? `${idade} anos` : null, professor].filter(Boolean).join(" · ")
+      : idade !== null
+        ? `${idade} anos · atualizado ${tempo}`
+        : `atualizado ${tempo}`;
   const inicial = semNome ? "?" : pacienteNome.trim().charAt(0).toUpperCase();
 
   return (

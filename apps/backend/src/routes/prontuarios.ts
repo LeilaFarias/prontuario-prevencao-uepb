@@ -9,6 +9,7 @@ import {
 } from "@prontuario/shared";
 import { transacao } from "../db";
 import { enviarProntuario } from "../lib/envio";
+import { reabrirProntuario } from "../lib/reabertura";
 import { verificarSenha } from "../lib/senha";
 
 interface ProntuarioListaRow {
@@ -196,6 +197,27 @@ export const prontuariosRoutes: FastifyPluginAsync = async (app) => {
     req.log.info({ prontuarioId: id, duplicado: resultado.duplicado }, "prontuário enviado ao professor");
     return resultado;
   });
+  app.post<{ Params: { id: string } }>("/prontuarios/:id/reabrir", protegida, async (req, reply) => {
+    if (!ehAluno(req.user.perfil)) {
+      return reply.status(403).send({ message: "Apenas o aluno titular pode reabrir o prontuário." });
+    }
+
+    const { id } = req.params;
+    const resultado = transacao(db, () => {
+      const r = reabrirProntuario(db, id, req.user.sub);
+      if (r === "ok") registrarLog.run(randomUUID(), id, id, "reabrir", Date.now());
+      return r;
+    });
+
+    if (resultado === "nao_encontrado") return reply.status(404).send({ message: "Prontuário não encontrado." });
+    if (resultado === "nao_devolvido") {
+      return reply.status(409).send({ message: "Prontuário não está devolvido", codigo: "NAO_DEVOLVIDO" });
+    }
+
+    req.log.info({ prontuarioId: id }, "prontuário reaberto pelo aluno");
+    return { ok: true };
+  });
+
   const recusar = (reply: FastifyReply, status: number, message: string, codigo: CodigoErroRevisao) =>
     reply.status(status).send({ message, codigo });
 

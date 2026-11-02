@@ -13,6 +13,13 @@ export interface LocalProntuario {
   sincronizado: boolean;
   alunoTitularId?: string;
   erroEnvio?: "professor_nao_encontrado" | "falha";
+  assinadoEm?: string;
+  assinadoPorNome?: string;
+  devolvidoEm?: string;
+  devolvidoPorNome?: string;
+  motivoDevolucao?: string;
+  comentarioDevolucao?: string;
+  vistoPeloAluno?: boolean;
 }
 
 export interface LocalPlanoProfessor {
@@ -24,7 +31,7 @@ export interface LocalPlanoProfessor {
 export interface LocalSyncOp {
   id?: number;
   prontuarioId: string;
-  op: "create" | "update" | "delete" | "enviar";
+  op: "create" | "update" | "delete" | "enviar" | "reabrir";
   entity: "prontuario" | "secao" | "procedimento" | "anexo";
   entityId: string;
   payload: Record<string, unknown>;

@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import { useLiveQuery } from "dexie-react-hooks";
-import { useNavigate, useParams } from "react-router-dom";
-import { Check, Clock, Send } from "lucide-react";
+import { useNavigate, useParams, useSearchParams } from "react-router-dom";
+import { Check, Clock, RotateCcw, Send } from "lucide-react";
 import { SECOES, type SecaoId } from "@prontuario/shared";
 import Consentimento from "../components/ficha/Consentimento";
 import Conclusao from "../components/ficha/Conclusao";
@@ -14,20 +14,25 @@ import IHOS from "../components/ficha/IHOS";
 import Plano from "../components/ficha/Plano";
 import Sangramento from "../components/ficha/Sangramento";
 import Procedimentos from "../components/ficha/Procedimentos";
+import DevolucaoAlunoModal from "../components/DevolucaoAlunoModal";
 import EnviarProntuarioModal from "../components/EnviarProntuarioModal";
 import StatusBar from "../components/StatusBar";
 import Topbar from "../components/Topbar";
 import { db, type LocalProntuario } from "../db/dexie";
 import { useProntuarioSync } from "../hooks/useProntuarioSync";
 import { salvarSecoesPendentes } from "../hooks/useSecao";
-import { salvarSecaoLocal } from "../sync/queue";
+import { formatarDataHoraCompleta } from "../components/ficha/revisao/rotulos";
+import { marcarComoVisto, reabrirParaCorrecao, salvarSecaoLocal } from "../sync/queue";
 
 const DEBOUNCE_MS = 800;
 
 export default function Prontuario() {
   const { id } = useParams<{ id: string }>();
   const navigate = useNavigate();
+  const [params] = useSearchParams();
+  const modoLeitura = params.get("modo") === "leitura";
   const { carregando: sincronizando, versao } = useProntuarioSync(id);
+  const [verDevolucao, setVerDevolucao] = useState(false);
 
   const [estado, setEstado] = useState<"carregando" | "ok" | "nao-encontrado">("carregando");
   const [pront, setPront] = useState<LocalProntuario | null>(null);
@@ -81,6 +86,12 @@ export default function Prontuario() {
     chipAtivo.current?.scrollIntoView({ inline: "center", block: "nearest", behavior: "smooth" });
   }, [indice]);
 
+  const jaVisto = vivo?.vistoPeloAluno;
+  const statusAoVivo = vivo?.status;
+  useEffect(() => {
+    if (id && statusAoVivo === "assinado" && !jaVisto) void marcarComoVisto(id);
+  }, [id, statusAoVivo, jaVisto]);
+
   function irPara(i: number) {
     void salvarPendente();
     setIndice(i);
@@ -124,20 +135,48 @@ export default function Prontuario() {
   const nomeExibido = (nomeAoVivo ?? pront.pacienteNome).trim();
   const atual = vivo ?? pront;
   const status = atual.status;
-  const somenteLeitura = status === "enviado" || status === "assinado";
-  const professor = String((atual.secoes["consentimento"] as { professorSupervisor?: unknown } | undefined)?.professorSupervisor ?? "").trim();
+  const somenteLeitura = status !== "em_andamento" || modoLeitura;
+  const professorDigitado = String(
+    (atual.secoes["consentimento"] as { professorSupervisor?: unknown } | undefined)?.professorSupervisor ?? "",
+  ).trim();
+  const nomeAssinatura = atual.assinadoPorNome || professorDigitado;
+  const quandoAssinado = formatarDataHoraCompleta(atual.assinadoEm);
 
-  const pillStatus =
+  async function corrigir() {
+    await reabrirParaCorrecao(atual.id);
+    setVerDevolucao(false);
+  }
+
+  const PILL = "inline-flex w-fit items-center gap-1.5 rounded-pill px-3 py-1 text-[12px] font-semibold";
+  const bannerStatus =
     status === "enviado" ? (
-      <span className="inline-flex w-fit items-center gap-1.5 rounded-pill bg-sync-tint px-3 py-1 text-[12px] font-semibold text-sync">
-        <Clock size={12} aria-hidden="true" />
-        Aguardando revisão
-      </span>
+      <div className="flex flex-col gap-1.5">
+        <span className={`${PILL} bg-sync-tint text-sync`}>
+          <Clock size={12} aria-hidden="true" />
+          Aguardando revisão
+        </span>
+        <p className="text-[12px] text-ink-soft">Se precisar alterar, peça ao professor devolver.</p>
+      </div>
     ) : status === "assinado" ? (
-      <span className="inline-flex w-fit items-center gap-1.5 rounded-pill bg-primary-tint px-3 py-1 text-[12px] font-semibold text-primary">
+      <span className={`${PILL} bg-primary-tint text-primary`}>
         <Check size={12} aria-hidden="true" />
-        {professor ? `Assinado por ${professor}` : "Assinado"}
+        {nomeAssinatura
+          ? `Assinado por ${nomeAssinatura}${quandoAssinado ? ` em ${quandoAssinado}` : ""}`
+          : "Assinado"}
       </span>
+    ) : status === "devolvido" ? (
+      <div className="flex flex-wrap items-center gap-2">
+        <span className={`${PILL} bg-alt-tint text-alt`}>
+          <RotateCcw size={12} aria-hidden="true" />
+          {atual.devolvidoPorNome ? `Devolvido por ${atual.devolvidoPorNome}` : "Devolvido"}
+        </span>
+        <button type="button" className="text-[12.5px] font-semibold text-alt underline" onClick={() => setVerDevolucao(true)}>
+          Ver comentário
+        </button>
+        <button type="button" className="text-[12.5px] font-semibold text-primary underline" onClick={() => void corrigir()}>
+          Corrigir
+        </button>
+      </div>
     ) : null;
 
   return (
@@ -150,7 +189,7 @@ export default function Prontuario() {
       />
       <StatusBar className="mx-5 mb-2" />
 
-      {pillStatus && <div className="mx-5 mb-2">{pillStatus}</div>}
+      {bannerStatus && <div className="mx-5 mb-2">{bannerStatus}</div>}
 
       {status === "em_andamento" && atual.erroEnvio && (
         <div role="alert" className="banner-erro mx-5 mb-2">
@@ -245,15 +284,23 @@ export default function Prontuario() {
             Próxima
           </button>
         </div>
-        {status === "em_andamento" ? (
+        {!somenteLeitura && (
           <button type="button" className="btn-primary" onClick={() => void abrirEnvio()}>
             <Send size={16} aria-hidden="true" />
             Enviar ao professor
           </button>
-        ) : (
-          pillStatus && <div className="flex justify-center">{pillStatus}</div>
         )}
       </footer>
+
+      {status === "devolvido" && (
+        <DevolucaoAlunoModal
+          open={verDevolucao}
+          onClose={() => setVerDevolucao(false)}
+          prontuario={atual}
+          onCorrigir={() => void corrigir()}
+          onVerFicha={() => setVerDevolucao(false)}
+        />
+      )}
 
       {paraEnvio && (
         <EnviarProntuarioModal

@@ -18,6 +18,12 @@ export interface ProntuarioRemotoResumo {
 
 export interface ProntuarioRemoto extends ProntuarioRemotoResumo {
   secoes: Record<string, unknown>;
+  assinadoEm: string | null;
+  assinadoPorNome: string | null;
+  devolvidoEm: string | null;
+  devolvidoPorNome: string | null;
+  motivoDevolucao: string | null;
+  comentarioDevolucao: string | null;
 }
 
 const STATUS_VALIDOS: ReadonlySet<string> = new Set<LocalStatus>([
@@ -30,6 +36,17 @@ const STATUS_VALIDOS: ReadonlySet<string> = new Set<LocalStatus>([
 export function normalizarStatus(s: string): LocalProntuario["status"] {
   const v = s.trim().toLowerCase();
   return STATUS_VALIDOS.has(v) ? (v as LocalStatus) : "em_andamento";
+}
+
+function camposDeRevisao(remoto: ProntuarioRemoto) {
+  return {
+    assinadoEm: remoto.assinadoEm ?? undefined,
+    assinadoPorNome: remoto.assinadoPorNome ?? undefined,
+    devolvidoEm: remoto.devolvidoEm ?? undefined,
+    devolvidoPorNome: remoto.devolvidoPorNome ?? undefined,
+    motivoDevolucao: remoto.motivoDevolucao ?? undefined,
+    comentarioDevolucao: remoto.comentarioDevolucao ?? undefined,
+  };
 }
 
 function paraTimestamp(iso: string): number {
@@ -62,6 +79,8 @@ export async function aplicarRemoto(remoto: ProntuarioRemoto): Promise<boolean> 
         pacienteNome: remoto.pacienteNome,
         pacienteDataNascimento: remoto.pacienteDataNascimento ?? undefined,
         status: normalizarStatus(remoto.status),
+        ...camposDeRevisao(remoto),
+        vistoPeloAluno: false,
         secoes: remoto.secoes ?? {},
         criadoEm: paraTimestamp(remoto.criadoEm),
         atualizadoEm: remotoEm,
@@ -76,11 +95,14 @@ export async function aplicarRemoto(remoto: ProntuarioRemoto): Promise<boolean> 
 
     if (remotoEm <= local.atualizadoEm) return false;
 
+    const novoStatus = normalizarStatus(remoto.status);
     await db.prontuarios.put({
       ...local,
       pacienteNome: remoto.pacienteNome,
       pacienteDataNascimento: remoto.pacienteDataNascimento ?? local.pacienteDataNascimento,
-      status: normalizarStatus(remoto.status),
+      status: novoStatus,
+      ...camposDeRevisao(remoto),
+      vistoPeloAluno: novoStatus === local.status ? local.vistoPeloAluno : false,
       secoes: { ...local.secoes, ...(remoto.secoes ?? {}) },
       atualizadoEm: remotoEm,
       sincronizado: true,
