@@ -14,6 +14,13 @@ export default defineConfig({
         navigateFallback: "index.html",
         runtimeCaching: [
           {
+            urlPattern: ({ url }) =>
+              url.pathname === "/api/prontuarios" ||
+              url.pathname.startsWith("/api/prontuarios/") ||
+              url.pathname === "/api/acessos",
+            handler: "NetworkOnly",
+          },
+          {
             urlPattern: ({ url }) => url.pathname.startsWith("/api"),
             handler: "NetworkFirst",
             options: { cacheName: "api-cache", networkTimeoutSeconds: 5 },

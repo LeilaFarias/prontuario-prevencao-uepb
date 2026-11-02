@@ -18,7 +18,7 @@ import { api, ApiError } from "../lib/api";
 import { clearSession, getSession, updateSessionUser } from "../lib/session";
 import { rotaInicial } from "../lib/rotas";
 
-type ModalAberto = null | "nome" | "email" | "matricula" | "senha" | "excluir";
+type ModalAberto = null | "nome" | "email" | "matricula" | "senha" | "excluir" | "sair";
 
 interface Tema {
   texto: string;
@@ -154,7 +154,7 @@ function ModalSenha({ tema, onClose, onSucesso }: { tema: Tema; onClose: () => v
   );
 }
 
-function ModalExcluir({ tema, onClose, onSucesso }: { tema: Tema; onClose: () => void; onSucesso: () => void }) {
+function ModalExcluir({ tema, onClose, onSucesso }: { tema: Tema; onClose: () => void; onSucesso: () => Promise<void> }) {
   const [erro, setErro] = useState<string | null>(null);
   const {
     register,
@@ -166,7 +166,7 @@ function ModalExcluir({ tema, onClose, onSucesso }: { tema: Tema; onClose: () =>
     setErro(null);
     try {
       await api.delete("/users/me", dados);
-      onSucesso();
+      await onSucesso();
     } catch (e) {
       setErro(e instanceof ApiError && e.status === 401 ? "Senha incorreta" : mensagem(e));
     }
@@ -188,6 +188,39 @@ function ModalExcluir({ tema, onClose, onSucesso }: { tema: Tema; onClose: () =>
         {erro && <div role="alert" className="banner-erro mt-3">{erro}</div>}
         <BotoesModal tema={tema} enviando={isSubmitting} rotulo="Excluir minha conta" destrutivo onCancelar={onClose} />
       </form>
+    </BottomSheet>
+  );
+}
+
+function ModalSair({ onClose, onSucesso }: { onClose: () => void; onSucesso: () => Promise<void> }) {
+  const [saindo, setSaindo] = useState(false);
+
+  async function confirmar() {
+    setSaindo(true);
+    await onSucesso();
+  }
+
+  return (
+    <BottomSheet open onClose={onClose} title="Sair da conta" bloqueado={saindo}>
+      <div className="-mt-1 mb-3 flex h-11 w-11 items-center justify-center rounded-full bg-alt-tint text-alt">
+        <LogOut size={22} />
+      </div>
+      <p className="text-[13px] leading-relaxed text-ink-soft">
+        Você será desconectado deste aparelho. Você poderá entrar novamente quando quiser.
+      </p>
+      <div className="mt-5 flex flex-col gap-2.5">
+        <button
+          type="button"
+          disabled={saindo}
+          onClick={() => void confirmar()}
+          className="btn bg-alt-tint text-alt"
+        >
+          {saindo ? "Saindo…" : "Sair da conta"}
+        </button>
+        <button type="button" disabled={saindo} onClick={onClose} className="btn-ghost">
+          Cancelar
+        </button>
+      </div>
     </BottomSheet>
   );
 }
@@ -216,9 +249,7 @@ export default function Perfil() {
   const fechar = () => setModal(null);
 
   function sair() {
-    if (!window.confirm("Deseja sair da sua conta?")) return;
-    clearSession();
-    navigate("/login", { replace: true });
+    setModal("sair");
   }
 
   return (
@@ -325,8 +356,17 @@ export default function Perfil() {
         <ModalExcluir
           tema={tema}
           onClose={fechar}
-          onSucesso={() => {
-            clearSession();
+          onSucesso={async () => {
+            await clearSession();
+            navigate("/login", { replace: true });
+          }}
+        />
+      )}
+      {modal === "sair" && (
+        <ModalSair
+          onClose={fechar}
+          onSucesso={async () => {
+            await clearSession();
             navigate("/login", { replace: true });
           }}
         />

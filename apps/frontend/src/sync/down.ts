@@ -115,6 +115,8 @@ export async function aplicarRemoto(remoto: ProntuarioRemoto): Promise<boolean> 
       atualizadoEm: remotoEm,
       sincronizado: true,
       alunoTitularId: remoto.alunoTitularId,
+      professorSupervisorId: remoto.professorSupervisorId ?? undefined,
+      professorSupervisorNome: remoto.professorSupervisorNome ?? undefined,
     });
     return true;
   });

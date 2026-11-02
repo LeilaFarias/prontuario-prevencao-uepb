@@ -3,19 +3,19 @@ import type { LocalProntuario } from "../db/dexie";
 export const ACESSO_EXPIRADO_EVENT = "acesso:expirado";
 export const ACESSOS_ATUALIZADOS_EVENT = "acessos:atualizados";
 
-type CamposAcesso = Pick<LocalProntuario, "status" | "acessoSolicitadoEm" | "acessoExpiraEm" | "acessoRevogadoEm">;
+type CamposAcesso = Pick<
+  LocalProntuario,
+  "acessoSolicitadoEm" | "acessoExpiraEm" | "acessoRevogadoEm"
+>;
 
 export function acessoVigente(p: CamposAcesso, agora: number = Date.now()): boolean {
-  return (
-    p.status === "assinado" &&
-    Boolean(p.acessoExpiraEm) &&
-    !p.acessoRevogadoEm &&
-    new Date(p.acessoExpiraEm!).getTime() > agora
-  );
+  if (!p.acessoExpiraEm) return false;
+  if (p.acessoRevogadoEm) return false;
+  return new Date(p.acessoExpiraEm).getTime() > agora;
 }
 
 export function pedidoPendente(p: CamposAcesso): boolean {
-  return p.status === "assinado" && Boolean(p.acessoSolicitadoEm) && !p.acessoExpiraEm && !p.acessoRevogadoEm;
+  return Boolean(p.acessoSolicitadoEm) && !acessoVigente(p);
 }
 
 export function formatarContagem(ms: number): string {

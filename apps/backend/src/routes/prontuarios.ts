@@ -40,6 +40,9 @@ interface ProfessorRow {
 interface ProntuarioRevisaoRow {
   status: string;
   professorSupervisorId: string | null;
+  acessoExpiraEm: string | null;
+  acessoRevogadoEm: string | null;
+  acessoSolicitadoEm: string | null;
 }
 
 interface ProntuarioAcessoRow extends AcessoRow {
@@ -55,6 +58,11 @@ interface RevisaoDetalheRow extends AcessoRow {
   devolvidoPorNome: string | null;
   motivoDevolucao: string | null;
   comentarioDevolucao: string | null;
+}
+
+interface SolicitarAcessoBody {
+  professorSupervisorId?: string;
+  professorSupervisorNome?: string;
 }
 
 function contarProcedimentos(conteudo: string | undefined): number {
@@ -123,11 +131,17 @@ export const prontuariosRoutes: FastifyPluginAsync = async (app) => {
   );
   const gravarSolicitacao = db.prepare(
     `UPDATE Prontuario
-     SET acessoSolicitadoEm = ?, acessoExpiraEm = NULL, acessoRevogadoEm = NULL, atualizadoEm = ?
+     SET acessoSolicitadoEm = ?,
+         acessoExpiraEm = NULL,
+         acessoRevogadoEm = NULL,
+         professorSupervisorId = COALESCE(?, professorSupervisorId),
+         atualizadoEm = ?
      WHERE id = ?`,
   );
   const gravarAprovacao = db.prepare(
-    "UPDATE Prontuario SET acessoExpiraEm = ?, acessoRevogadoEm = NULL, atualizadoEm = ? WHERE id = ?",
+    `UPDATE Prontuario
+     SET acessoExpiraEm = ?, acessoRevogadoEm = NULL, acessoSolicitadoEm = NULL, atualizadoEm = ?
+     WHERE id = ?`,
   );
   const gravarRevogacao = db.prepare(
     "UPDATE Prontuario SET acessoRevogadoEm = ?, acessoExpiraEm = NULL, atualizadoEm = ? WHERE id = ?",
@@ -138,7 +152,11 @@ export const prontuariosRoutes: FastifyPluginAsync = async (app) => {
   const buscarProfessor = db.prepare(
     "SELECT id, nome, matricula, senhaHash FROM Usuario WHERE id = ? AND UPPER(perfil) = 'PROFESSOR' AND ativo = 1",
   );
-  const buscarParaAcao = db.prepare("SELECT status, professorSupervisorId FROM Prontuario WHERE id = ?");
+  const buscarParaAcao = db.prepare(
+    `SELECT status, professorSupervisorId,
+            acessoExpiraEm, acessoRevogadoEm, acessoSolicitadoEm
+     FROM Prontuario WHERE id = ?`,
+  );
   const gravarAssinatura = db.prepare(
     `UPDATE Prontuario
      SET status = 'ASSINADO', assinadoEm = ?, assinadoPorId = ?, assinadoPorNome = ?, assinaturaInvalidada = 0,
@@ -151,6 +169,7 @@ export const prontuariosRoutes: FastifyPluginAsync = async (app) => {
          devolvidoEm = ?, devolvidoPorId = ?, devolvidoPorNome = ?, motivoDevolucao = ?, comentarioDevolucao = ?,
          assinaturaInvalidada = CASE WHEN assinadoEm IS NULL THEN assinaturaInvalidada ELSE 1 END,
          assinadoEm = NULL, assinadoPorId = NULL, assinadoPorNome = NULL,
+         acessoExpiraEm = ?, acessoRevogadoEm = NULL, acessoSolicitadoEm = NULL,
          atualizadoEm = ?
      WHERE id = ?`,
   );
@@ -176,8 +195,33 @@ export const prontuariosRoutes: FastifyPluginAsync = async (app) => {
     const linha = buscarUm.get(req.params.id) as unknown as ProntuarioListaRow | undefined;
     if (!linha) return reply.status(404).send({ message: "Prontuário não encontrado." });
 
-    if (ehAluno(req.user.perfil) && linha.alunoTitularId !== req.user.sub) {
+    const alunoUser = ehAluno(req.user.perfil);
+    if (alunoUser && linha.alunoTitularId !== req.user.sub) {
       return reply.status(403).send({ message: "Você não tem acesso a este prontuário." });
+    }
+
+    const revisao = buscarRevisao.get(linha.id) as unknown as RevisaoDetalheRow;
+    const estado = estadoAcesso(revisao);
+    const professor = linha.professorSupervisorId
+      ? (buscarNomeProfessor.get(linha.professorSupervisorId) as unknown as { nome: string } | undefined)
+      : undefined;
+    const professorSupervisorNome = professor?.nome ?? null;
+
+    const podeVerConteudo = !alunoUser || estado.acessoVigente;
+
+    if (!podeVerConteudo) {
+      return {
+        id: linha.id,
+        pacienteNome: linha.pacienteNome,
+        status: linha.status,
+        bloqueado: true,
+        acessoExpiraEm: revisao.acessoExpiraEm,
+        acessoSolicitadoEm: revisao.acessoSolicitadoEm,
+        acessoRevogadoEm: revisao.acessoRevogadoEm,
+        professorSupervisorId: linha.professorSupervisorId,
+        professorSupervisorNome,
+        secoes: {},
+      };
     }
 
     const secoes: Record<string, unknown> = {};
@@ -189,22 +233,18 @@ export const prontuariosRoutes: FastifyPluginAsync = async (app) => {
       }
     }
 
-    const ehSupervisor = !ehAluno(req.user.perfil) && linha.professorSupervisorId === req.user.sub;
+    const ehSupervisor = !alunoUser && linha.professorSupervisorId === req.user.sub;
     const podeAgir = ehSupervisor && linha.status.toUpperCase() === "ENVIADO";
 
     const envio = buscarEnvio.get(linha.id) as unknown as { ts: number | null } | undefined;
     const enviadoEm = envio?.ts ? new Date(envio.ts).toISOString() : null;
 
-    const revisao = buscarRevisao.get(linha.id) as unknown as RevisaoDetalheRow;
-    const professor = linha.professorSupervisorId
-      ? (buscarNomeProfessor.get(linha.professorSupervisorId) as unknown as { nome: string } | undefined)
-      : undefined;
-
     return {
       ...linha,
       ...revisao,
-      ...estadoAcesso(revisao),
-      professorSupervisorNome: professor?.nome ?? null,
+      ...estado,
+      bloqueado: false,
+      professorSupervisorNome,
       secoes,
       podeAgir,
       ehSupervisor,
@@ -237,6 +277,7 @@ export const prontuariosRoutes: FastifyPluginAsync = async (app) => {
     req.log.info({ prontuarioId: id, duplicado: resultado.duplicado }, "prontuário enviado ao professor");
     return resultado;
   });
+
   app.post<{ Params: { id: string } }>("/prontuarios/:id/reabrir", protegida, async (req, reply) => {
     if (!ehAluno(req.user.perfil)) {
       return reply.status(403).send({ message: "Apenas o aluno titular pode reabrir o prontuário." });
@@ -258,37 +299,67 @@ export const prontuariosRoutes: FastifyPluginAsync = async (app) => {
     return { ok: true };
   });
 
-  type FalhaAcesso = { falha: 403 | 404 | 409; error: string };
+  type FalhaAcesso = { falha: 400 | 403 | 404 | 409; error: string };
 
   const responderFalha = (reply: FastifyReply, f: FalhaAcesso) => reply.status(f.falha).send({ error: f.error });
 
   const NAO_ENCONTRADO: FalhaAcesso = { falha: 404, error: "Prontuário não encontrado." };
   const NAO_SUPERVISOR: FalhaAcesso = { falha: 403, error: "Apenas o professor supervisor pode realizar esta ação." };
   const SEM_PEDIDO: FalhaAcesso = { falha: 409, error: "Sem pedido pendente" };
-  const NAO_ASSINADO: FalhaAcesso = { falha: 409, error: "Apenas prontuários assinados precisam de liberação" };
+  const SEM_ACESSO_VIGENTE: FalhaAcesso = { falha: 409, error: "Sem acesso vigente para revogar" };
+  const STATUS_NAO_PERMITE_SOLICITAR: FalhaAcesso = {
+    falha: 409,
+    error: "Status não permite solicitação de acesso",
+  };
+  const PROFESSOR_INVALIDO: FalhaAcesso = { falha: 400, error: "Professor inválido ou inativo." };
 
-  const ehAssinado = (p: ProntuarioAcessoRow): boolean => p.status.toUpperCase() === "ASSINADO";
+  const statusPermiteSolicitar = (status: string): boolean => {
+    const s = status.toUpperCase();
+    return s === "EM_ANDAMENTO" || s === "ASSINADO";
+  };
 
-  app.post<{ Params: { id: string } }>("/prontuarios/:id/solicitar-acesso", protegida, async (req, reply) => {
-    const { id } = req.params;
-    const resultado = transacao(db, () => {
-      const pront = buscarAcesso.get(id) as unknown as ProntuarioAcessoRow | undefined;
-      if (!pront || pront.alunoTitularId !== req.user.sub) return NAO_ENCONTRADO;
-      if (!ehAssinado(pront)) return NAO_ASSINADO;
+  app.post<{ Params: { id: string }; Body: SolicitarAcessoBody }>(
+    "/prontuarios/:id/solicitar-acesso",
+    protegida,
+    async (req, reply) => {
+      const { id } = req.params;
+      const body = (req.body ?? {}) as SolicitarAcessoBody;
 
-      const estado = estadoAcesso(pront);
-      if (estado.pedidoPendente) return { ok: true, jaSolicitado: true };
-      if (estado.acessoVigente) return { ok: true, jaTemAcesso: true };
+      const resultado = transacao(db, () => {
+        const pront = buscarAcesso.get(id) as unknown as ProntuarioAcessoRow | undefined;
+        if (!pront || pront.alunoTitularId !== req.user.sub) return NAO_ENCONTRADO;
 
-      const agora = new Date().toISOString();
-      gravarSolicitacao.run(agora, agora, id);
-      registrarLog.run(randomUUID(), id, id, "solicitar-acesso", Date.now());
-      return { ok: true };
-    });
+        if (!statusPermiteSolicitar(pront.status)) return STATUS_NAO_PERMITE_SOLICITAR;
 
-    if ("falha" in resultado) return responderFalha(reply, resultado);
-    return resultado;
-  });
+        const estado = estadoAcesso(pront);
+        if (estado.acessoVigente) return { ok: true as const, jaTemAcesso: true };
+        if (estado.pedidoPendente) return { ok: true as const, jaSolicitado: true };
+
+        const professorDoBody = body.professorSupervisorId ?? null;
+
+        if (professorDoBody) {
+          const prof = buscarProfessor.get(professorDoBody) as unknown as
+            | { id: string; nome: string }
+            | undefined;
+          if (!prof) return PROFESSOR_INVALIDO;
+        }
+
+        const professorEfetivo = professorDoBody ?? pront.professorSupervisorId;
+        if (!professorEfetivo) return { ok: false as const, erro: "professor_obrigatorio" as const };
+
+        const agora = new Date().toISOString();
+        gravarSolicitacao.run(agora, professorDoBody, agora, id);
+        registrarLog.run(randomUUID(), id, id, "solicitar-acesso", Date.now());
+        return { ok: true as const };
+      });
+
+      if ("falha" in resultado) return responderFalha(reply, resultado);
+      if ("ok" in resultado && resultado.ok === false) {
+        return reply.status(400).send(resultado);
+      }
+      return resultado;
+    },
+  );
 
   app.post<{ Params: { id: string } }>("/prontuarios/:id/aprovar-acesso", protegida, async (req, reply) => {
     const { id } = req.params;
@@ -302,7 +373,7 @@ export const prontuariosRoutes: FastifyPluginAsync = async (app) => {
       const acessoExpiraEm = new Date(agora + ACESSO_DURACAO_MS).toISOString();
       gravarAprovacao.run(acessoExpiraEm, new Date(agora).toISOString(), id);
       registrarLog.run(randomUUID(), id, id, "aprovar-acesso", agora);
-      return { ok: true, acessoExpiraEm };
+      return { ok: true as const, acessoExpiraEm };
     });
 
     if ("falha" in resultado) return responderFalha(reply, resultado);
@@ -316,12 +387,14 @@ export const prontuariosRoutes: FastifyPluginAsync = async (app) => {
       const pront = buscarAcesso.get(id) as unknown as ProntuarioAcessoRow | undefined;
       if (!pront) return NAO_ENCONTRADO;
       if (pront.professorSupervisorId !== req.user.sub) return NAO_SUPERVISOR;
-      if (!ehAssinado(pront)) return NAO_ASSINADO;
+
+      const estado = estadoAcesso(pront);
+      if (!estado.acessoVigente) return SEM_ACESSO_VIGENTE;
 
       const agora = new Date().toISOString();
       gravarRevogacao.run(agora, agora, id);
       registrarLog.run(randomUUID(), id, id, "revogar-acesso", Date.now());
-      return { ok: true };
+      return { ok: true as const };
     });
 
     if ("falha" in resultado) return responderFalha(reply, resultado);
@@ -340,7 +413,7 @@ export const prontuariosRoutes: FastifyPluginAsync = async (app) => {
       const agora = new Date().toISOString();
       gravarRecusa.run(agora, agora, id);
       registrarLog.run(randomUUID(), id, id, "recusar-acesso", Date.now());
-      return { ok: true };
+      return { ok: true as const };
     });
 
     if ("falha" in resultado) return responderFalha(reply, resultado);
@@ -410,10 +483,30 @@ export const prontuariosRoutes: FastifyPluginAsync = async (app) => {
       if (pront.status.toUpperCase() !== "ENVIADO") return { erro: 409 as const };
       if (pront.professorSupervisorId !== professor.id) return { erro: 403 as const };
 
-      const agora = new Date().toISOString();
-      gravarDevolucao.run(agora, professor.id, professor.nome, motivo, comentario, agora, id);
-      registrarLog.run(randomUUID(), id, id, "devolver", Date.now());
-      return { agora };
+      const agoraMs = Date.now();
+      const agora = new Date(agoraMs).toISOString();
+
+      const temAcessoVigente =
+        !!pront.acessoExpiraEm &&
+        new Date(pront.acessoExpiraEm).getTime() > agoraMs &&
+        !pront.acessoRevogadoEm;
+
+      const novoAcessoExpiraEm = temAcessoVigente
+        ? (pront.acessoExpiraEm as string)
+        : new Date(agoraMs + ACESSO_DURACAO_MS).toISOString();
+
+      gravarDevolucao.run(
+        agora,
+        professor.id,
+        professor.nome,
+        motivo,
+        comentario,
+        novoAcessoExpiraEm,
+        agora,
+        id,
+      );
+      registrarLog.run(randomUUID(), id, id, "devolver", agoraMs);
+      return { agora, novoAcessoExpiraEm };
     });
 
     if ("erro" in resultado) {

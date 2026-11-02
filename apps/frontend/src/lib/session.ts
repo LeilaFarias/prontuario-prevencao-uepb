@@ -1,4 +1,5 @@
 import type { SessionUser } from "@prontuario/shared";
+import { db } from "../db/dexie";
 
 export interface Session {
   accessToken: string;
@@ -28,8 +29,17 @@ export function updateSessionUser(user: SessionUser): void {
   if (atual) saveSession({ ...atual, user });
 }
 
-export function clearSession(): void {
+export async function clearSession(): Promise<void> {
   localStorage.removeItem(KEY);
+  try {
+    await db.transaction("rw", db.prontuarios, db.syncQueue, db.planosProfessor, async () => {
+      await db.prontuarios.clear();
+      await db.syncQueue.clear();
+      await db.planosProfessor.clear();
+    });
+  } catch (err) {
+    console.warn("[session] falha ao limpar Dexie no logout", err);
+  }
 }
 
 export function sessionExpiresAt(session: Session): number | null {
@@ -46,12 +56,12 @@ export function getSession(): Session | null {
     const session = JSON.parse(raw) as Session;
     const fim = sessionExpiresAt(session);
     if (fim !== null && fim < Date.now()) {
-      clearSession();
+      void clearSession();
       return null;
     }
     return session;
   } catch {
-    clearSession();
+    void clearSession();
     return null;
   }
 }

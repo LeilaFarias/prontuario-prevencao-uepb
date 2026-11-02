@@ -13,7 +13,7 @@ import { enviarProntuario } from "../lib/envio";
 import { reabrirProntuario } from "../lib/reabertura";
 
 const prontuarioPayload = z.object({
-  pacienteNome: z.string().optional(), 
+  pacienteNome: z.string().optional(),
   pacienteDataNascimento: z.string().optional(),
   status: z.string().optional(),
   alunoTitularId: z.string().optional(),
@@ -123,20 +123,29 @@ export const syncRoutes: FastifyPluginAsync = async (app) => {
       const descartada = transacao(db, () => {
         const pront = buscarPront.get(op.prontuarioId) as unknown as ProntRow | undefined;
 
-        const assinado = pront?.status.toUpperCase() === "ASSINADO";
+        const status = pront?.status.toUpperCase();
+        const assinado = status === "ASSINADO";
+        const enviado = status === "ENVIADO";
         let descartar = false;
 
-        if (pront && assinado && editaFicha(op)) {
-          if (acessoCobreOperacao(pront, op.ts)) {
-            const agora = new Date().toISOString();
-            invalidarAssinatura.run(agora, pront.id);
-            registrar.run(randomUUID(), pront.id, "prontuario", pront.id, "invalidar-assinatura", Date.now(), 0);
-            pront.status = "EM_ANDAMENTO";
-          } else {
+        if (pront && editaFicha(op)) {
+          if (assinado) {
+            if (acessoCobreOperacao(pront, op.ts)) {
+              const agora = new Date().toISOString();
+              invalidarAssinatura.run(agora, pront.id);
+              registrar.run(randomUUID(), pront.id, "prontuario", pront.id, "invalidar-assinatura", Date.now(), 0);
+              pront.status = "EM_ANDAMENTO";
+            } else {
+              descartar = true;
+              acessoExpirado.add(op.prontuarioId);
+            }
+          } else if (enviado && !acessoCobreOperacao(pront, op.ts)) {
             descartar = true;
             acessoExpirado.add(op.prontuarioId);
           }
-        } else if (pront?.acessoRevogadoEm && op.ts > new Date(pront.acessoRevogadoEm).getTime()) {
+        }
+
+        if (!descartar && pront?.acessoRevogadoEm && op.ts > new Date(pront.acessoRevogadoEm).getTime()) {
           descartar = true;
         }
 

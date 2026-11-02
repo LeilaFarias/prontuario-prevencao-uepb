@@ -19,6 +19,7 @@ import DevolucaoAlunoModal from "../components/DevolucaoAlunoModal";
 import EnviarProntuarioModal from "../components/EnviarProntuarioModal";
 import SolicitarAcessoModal from "../components/SolicitarAcessoModal";
 import StatusBar from "../components/StatusBar";
+import TelaBloqueio from "../components/TelaBloqueio";
 import TimerAcesso from "../components/TimerAcesso";
 import Topbar from "../components/Topbar";
 import { db, type LocalProntuario, type LocalStatus } from "../db/dexie";
@@ -71,6 +72,8 @@ export default function Prontuario() {
   const timer = useRef<number | undefined>(undefined);
   const pendente = useRef<{ secaoId: SecaoId; texto: string } | null>(null);
   const chipAtivo = useRef<HTMLButtonElement | null>(null);
+
+  const base = vivo ?? pront;
 
   useEffect(() => {
     let ativo = true;
@@ -153,20 +156,25 @@ export default function Prontuario() {
 
   useEffect(() => {
     const anterior = estadoAnterior.current;
-    if (monitorarAcesso) setAvisoExpirado(false);
     if (anterior.pendente && vigenteAoVivo) {
       setModalSolicitar(false);
       setAvisoAprovado(true);
     }
-    if (anterior.vigente && !vigenteAoVivo && statusAoVivo === "assinado") setAvisoExpirado(true);
+    if (anterior.vigente && !vigenteAoVivo) setAvisoExpirado(true);
     estadoAnterior.current = { pendente: pendenteAoVivo, vigente: vigenteAoVivo };
-  }, [pendenteAoVivo, vigenteAoVivo, monitorarAcesso, statusAoVivo]);
+  }, [pendenteAoVivo, vigenteAoVivo]);
 
   useEffect(() => {
     if (!avisoAprovado) return;
     const t = window.setTimeout(() => setAvisoAprovado(false), AVISO_APROVACAO_MS);
     return () => window.clearTimeout(t);
   }, [avisoAprovado]);
+
+  useEffect(() => {
+    if (!avisoExpirado) return;
+    const t = window.setTimeout(() => setAvisoExpirado(false), AVISO_APROVACAO_MS);
+    return () => window.clearTimeout(t);
+  }, [avisoExpirado]);
 
   useEffect(() => {
     if (!monitorarAcesso) return;
@@ -182,6 +190,22 @@ export default function Prontuario() {
     window.addEventListener(ACESSO_EXPIRADO_EVENT, aoExpirar);
     return () => window.removeEventListener(ACESSO_EXPIRADO_EVENT, aoExpirar);
   }, [recarregar]);
+
+  useEffect(() => {
+    const expira = base?.acessoExpiraEm;
+    if (!expira) return;
+    const ms = new Date(expira).getTime() - Date.now();
+    if (ms <= 0) {
+      renderizar();
+      return;
+    }
+    const t = window.setTimeout(() => {
+      setAvisoExpirado(true);
+      renderizar();
+    }, ms);
+    return () => window.clearTimeout(t);
+  }, [base?.acessoExpiraEm]);
+
   useEffect(() => {
     if (id && statusAoVivo === "assinado" && !jaVisto) void marcarComoVisto(id);
   }, [id, statusAoVivo, jaVisto]);
@@ -225,19 +249,48 @@ export default function Prontuario() {
     );
   }
 
-  const secao = SECOES[indice]!;
+  const atual = (vivo ?? pront) as LocalProntuario;
   const nomeExibido = (nomeAoVivo ?? pront.pacienteNome).trim();
-  const atual = vivo ?? pront;
   const status = atual.status;
   const vigente = acessoVigente(atual);
   const pendenteAcesso = pedidoPendente(atual);
-  const podeEditar = status === "em_andamento" || vigente;
-  const somenteLeitura = !podeEditar || modoLeitura;
+
   const professorDigitado = String(
     (atual.secoes["consentimento"] as { professorSupervisor?: unknown } | undefined)?.professorSupervisor ?? "",
   ).trim();
   const nomeAssinatura = atual.assinadoPorNome || professorDigitado;
   const nomeProfessor = atual.professorSupervisorNome || nomeAssinatura;
+
+  const bloqueado = !vigente;
+
+  if (bloqueado) {
+    return (
+      <>
+        <TelaBloqueio
+          prontuario={atual}
+          professorNome={nomeProfessor || null}
+          avisoExpirado={avisoExpirado}
+          onDispensarAviso={() => setAvisoExpirado(false)}
+          onSolicitarAcesso={() => setModalSolicitar(true)}
+          onVoltar={() => navigate("/prontuarios")}
+        />
+        {modalSolicitar && (
+          <SolicitarAcessoModal
+            open
+            onClose={() => setModalSolicitar(false)}
+            prontuario={atual}
+            professorNome={nomeProfessor || ""}
+            onJaLiberado={() => void recarregar()}
+          />
+        )}
+      </>
+    );
+  }
+
+  const podeEditar =
+    vigente && (status === "em_andamento" || status === "devolvido" || status === "assinado");
+  const somenteLeitura = !podeEditar || modoLeitura;
+
   const quandoAssinado = formatarDataHoraCompleta(atual.assinadoEm);
 
   async function corrigir() {
@@ -246,6 +299,7 @@ export default function Prontuario() {
   }
 
   const PILL = "inline-flex w-fit items-center gap-1.5 rounded-pill px-3 py-1 text-[12px] font-semibold";
+
   const bannerStatus =
     status === "enviado" ? (
       <div className="flex flex-col gap-1.5">
@@ -255,51 +309,35 @@ export default function Prontuario() {
         </span>
         <p className="text-[12px] text-ink-soft">Se precisar alterar, peça ao professor devolver.</p>
       </div>
-    ) : status === "assinado" && vigente ? (
+    ) : status === "assinado" ? (
       <span className={`${PILL} bg-primary-tint text-primary`}>
         <Unlock size={12} aria-hidden="true" />
         <TimerAcesso expiraEm={atual.acessoExpiraEm!} rotulo="Acesso liberado — expira em" />
       </span>
-    ) : status === "assinado" && pendenteAcesso ? (
-      <div className="flex flex-col gap-1.5">
-        <span className={`${PILL} bg-sync-tint text-sync`}>
-          <Clock size={12} aria-hidden="true" />
-          Aguardando aprovação do professor
-        </span>
-        <p className="text-[12px] text-ink-soft">
-          Pedido enviado <TempoDesde iso={atual.acessoSolicitadoEm!} />
-        </p>
-      </div>
-    ) : status === "assinado" ? (
-      <div className="flex flex-wrap items-center gap-2">
-        <span className={`${PILL} bg-primary-tint text-primary`}>
-          <Check size={12} aria-hidden="true" />
-          {nomeAssinatura
-            ? `Assinado por ${nomeAssinatura}${quandoAssinado ? ` em ${quandoAssinado}` : ""}`
-            : "Assinado"}
-        </span>
-        <button
-          type="button"
-          onClick={() => setModalSolicitar(true)}
-          className="inline-flex w-fit items-center rounded-pill border border-line bg-raised px-3.5 py-1.5 text-[12.5px] font-semibold text-primary"
-        >
-          Solicitar acesso
-        </button>
-      </div>
     ) : status === "devolvido" ? (
       <div className="flex flex-wrap items-center gap-2">
         <span className={`${PILL} bg-alt-tint text-alt`}>
           <RotateCcw size={12} aria-hidden="true" />
           {atual.devolvidoPorNome ? `Devolvido por ${atual.devolvidoPorNome}` : "Devolvido"}
         </span>
-        <button type="button" className="text-[12.5px] font-semibold text-alt underline" onClick={() => setVerDevolucao(true)}>
+        <button
+          type="button"
+          className="text-[12.5px] font-semibold text-alt underline"
+          onClick={() => setVerDevolucao(true)}
+        >
           Ver comentário
         </button>
-        <button type="button" className="text-[12.5px] font-semibold text-primary underline" onClick={() => void corrigir()}>
+        <button
+          type="button"
+          className="text-[12.5px] font-semibold text-primary underline"
+          onClick={() => void corrigir()}
+        >
           Corrigir
         </button>
       </div>
     ) : null;
+
+  const secao = SECOES[indice]!;
 
   return (
     <div className="flex flex-1 flex-col">
@@ -317,16 +355,12 @@ export default function Prontuario() {
         <div role="status" className="banner-ok mx-5 mb-2 flex items-center gap-2">
           <Check size={16} className="shrink-0" aria-hidden="true" />
           <span className="min-w-0 flex-1">Acesso liberado{nomeProfessor ? ` por ${nomeProfessor}` : ""}</span>
-          <button type="button" onClick={() => setAvisoAprovado(false)} aria-label="Dispensar aviso" className="shrink-0 opacity-70">
-            <X size={16} />
-          </button>
-        </div>
-      )}
-
-      {avisoExpirado && (
-        <div role="alert" className="banner-erro mx-5 mb-2 flex items-center gap-2">
-          <span className="min-w-0 flex-1">Acesso expirado. Solicite um novo acesso para continuar editando.</span>
-          <button type="button" onClick={() => setAvisoExpirado(false)} aria-label="Dispensar aviso" className="shrink-0 opacity-70">
+          <button
+            type="button"
+            onClick={() => setAvisoAprovado(false)}
+            aria-label="Dispensar aviso"
+            className="shrink-0 opacity-70"
+          >
             <X size={16} />
           </button>
         </div>
@@ -440,16 +474,6 @@ export default function Prontuario() {
           prontuario={atual}
           onCorrigir={() => void corrigir()}
           onVerFicha={() => setVerDevolucao(false)}
-        />
-      )}
-
-      {modalSolicitar && status === "assinado" && (
-        <SolicitarAcessoModal
-          open
-          onClose={() => setModalSolicitar(false)}
-          prontuario={atual}
-          professorNome={nomeProfessor}
-          onJaLiberado={() => void recarregar()}
         />
       )}
 

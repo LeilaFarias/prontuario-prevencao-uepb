@@ -28,11 +28,15 @@ CREATE TABLE IF NOT EXISTS Prontuario (
   assinadoEm             TEXT,
   assinaturaInvalidada   INTEGER NOT NULL DEFAULT 0,
   acessoExpiraEm         TEXT,
-  acessoRevogadoEm       TEXT
+  acessoRevogadoEm       TEXT,
+  acessoSolicitadoEm     TEXT
 );
 CREATE INDEX IF NOT EXISTS idx_pront_aluno ON Prontuario(alunoTitularId);
 CREATE INDEX IF NOT EXISTS idx_pront_prof ON Prontuario(professorSupervisorId);
 CREATE INDEX IF NOT EXISTS idx_pront_paciente ON Prontuario(pacienteNome, pacienteDataNascimento);
+CREATE INDEX IF NOT EXISTS idx_pront_solicitado
+  ON Prontuario(acessoSolicitadoEm)
+  WHERE acessoSolicitadoEm IS NOT NULL;
 
 CREATE TABLE IF NOT EXISTS Secao (
   id           TEXT PRIMARY KEY,
@@ -68,6 +72,18 @@ CREATE TABLE IF NOT EXISTS PasswordResetToken (
 );
 CREATE INDEX IF NOT EXISTS idx_reset_userId ON PasswordResetToken(userId);
 CREATE INDEX IF NOT EXISTS idx_reset_expiraEm ON PasswordResetToken(expiraEm);
+
+CREATE TABLE IF NOT EXISTS AuditLog (
+  id           TEXT PRIMARY KEY,
+  usuarioId    TEXT REFERENCES Usuario(id) ON DELETE SET NULL,
+  prontuarioId TEXT REFERENCES Prontuario(id) ON DELETE SET NULL,
+  acao         TEXT NOT NULL,
+  detalhe      TEXT,
+  criadoEm     TEXT NOT NULL DEFAULT (${AGORA})
+);
+CREATE INDEX IF NOT EXISTS idx_audit_pront ON AuditLog(prontuarioId);
+CREATE INDEX IF NOT EXISTS idx_audit_usuario ON AuditLog(usuarioId);
+CREATE INDEX IF NOT EXISTS idx_audit_acao ON AuditLog(acao);
 `;
 
 function migrarColunaAtivo(db: DatabaseSync): void {

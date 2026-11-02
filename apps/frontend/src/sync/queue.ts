@@ -6,6 +6,7 @@ import {
   type SyncResponse,
 } from "@prontuario/shared";
 import { db } from "../db/dexie";
+import type { LocalProntuario } from "../db/dexie";
 import { ApiError, api } from "../lib/api";
 import { ACESSO_EXPIRADO_EVENT, acessoVigente } from "../lib/acesso";
 import { uuid } from "../lib/uuid";
@@ -14,6 +15,7 @@ export const SYNC_EVENT = "sync:changed";
 export const ULTIMO_SALVAMENTO_KEY = "prontuario:ultimoSalvamento";
 const INTERVALO_MS = 30_000;
 const LOTE = 200;
+const ACESSO_DURACAO_MS = 4 * 60 * 60 * 1000;
 
 function registrarSalvamento(ts: number): void {
   try {
@@ -33,6 +35,7 @@ export function contarPendentes(): Promise<number> {
 export async function criarProntuarioLocal(alunoTitularId: string): Promise<string> {
   const id = uuid();
   const agora = Date.now();
+  const acessoExpiraEm = new Date(agora + ACESSO_DURACAO_MS).toISOString();
 
   await db.transaction("rw", db.prontuarios, db.syncQueue, async () => {
     await db.prontuarios.add({
@@ -44,6 +47,7 @@ export async function criarProntuarioLocal(alunoTitularId: string): Promise<stri
       atualizadoEm: agora,
       sincronizado: false,
       alunoTitularId,
+      acessoExpiraEm,
     });
     await db.syncQueue.add({
       prontuarioId: id,
@@ -134,8 +138,6 @@ export async function salvarSecaoLocal(
       });
     }
 
-    // Cada operação de seção leva o conteúdo COMPLETO (upsert). Ops pendentes da mesma seção ficam
-    // obsoletas: mantê-las só incharia a fila (e o corpo do /sync, se a seção tiver foto).
     const entityIdSecao = `${dados.prontuarioId}:${dados.secaoId}`;
     const obsoletas = await db.syncQueue
       .where("prontuarioId")
@@ -161,7 +163,6 @@ export async function salvarSecaoLocal(
 
 let emVoo: Promise<void> | null = null;
 
-
 export function flush(): Promise<void> {
   if (!navigator.onLine) return Promise.resolve();
   if (emVoo) return emVoo;
@@ -177,19 +178,51 @@ async function executarFlush(): Promise<void> {
       const lote = await db.syncQueue.toCollection().limit(LOTE).toArray();
       if (lote.length === 0) break;
 
+      const prontCache = new Map<string, LocalProntuario | undefined>();
+
+      const getPront = async (pid: string): Promise<LocalProntuario | undefined> => {
+        if (prontCache.has(pid)) return prontCache.get(pid);
+        const p = await db.prontuarios.get(pid);
+        prontCache.set(pid, p);
+        return p;
+      };
+
+      const enviar: typeof lote = [];
+      for (const op of lote) {
+        const p = await getPront(op.prontuarioId);
+        if (!p) {
+          enviar.push(op);
+          continue;
+        }
+        const bloqueado =
+          (p.status === "enviado" || p.status === "assinado") && !acessoVigente(p, op.ts);
+        if (!bloqueado) enviar.push(op);
+      }
+
+      if (enviar.length === 0) break; 
+
       const resposta = await api.post<SyncResponse>("/sync", {
-        operations: lote.map(({ id: _id, ...op }) => op),
+        operations: enviar.map(({ id: _id, ...op }) => op),
       });
 
-      await db.syncQueue.bulkDelete(lote.map((o) => o.id!));
-      await tratarEnviosRecusados(resposta.envios ?? []);
-      await tratarAcessosExpirados(resposta.acessoExpirado ?? []);
+      const bloqueadasBackend = new Set(resposta.acessoExpirado ?? []);
+      const apagar = enviar.filter((op) => !bloqueadasBackend.has(op.prontuarioId));
+      if (apagar.length > 0) {
+        await db.syncQueue.bulkDelete(apagar.map((o) => o.id!));
+      }
 
-      for (const pid of new Set(lote.map((o) => o.prontuarioId))) {
+      await tratarEnviosRecusados(resposta.envios ?? []);
+      if (bloqueadasBackend.size > 0) {
+        await tratarAcessosExpirados([...bloqueadasBackend]);
+      }
+
+      for (const pid of new Set(enviar.map((o) => o.prontuarioId))) {
         const restantes = await db.syncQueue.where("prontuarioId").equals(pid).count();
         if (restantes === 0) await db.prontuarios.update(pid, { sincronizado: true });
       }
       notifyChanged();
+
+      if (apagar.length === 0) break;
     }
   } catch {
   }
@@ -211,7 +244,6 @@ async function tratarEnviosRecusados(envios: EnvioSincronizado[]): Promise<void>
 
 async function tratarAcessosExpirados(ids: string[]): Promise<void> {
   if (ids.length === 0) return;
-  await Promise.all(ids.map((id) => db.prontuarios.update(id, { atualizadoEm: 0, sincronizado: true })));
   window.dispatchEvent(new CustomEvent(ACESSO_EXPIRADO_EVENT));
 }
 
@@ -240,7 +272,7 @@ async function enfileirarEnvio(prontuarioId: string): Promise<number> {
 
   await db.transaction("rw", db.prontuarios, db.syncQueue, async () => {
     const naFila = await db.syncQueue.where("prontuarioId").equals(prontuarioId).toArray();
-    const ts = Math.max(agora, ...naFila.map((o) => o.ts + 1)); // o servidor aplica por ts: "enviar" tem de ser o último
+    const ts = Math.max(agora, ...naFila.map((o) => o.ts + 1)); 
     await marcarEnviadoLocal(prontuarioId, false, ts);
     if (!naFila.some((o) => o.op === "enviar")) {
       await db.syncQueue.add({

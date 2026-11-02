@@ -15,6 +15,7 @@ export interface LocalProntuario {
   erroEnvio?: "professor_nao_encontrado" | "falha";
   assinadoEm?: string;
   assinadoPorNome?: string;
+  professorSupervisorId?: string;
   professorSupervisorNome?: string;
   acessoSolicitadoEm?: string;
   acessoExpiraEm?: string;
@@ -60,3 +61,24 @@ class ProntuarioDB extends Dexie {
 }
 
 export const db = new ProntuarioDB();
+
+type CamposAcesso = Pick<LocalProntuario, "acessoExpiraEm" | "acessoRevogadoEm">;
+
+export function temAcessoVigente(p: CamposAcesso, agora: number = Date.now()): boolean {
+  if (!p.acessoExpiraEm) return false;
+  if (p.acessoRevogadoEm) return false;
+  return new Date(p.acessoExpiraEm).getTime() > agora;
+}
+
+export function pedidoPendenteLocal(
+  p: Pick<LocalProntuario, "acessoSolicitadoEm" | "acessoExpiraEm" | "acessoRevogadoEm">,
+): boolean {
+  return !!p.acessoSolicitadoEm && !temAcessoVigente(p);
+}
+
+export function podeEnviarNaFila(
+  p: Pick<LocalProntuario, "status" | "acessoExpiraEm" | "acessoRevogadoEm">,
+): boolean {
+  if (p.status !== "enviado" && p.status !== "assinado") return true;
+  return temAcessoVigente(p);
+}

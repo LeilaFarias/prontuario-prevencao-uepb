@@ -19,8 +19,8 @@ export function acessoVigente(r: AcessoRow, agora: number = Date.now()): boolean
 }
 
 export function acessoCobreOperacao(r: AcessoRow, ts: number): boolean {
-  if (r.acessoExpiraEm !== null && r.acessoRevogadoEm === null) return ts <= paraMs(r.acessoExpiraEm);
-  if (r.acessoRevogadoEm !== null && r.acessoSolicitadoEm !== null) return ts <= paraMs(r.acessoRevogadoEm);
+  if (r.acessoRevogadoEm !== null) return ts <= paraMs(r.acessoRevogadoEm);
+  if (r.acessoExpiraEm !== null) return ts <= paraMs(r.acessoExpiraEm);
   return false;
 }
 
