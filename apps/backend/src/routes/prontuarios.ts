@@ -1,4 +1,7 @@
+import { randomUUID } from "node:crypto";
 import type { FastifyPluginAsync } from "fastify";
+import { transacao } from "../db";
+import { enviarProntuario } from "../lib/envio";
 
 interface ProntuarioListaRow {
   id: string;
@@ -59,6 +62,11 @@ export const prontuariosRoutes: FastifyPluginAsync = async (app) => {
   );
   const buscarSecoes = db.prepare("SELECT secaoId, conteudo FROM Secao WHERE prontuarioId = ?");
 
+  const registrarLog = db.prepare(
+    `INSERT INTO SyncOperationLog (id, prontuarioId, entity, entityId, op, ts, descartada)
+     VALUES (?, ?, 'prontuario', ?, 'enviar', ?, 0)`,
+  );
+
   const ehAluno = (perfil: string): boolean => perfil.toLowerCase() === "aluno";
 
   app.get("/prontuarios", protegida, async (req) => {
@@ -85,5 +93,31 @@ export const prontuariosRoutes: FastifyPluginAsync = async (app) => {
     }
 
     return { ...linha, secoes };
+  });
+
+  app.post<{ Params: { id: string } }>("/prontuarios/:id/enviar", protegida, async (req, reply) => {
+    if (!ehAluno(req.user.perfil)) {
+      return reply.status(403).send({ message: "Apenas o aluno titular pode enviar o prontuário." });
+    }
+
+    const { id } = req.params;
+    const resultado = transacao(db, () => {
+      const r = enviarProntuario(db, id, req.user.sub);
+      if (r.ok) registrarLog.run(randomUUID(), id, id, Date.now());
+      return r;
+    });
+
+    if (!resultado.ok) {
+      if (resultado.erro === "nao_encontrado") {
+        return reply.status(404).send({ message: "Prontuário não encontrado." });
+      }
+      if (resultado.erro === "ja_enviado") {
+        return reply.status(409).send({ message: "Prontuário já foi enviado" });
+      }
+      return { ok: false, erro: resultado.erro };
+    }
+
+    req.log.info({ prontuarioId: id, duplicado: resultado.duplicado }, "prontuário enviado ao professor");
+    return resultado;
   });
 };

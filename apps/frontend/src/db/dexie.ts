@@ -11,14 +11,14 @@ export interface LocalProntuario {
   criadoEm: number;
   atualizadoEm: number;
   sincronizado: boolean;
-  /** Dono do prontuário neste aparelho (necessário para criar no servidor). */
   alunoTitularId?: string;
+  erroEnvio?: "professor_nao_encontrado" | "falha";
 }
 
 export interface LocalSyncOp {
   id?: number;
   prontuarioId: string;
-  op: "create" | "update" | "delete";
+  op: "create" | "update" | "delete" | "enviar";
   entity: "prontuario" | "secao" | "procedimento" | "anexo";
   entityId: string;
   payload: Record<string, unknown>;

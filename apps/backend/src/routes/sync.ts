@@ -1,11 +1,17 @@
 import { randomUUID } from "node:crypto";
 import type { FastifyPluginAsync } from "fastify";
 import { z } from "zod";
-import { syncBatchSchema, type SyncOperation, type SyncResponse } from "@prontuario/shared";
+import {
+  syncBatchSchema,
+  type EnvioSincronizado,
+  type SyncOperation,
+  type SyncResponse,
+} from "@prontuario/shared";
 import { transacao } from "../db";
+import { enviarProntuario } from "../lib/envio";
 
 const prontuarioPayload = z.object({
-  pacienteNome: z.string().min(1).optional(),
+  pacienteNome: z.string().optional(), 
   pacienteDataNascimento: z.string().optional(),
   status: z.string().optional(),
   alunoTitularId: z.string().optional(),
@@ -67,10 +73,10 @@ export const syncRoutes: FastifyPluginAsync = async (app) => {
       const status = p.status?.toUpperCase() ?? null;
 
       if (!existe) {
-        if (!p.alunoTitularId || !p.pacienteNome) throw new Error("Payload incompleto para criar prontuário");
+        if (!p.alunoTitularId || p.pacienteNome === undefined) throw new Error("Payload incompleto para criar prontuário");
         inserirPront.run(op.entityId, p.pacienteNome, nascimento, p.alunoTitularId, status);
       } else {
-        atualizarPront.run(p.pacienteNome ?? null, nascimento, status, agora, op.entityId);
+        atualizarPront.run(p.pacienteNome || null, nascimento, status, agora, op.entityId);
       }
       return;
     }
@@ -89,10 +95,11 @@ export const syncRoutes: FastifyPluginAsync = async (app) => {
     throw new Error(`Entidade "${op.entity}" ainda não suportada na Sprint 1`);
   }
 
-  app.post("/sync", async (req) => {
+  app.post("/sync", { preHandler: app.autenticar }, async (req) => {
     const { operations } = syncBatchSchema.parse(req.body);
     let aplicadas = 0;
     let descartadas = 0;
+    const envios: EnvioSincronizado[] = [];
 
     // sort é estável: operações com o mesmo ts mantêm a ordem de chegada
     for (const op of [...operations].sort((a, b) => a.ts - b.ts)) {
@@ -104,7 +111,13 @@ export const syncRoutes: FastifyPluginAsync = async (app) => {
 
         if (!descartar) {
           try {
-            aplicar(op, !!pront);
+            if (op.entity === "prontuario" && op.op === "enviar") {
+              const r = enviarProntuario(db, op.prontuarioId, req.user.sub);
+              envios.push({ prontuarioId: op.prontuarioId, ...r });
+              if (!r.ok) descartar = true;
+            } else {
+              aplicar(op, !!pront);
+            }
           } catch (err) {
             req.log.warn({ err, entityId: op.entityId }, "operação de sync descartada");
             descartar = true;
@@ -122,7 +135,7 @@ export const syncRoutes: FastifyPluginAsync = async (app) => {
       else aplicadas++;
     }
 
-    const resposta: SyncResponse = { aplicadas, descartadas, serverTime: Date.now() };
+    const resposta: SyncResponse = { aplicadas, descartadas, serverTime: Date.now(), envios };
     return resposta;
   });
 };
