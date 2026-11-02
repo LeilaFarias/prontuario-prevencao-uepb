@@ -58,7 +58,7 @@ const FILTROS: Array<{ id: Filtro; label: string }> = [
 function passaNoFiltro(p: LocalProntuario, filtro: Filtro): boolean {
   switch (filtro) {
     case "rascunho":
-      return acessoVigente(p);
+      return acessoVigente(p) && p.status !== "transferido";
     case "revisao":
       return p.status === "enviado";
     case "bloqueados":

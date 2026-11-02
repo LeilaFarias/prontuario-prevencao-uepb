@@ -2,7 +2,7 @@ import type { LocalProntuario, LocalStatus } from "../db/dexie";
 import { pedidoPendente, pedidoRecusado } from "../lib/acesso";
 import StatusBar from "./StatusBar";
 import Topbar from "./Topbar";
-import { Check, CircleAlert, Lock, RotateCcw, Send, WifiOff, type LucideIcon } from "lucide-react";
+import { ArrowRightLeft, Check, CircleAlert, Lock, RotateCcw, Send, WifiOff, type LucideIcon } from "lucide-react";
 
 interface Props {
   prontuario: LocalProntuario;
@@ -19,6 +19,7 @@ const STATUS_META: Record<LocalStatus, { label: string; className: string; Icone
   enviado: { label: "Enviado", className: "bg-sync-tint text-sync", Icone: Send },
   assinado: { label: "Assinado", className: "bg-primary-tint text-primary", Icone: Check },
   devolvido: { label: "Devolvido", className: "bg-alt-tint text-alt", Icone: RotateCcw },
+  transferido: { label: "Transferido", className: "bg-paper text-ink-soft", Icone: ArrowRightLeft },
 };
 
 export default function TelaBloqueio({
@@ -38,9 +39,11 @@ export default function TelaBloqueio({
     ? "O professor recusou o pedido de acesso. Você pode solicitar novamente."
     : prontuario.status === "enviado"
       ? "Aguardando revisão do professor. Você receberá acesso quando ele devolver ou assinar."
-      : prontuario.status === "assinado"
-        ? "Este prontuário foi assinado. Para consultar ou editar, solicite acesso."
-        : "O acesso a este prontuário expirou. Peça a liberação para continuar editando.";
+      : prontuario.status === "transferido"
+        ? "Este prontuário foi transferido para outra dupla e só pode ser consultado. Solicite acesso para visualizá-lo."
+        : prontuario.status === "assinado"
+          ? "Este prontuário foi assinado. Para consultar ou editar, solicite acesso."
+          : "O acesso a este prontuário expirou. Peça a liberação para continuar editando.";
 
   const titulo = recusado ? "Acesso recusado" : "Prontuário bloqueado para edição";
   const estiloIcone = recusado ? "bg-alt-tint text-alt" : "bg-primary-tint text-primary";

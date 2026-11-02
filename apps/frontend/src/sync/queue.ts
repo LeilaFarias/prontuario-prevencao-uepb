@@ -93,6 +93,7 @@ export async function salvarSecaoLocal(
   await db.transaction("rw", db.prontuarios, db.syncQueue, async () => {
     const atual = await db.prontuarios.get(dados.prontuarioId);
     if (!atual) throw new Error("Prontuário não encontrado no aparelho");
+    if (atual.status === "transferido") throw new Error("Prontuário transferido é somente leitura");
 
     const invalidaAssinatura = atual.status === "assinado";
     if (invalidaAssinatura && !acessoVigente(atual, agora)) throw new AcessoExpiradoError();

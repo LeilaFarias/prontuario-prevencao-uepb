@@ -36,6 +36,7 @@ export const devolverSchema = z.object({
 });
 
 export const transferirTitularidadeSchema = z.object({
+  prontuarioNovoId: z.string().trim().min(1, "Informe o prontuário novo"),
   novoAlunoTitularId: z.string().trim().min(1, "Selecione a nova dupla"),
   novoProfessorSupervisorId: z.string().trim().min(1).optional(),
 });
@@ -64,6 +65,14 @@ export interface PartesDuplicidade {
 export interface DuplicidadeResponse {
   atual: PartesDuplicidade;
   existente: PartesDuplicidade | null;
+}
+
+export interface HistoricoProntuario {
+  prontuarioId: string;
+  alunoNome: string;
+  professorNome: string | null;
+  criadoEm: string;
+  secoes: Record<string, unknown>;
 }
 
 export interface AssinarResponse {

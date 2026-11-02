@@ -1,5 +1,5 @@
 import { useEffect, useState } from "react";
-import { AlertTriangle, Check, Loader2 } from "lucide-react";
+import { AlertTriangle, ArrowRightLeft, Check, Loader2 } from "lucide-react";
 import type { DuplicidadeResponse, PartesDuplicidade } from "@prontuario/shared";
 import { ApiError, api } from "../lib/api";
 import BottomSheet from "./BottomSheet";
@@ -19,7 +19,7 @@ type Fase =
   | { tipo: "carregando" }
   | { tipo: "formulario"; dados: DuplicidadeResponse }
   | { tipo: "enviando" }
-  | { tipo: "sucesso"; mensagem: string }
+  | { tipo: "sucesso"; titulo: string; mensagem: string }
   | { tipo: "erro"; mensagem: string; dados: DuplicidadeResponse | null };
 
 const ROTULO_STATUS: Record<string, string> = {
@@ -27,6 +27,7 @@ const ROTULO_STATUS: Record<string, string> = {
   ENVIADO: "Aguardando revisão",
   ASSINADO: "Assinado",
   DEVOLVIDO: "Devolvido",
+  TRANSFERIDO: "Transferido",
 };
 
 function formatarData(iso: string): string {
@@ -69,7 +70,7 @@ function Opcao({
 export default function TransferirTitularidadeModal({ open, onClose, prontuarioId, pacienteNome, onSucesso }: Props) {
   const [fase, setFase] = useState<Fase>({ tipo: "carregando" });
   const [tentativa, setTentativa] = useState(0);
-  const [decisao, setDecisao] = useState<Decisao>("manter");
+  const [decisao, setDecisao] = useState<Decisao>("transferir");
   const [professorId, setProfessorId] = useState("");
 
   useEffect(() => {
@@ -80,6 +81,7 @@ export default function TransferirTitularidadeModal({ open, onClose, prontuarioI
       .then((dados) => {
         if (!ativo) return;
         setProfessorId(dados.atual.professorId ?? "");
+        setDecisao(dados.existente ? "transferir" : "manter");
         setFase({ tipo: "formulario", dados });
       })
       .catch((err: unknown) => {
@@ -102,18 +104,23 @@ export default function TransferirTitularidadeModal({ open, onClose, prontuarioI
     setFase({ tipo: "enviando" });
     try {
       if (transferir) {
-        await api.post<{ ok: true }>(`${base}/transferir-titularidade`, {
-          novoAlunoTitularId: dados.existente!.alunoId,
-          novoProfessorSupervisorId: professorId,
-        });
+        await api.post<{ ok: true }>(
+          `/prontuarios/${encodeURIComponent(dados.existente!.prontuarioId)}/transferir-titularidade`,
+          {
+            prontuarioNovoId: dados.atual.prontuarioId,
+            novoAlunoTitularId: dados.atual.alunoId,
+            novoProfessorSupervisorId: professorId,
+          },
+        );
       } else {
         await api.post<{ ok: true }>(`${base}/manter-titularidade`, { professorSupervisorId: professorId });
       }
       setFase({
         tipo: "sucesso",
+        titulo: transferir ? "Transferência concluída" : "Duplicidade resolvida",
         mensagem: transferir
-          ? `A titularidade foi transferida para ${duplaTexto(dados.existente!)}.`
-          : `O prontuário permanece com ${duplaTexto(dados.atual)}.`,
+          ? "O histórico da dupla anterior foi incorporado ao prontuário."
+          : "Os prontuários continuam separados e o alerta de duplicidade foi removido.",
       });
       onSucesso();
     } catch (err) {
@@ -150,7 +157,7 @@ export default function TransferirTitularidadeModal({ open, onClose, prontuarioI
         open={open}
         onClose={onClose}
         centralizado
-        title="Duplicidade resolvida"
+        title={fase.titulo}
         subtitle={fase.mensagem}
         icone={
           <IconeModal tom="primary">
@@ -208,70 +215,61 @@ export default function TransferirTitularidadeModal({ open, onClose, prontuarioI
 
   const aviso =
     decisao === "transferir"
-      ? "A dupla que enviou perderá o direito de editar. O histórico será preservado."
-      : "O prontuário permanece com a dupla que enviou e o alerta de duplicidade será removido.";
+      ? "O prontuário anterior ficará disponível para consulta (read-only). Nenhum dado será apagado."
+      : "Os dois prontuários continuam separados e o alerta de duplicidade será removido.";
 
   return (
     <BottomSheet
       open={open}
       onClose={onClose}
       centralizado
-      title="Resolver duplicidade"
-      subtitle="Este paciente já tem outro prontuário na clínica. Defina a dupla e o professor responsáveis."
+      title="Transferir titularidade"
+      subtitle="O paciente já tem um prontuário com outra dupla. A dupla anterior passará a ter apenas consulta."
       icone={
-        <IconeModal tom="alt">
-          <AlertTriangle size={28} />
+        <IconeModal tom="prof">
+          <ArrowRightLeft size={28} />
         </IconeModal>
       }
     >
       <div className="flex flex-col gap-3">
-        <p className="field-label mb-0 text-left">Prontuário enviado</p>
         <Detalhes
           linhas={[
             ["Paciente", pacienteNome],
-            ["Aluno operador", atual.alunoOperador],
-            ["Aluno auxiliar", atual.alunoAuxiliar],
-            ["Professor responsável", atual.professorNome ?? ""],
+            ["Dupla anterior", existente ? duplaTexto(existente) : "—"],
+            ["Dupla nova", duplaTexto(atual)],
+            ...(existente
+              ? ([
+                  ["Prontuário anterior criado em", formatarData(existente.criadoEm)],
+                  ["Situação do anterior", ROTULO_STATUS[existente.status.toUpperCase()] ?? existente.status],
+                ] as Array<[string, string]>)
+              : []),
           ]}
         />
 
-        {existente ? (
-          <>
-            <p className="field-label mb-0 text-left">Prontuário existente</p>
-            <Detalhes
-              linhas={[
-                ["Aluno operador", existente.alunoOperador],
-                ["Aluno auxiliar", existente.alunoAuxiliar],
-                ["Professor responsável", existente.professorNome ?? ""],
-                ["Criado em", formatarData(existente.criadoEm)],
-                ["Situação", ROTULO_STATUS[existente.status.toUpperCase()] ?? existente.status],
-              ]}
-            />
-          </>
-        ) : (
+        {!existente && (
           <p className="rounded-field bg-paper px-3.5 py-2.5 text-left text-[12.5px] text-ink-soft">
-            O prontuário existente não foi encontrado. Só é possível manter a titularidade atual.
+            O prontuário anterior não foi encontrado. Só é possível manter os prontuários separados.
           </p>
         )}
 
         <fieldset className="flex flex-col gap-2">
-          <legend className="field-label text-left">Dupla responsável</legend>
-          <Opcao
-            nome="decisao"
-            marcada={decisao === "manter"}
-            onChange={() => setDecisao("manter")}
-            titulo="Manter com a dupla que enviou"
-            descricao={duplaTexto(atual)}
-          />
+          <legend className="field-label text-left">Decisão</legend>
           {existente && (
             <Opcao
               nome="decisao"
               marcada={decisao === "transferir"}
               onChange={() => setDecisao("transferir")}
-              titulo="Transferir para a outra dupla"
-              descricao={duplaTexto(existente)}
+              titulo="Transferir para a dupla nova"
+              descricao={`${duplaTexto(atual)} assume o paciente e recebe o histórico de ${duplaTexto(existente)}`}
             />
           )}
+          <Opcao
+            nome="decisao"
+            marcada={decisao === "manter"}
+            onChange={() => setDecisao("manter")}
+            titulo="Não transferir"
+            descricao="Mantém os dois prontuários separados"
+          />
         </fieldset>
 
         {professores.length > 1 ? (
@@ -284,7 +282,7 @@ export default function TransferirTitularidadeModal({ open, onClose, prontuarioI
                 marcada={professorId === p.id}
                 onChange={() => setProfessorId(p.id)}
                 titulo={p.nome}
-                descricao={p.id === atual.professorId ? "Recebeu o prontuário" : "Responsável pelo prontuário existente"}
+                descricao={p.id === atual.professorId ? "Supervisiona a dupla nova" : "Supervisiona a dupla anterior"}
               />
             ))}
           </fieldset>
@@ -295,7 +293,7 @@ export default function TransferirTitularidadeModal({ open, onClose, prontuarioI
         <p className="rounded-field bg-alt-tint px-3.5 py-2.5 text-left text-[12.5px] text-alt">{aviso}</p>
 
         <button type="button" className="btn-prof" disabled={!professorId} onClick={() => void confirmar(dados)}>
-          Confirmar decisão
+          {decisao === "transferir" ? "Confirmar transferência" : "Manter sem transferir"}
         </button>
         <button type="button" className="btn-ghost" onClick={onClose}>
           Cancelar

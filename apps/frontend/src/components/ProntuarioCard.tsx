@@ -1,5 +1,16 @@
 import type { KeyboardEvent, MouseEvent } from "react";
-import { AlertTriangle, Check, CircleAlert, Clock, Lock, PenLine, RefreshCw, RotateCcw, type LucideIcon } from "lucide-react";
+import {
+  AlertTriangle,
+  ArrowRightLeft,
+  Check,
+  CircleAlert,
+  Clock,
+  Lock,
+  PenLine,
+  RefreshCw,
+  RotateCcw,
+  type LucideIcon,
+} from "lucide-react";
 import type { LocalProntuario } from "../db/dexie";
 import { acessoVigente, pedidoPendente, pedidoRecusado, prontuarioBloqueado } from "../lib/acesso";
 import { formatarIdade } from "../lib/idade";
@@ -20,6 +31,7 @@ const BADGES = {
   duplicidade: { icone: AlertTriangle, classes: "bg-alt-tint text-alt", label: "Duplicidade em análise" },
   assinado: { icone: Check, classes: "bg-primary-tint text-primary", label: "Assinado" },
   recusado: { icone: CircleAlert, classes: "bg-alt-tint text-alt", label: "Acesso recusado" },
+  transferido: { icone: ArrowRightLeft, classes: "bg-paper text-ink-soft", label: "Transferido" },
 } satisfies Record<string, Badge>;
 
 interface Props {
@@ -41,8 +53,11 @@ export default function ProntuarioCard({ prontuario: p, onAbrir, onSolicitarAces
   const bloqueado = prontuarioBloqueado(p) && !recusado;
   const pendente = pedidoPendente(p);
   const emDuplicidade = p.status === "enviado" && Boolean(p.sinalizadoDuplicidade);
+  const transferido = p.status === "transferido";
 
-  const badge: Badge = recusado
+  const badge: Badge = transferido
+    ? BADGES.transferido
+    : recusado
     ? BADGES.recusado
     : emDuplicidade
       ? BADGES.duplicidade
@@ -61,7 +76,11 @@ export default function ProntuarioCard({ prontuario: p, onAbrir, onSolicitarAces
 
   const idade = p.pacienteDataNascimento ? formatarIdade(p.pacienteDataNascimento) : "";
   const tempo = tempoRelativo(timestamp(p.status === "devolvido" ? p.devolvidoEm : undefined, p.atualizadoEm));
-  const marco = recusado
+  const marco = transferido
+    ? p.transferidoParaNome
+      ? `transferido para ${p.transferidoParaNome}`
+      : "transferido para outra dupla"
+    : recusado
     ? "pedido de acesso recusado pelo professor"
     : p.status === "em_andamento"
       ? `editado ${tempo}`
@@ -78,7 +97,18 @@ export default function ProntuarioCard({ prontuario: p, onAbrir, onSolicitarAces
               : "assinado";
   const meta = semNome ? "Aguardando preenchimento" : [idade, marco].filter(Boolean).join(" · ");
 
-  const acao = emDuplicidade
+  const enviadoExpirado = p.status === "enviado" && !vigente;
+  const acaoEnviado = enviadoExpirado && !emDuplicidade ? "Acesso expirado" : null;
+
+  const acao = transferido
+    ? vigente
+      ? "Ver ficha"
+      : pendente
+        ? "Aguardando aprovação do professor"
+        : recusado
+          ? "Toque para solicitar novamente"
+          : "Solicitar acesso"
+    : emDuplicidade
     ? "O professor está avaliando a duplicidade"
     : recusado
       ? "Toque para solicitar novamente"
@@ -86,9 +116,9 @@ export default function ProntuarioCard({ prontuario: p, onAbrir, onSolicitarAces
         ? pendente
           ? "Aguardando aprovação do professor"
           : "Toque para solicitar acesso"
-        : null;
+        : acaoEnviado;
 
-  const mostrarCadeado = bloqueado || recusado;
+  const mostrarCadeado = !transferido && (bloqueado || recusado || enviadoExpirado);
 
   function aoClicar() {
     if (recusado) return onSolicitarAcesso();
@@ -129,7 +159,7 @@ export default function ProntuarioCard({ prontuario: p, onAbrir, onSolicitarAces
               <Lock size={14} aria-hidden="true" className="mt-0.5 shrink-0 text-ink-faint" />
             ))}
         </div>
-        {vigente && p.status !== "enviado" && (
+        {vigente && (
           <span className="shrink-0 whitespace-nowrap text-[12px] font-semibold text-[#DC2626]">
             Acesso expira em: <TimerRegressivo expiraEm={p.acessoExpiraEm!} />
           </span>

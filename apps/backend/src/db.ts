@@ -29,7 +29,7 @@ CREATE TABLE IF NOT EXISTS Prontuario (
   assinaturaInvalidada   INTEGER NOT NULL DEFAULT 0,
   acessoExpiraEm         TEXT,
   acessoRevogadoEm       TEXT,
-  acessoRecusadoEm       TEXT
+  acessoRecusadoEm       TEXT,
   acessoSolicitadoEm     TEXT
 );
 CREATE INDEX IF NOT EXISTS idx_pront_aluno ON Prontuario(alunoTitularId);
@@ -112,6 +112,14 @@ function migrarColunaSinalizadoDuplicidade(db: DatabaseSync): void {
   }
 }
 
+function migrarColunasTransferencia(db: DatabaseSync): void {
+  const colunas = db.prepare("PRAGMA table_info(Prontuario)").all() as unknown as { name: string }[];
+  const existentes = new Set(colunas.map((c) => c.name));
+  for (const nome of ["transferidoDe", "transferidoPara"]) {
+    if (!existentes.has(nome)) db.exec(`ALTER TABLE Prontuario ADD COLUMN ${nome} TEXT`);
+  }
+}
+
 const COLUNAS_REVISAO: ReadonlyArray<readonly [string, string]> = [
   ["assinadoEm", "TEXT"],
   ["assinadoPorId", "TEXT REFERENCES Usuario(id)"],
@@ -154,6 +162,7 @@ export function abrirBanco(): DatabaseSync {
   migrarColunaSinalizadoDuplicidade(db);
   migrarColunasRevisao(db);
   migrarColunasAcesso(db);
+  migrarColunasTransferencia(db);
   return db;
 }
 

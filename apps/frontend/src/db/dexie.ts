@@ -1,6 +1,7 @@
 import Dexie, { type Table } from "dexie";
+import type { HistoricoProntuario } from "@prontuario/shared";
 
-export type LocalStatus = "em_andamento" | "enviado" | "assinado" | "devolvido";
+export type LocalStatus = "em_andamento" | "enviado" | "assinado" | "devolvido" | "transferido";
 
 export interface LocalProntuario {
   id: string;
@@ -27,6 +28,10 @@ export interface LocalProntuario {
   comentarioDevolucao?: string;
   vistoPeloAluno?: boolean;
   sinalizadoDuplicidade?: boolean;
+  transferidoDe?: string;
+  transferidoPara?: string;
+  transferidoParaNome?: string;
+  historico?: HistoricoProntuario;
 }
 
 export interface LocalPlanoProfessor {

@@ -167,10 +167,13 @@ export const syncRoutes: FastifyPluginAsync = async (app) => {
         const status = pront?.status.toUpperCase();
         const assinado = status === "ASSINADO";
         const enviado = status === "ENVIADO";
+        const transferido = status === "TRANSFERIDO";
         let descartar = false;
 
         if (pront && editaFicha(op)) {
-          if (assinado) {
+          if (transferido) {
+            descartar = true;
+          } else if (assinado) {
             if (acessoCobreOperacao(pront, op.ts)) {
               const agora = new Date().toISOString();
               invalidarAssinatura.run(agora, pront.id);

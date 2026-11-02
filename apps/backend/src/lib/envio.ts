@@ -30,7 +30,7 @@ export function buscarDuplicado(
     .prepare(
       `SELECT id, alunoTitularId, criadoEm, status FROM Prontuario
        WHERE pacienteNome = ? AND pacienteDataNascimento = ?
-         AND id != ? AND alunoTitularId != ? AND status != 'EM_ANDAMENTO'
+         AND id != ? AND alunoTitularId != ? AND status NOT IN ('EM_ANDAMENTO', 'TRANSFERIDO')
        ORDER BY criadoEm ASC LIMIT 1`,
     )
     .get(pront.pacienteNome, pront.pacienteDataNascimento, pront.id, alunoId) as unknown as DuplicadoRow | undefined;

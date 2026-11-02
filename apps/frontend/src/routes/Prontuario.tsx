@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useReducer, useRef, useState } from "react";
 import { useLiveQuery } from "dexie-react-hooks";
 import { useNavigate, useParams, useSearchParams } from "react-router-dom";
-import { Check, Clock, RotateCcw, Send, Unlock, X } from "lucide-react";
+import { ArrowRightLeft, Check, Clock, RotateCcw, Send, Unlock, X } from "lucide-react";
 import { SECOES, type SecaoId } from "@prontuario/shared";
 import Consentimento from "../components/ficha/Consentimento";
 import Conclusao from "../components/ficha/Conclusao";
@@ -17,6 +17,7 @@ import Procedimentos from "../components/ficha/Procedimentos";
 import AvisoInvalidacaoAssinatura from "../components/AvisoInvalidacaoAssinatura";
 import DevolucaoAlunoModal from "../components/DevolucaoAlunoModal";
 import EnviarProntuarioModal from "../components/EnviarProntuarioModal";
+import HistoricoSecao from "../components/HistoricoSecao";
 import SolicitarAcessoModal from "../components/SolicitarAcessoModal";
 import StatusBar from "../components/StatusBar";
 import TelaBloqueio from "../components/TelaBloqueio";
@@ -381,6 +382,16 @@ export default function Prontuario() {
         <Unlock size={12} aria-hidden="true" />
         <TimerAcesso expiraEm={atual.acessoExpiraEm!} rotulo="Acesso liberado — expira em" />
       </span>
+    ) : status === "transferido" ? (
+      <div className="flex flex-col gap-1.5">
+        <span className={`${PILL} bg-paper text-ink-soft`}>
+          <ArrowRightLeft size={12} aria-hidden="true" />
+          Transferido — somente leitura
+        </span>
+        {atual.transferidoParaNome && (
+          <p className="text-[12px] text-ink-soft">Titularidade transferida para {atual.transferidoParaNome}.</p>
+        )}
+      </div>
     ) : status === "devolvido" ? (
       <div className="flex flex-wrap items-center gap-2">
         <span className={`${PILL} bg-alt-tint text-alt`}>
@@ -468,6 +479,19 @@ export default function Prontuario() {
       </nav>
 
       <main className="flex-1 px-5 pb-4 pt-2">
+        {atual.historico && atual.historico.secoes[secao.id] && (
+          <div className="mb-3">
+            <HistoricoSecao
+              key={`${atual.id}-${secao.id}`}
+              secaoId={secao.id}
+              dadosHistoricos={atual.historico.secoes[secao.id]}
+              dadosPessoaisHistoricos={atual.historico.secoes["dados-pessoais"]}
+              alunoNome={atual.historico.alunoNome}
+              professorNome={atual.historico.professorNome ?? ""}
+              criadoEm={atual.historico.criadoEm}
+            />
+          </div>
+        )}
         {secao.id === "consentimento" ? (
           <Consentimento
             key={pront.id}

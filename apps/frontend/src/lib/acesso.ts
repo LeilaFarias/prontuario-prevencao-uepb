@@ -15,7 +15,7 @@ export function acessoVigente(p: CamposAcesso, agora: number = Date.now()): bool
 }
 
 export function prontuarioBloqueado(p: CamposAcesso & Pick<LocalProntuario, "status">): boolean {
-  return (p.status === "em_andamento" || p.status === "assinado") && !acessoVigente(p);
+  return (p.status === "em_andamento" || p.status === "assinado" || p.status === "transferido") && !acessoVigente(p);
 }
 
 export function pedidoPendente(p: CamposAcesso): boolean {

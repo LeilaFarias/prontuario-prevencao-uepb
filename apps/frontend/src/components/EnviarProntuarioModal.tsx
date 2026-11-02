@@ -46,6 +46,7 @@ const ROTULO_STATUS: Record<LocalStatus, string> = {
   enviado: "Aguardando revisão",
   assinado: "Assinado",
   devolvido: "Devolvido",
+  transferido: "Transferido",
 };
 
 function rotuloStatus(status: string | null | undefined): string {

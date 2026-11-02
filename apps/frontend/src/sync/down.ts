@@ -1,3 +1,4 @@
+import type { HistoricoProntuario } from "@prontuario/shared";
 import { db, type LocalProntuario, type LocalStatus } from "../db/dexie";
 import { api } from "../lib/api";
 import { getSession } from "../lib/session";
@@ -17,6 +18,9 @@ export interface ProntuarioRemotoResumo {
   alunoNome: string;
   professorSupervisorNome: string | null;
   sinalizadoDuplicidade: number;
+  transferidoDe: string | null;
+  transferidoPara: string | null;
+  transferidoParaNome: string | null;
 }
 
 export interface ProntuarioRemoto extends ProntuarioRemotoResumo {
@@ -31,6 +35,7 @@ export interface ProntuarioRemoto extends ProntuarioRemotoResumo {
   devolvidoPorNome: string | null;
   motivoDevolucao: string | null;
   comentarioDevolucao: string | null;
+  historico?: HistoricoProntuario | null;
 }
 
 const STATUS_VALIDOS: ReadonlySet<string> = new Set<LocalStatus>([
@@ -38,6 +43,7 @@ const STATUS_VALIDOS: ReadonlySet<string> = new Set<LocalStatus>([
   "enviado",
   "assinado",
   "devolvido",
+  "transferido",
 ]);
 
 export function normalizarStatus(s: string): LocalProntuario["status"] {
@@ -58,6 +64,15 @@ function camposDeRevisao(remoto: ProntuarioRemoto) {
     motivoDevolucao: remoto.motivoDevolucao ?? undefined,
     comentarioDevolucao: remoto.comentarioDevolucao ?? undefined,
     sinalizadoDuplicidade: remoto.sinalizadoDuplicidade === 1,
+  };
+}
+
+function camposDeTransferencia(remoto: ProntuarioRemoto, local?: LocalProntuario) {
+  return {
+    transferidoDe: remoto.transferidoDe ?? undefined,
+    transferidoPara: remoto.transferidoPara ?? undefined,
+    transferidoParaNome: remoto.transferidoParaNome ?? undefined,
+    historico: remoto.historico === undefined ? local?.historico : (remoto.historico ?? undefined),
   };
 }
 
@@ -91,6 +106,7 @@ export async function aplicarRemoto(remoto: ProntuarioRemoto): Promise<boolean> 
         pacienteDataNascimento: remoto.pacienteDataNascimento ?? undefined,
         status: normalizarStatus(remoto.status),
         ...camposDeRevisao(remoto),
+        ...camposDeTransferencia(remoto),
         acessoRecusadoEm: remoto.acessoRecusadoEm ?? undefined,
         vistoPeloAluno: false,
         secoes: remoto.secoes ?? {},
@@ -112,7 +128,9 @@ export async function aplicarRemoto(remoto: ProntuarioRemoto): Promise<boolean> 
       remoto.acessoRevogadoEm !== (local.acessoRevogadoEm ?? null) ||
       remoto.acessoRecusadoEm !== (local.acessoRecusadoEm ?? null) ||
       novoStatus !== local.status ||
-      (remoto.sinalizadoDuplicidade === 1) !== Boolean(local.sinalizadoDuplicidade);
+      (remoto.sinalizadoDuplicidade === 1) !== Boolean(local.sinalizadoDuplicidade) ||
+      (remoto.transferidoDe ?? null) !== (local.transferidoDe ?? null) ||
+      (remoto.transferidoPara ?? null) !== (local.transferidoPara ?? null);
 
     const pendentes = await db.syncQueue.where("prontuarioId").equals(local.id).count();
 
@@ -135,6 +153,7 @@ export async function aplicarRemoto(remoto: ProntuarioRemoto): Promise<boolean> 
         professorSupervisorId: remoto.professorSupervisorId ?? undefined,
         professorSupervisorNome: remoto.professorSupervisorNome ?? undefined,
         sinalizadoDuplicidade: remoto.sinalizadoDuplicidade === 1,
+        ...camposDeTransferencia(remoto, local),
         vistoPeloAluno: novoStatus === local.status ? local.vistoPeloAluno : false,
       });
       return true;
@@ -148,6 +167,7 @@ export async function aplicarRemoto(remoto: ProntuarioRemoto): Promise<boolean> 
       pacienteDataNascimento: remoto.pacienteDataNascimento ?? local.pacienteDataNascimento,
       status: novoStatus,
       ...camposDeRevisao(remoto),
+      ...camposDeTransferencia(remoto, local),
       acessoRecusadoEm: remoto.acessoRecusadoEm ?? undefined,
       vistoPeloAluno: novoStatus === local.status ? local.vistoPeloAluno : false,
       secoes: { ...local.secoes, ...(remoto.secoes ?? {}) },
