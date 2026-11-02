@@ -35,21 +35,21 @@ const OPCOES_FREQUENCIA = [
   { value: "4x", label: "4x ou mais" },
 ] as const;
 
-const ACOES_PREVENTIVAS: ReadonlyArray<OpcaoCheckbox> = [
+export const ACOES_PREVENTIVAS: ReadonlyArray<OpcaoCheckbox> = [
   { value: "educacao", label: "Educação em Saúde" },
   { value: "escovacao", label: "Escovação Supervisionada" },
   { value: "higiene-dieta", label: "Orientação de Higiene/Dieta" },
   { value: "fluor", label: "Aplicação Tópica de Flúor" },
 ];
 
-const RECURSOS: ReadonlyArray<OpcaoCheckbox> = [
+export const RECURSOS: ReadonlyArray<OpcaoCheckbox> = [
   { value: "escova", label: "Escova" },
   { value: "creme", label: "Creme dental" },
   { value: "fio", label: "Fio dental" },
   { value: "enxaguatorio", label: "Enxaguatório" },
 ];
 
-const HABITOS: ReadonlyArray<OpcaoCheckbox> = [
+export const HABITOS: ReadonlyArray<OpcaoCheckbox> = [
   { value: "chupeta", label: "Chupeta" },
   { value: "succao", label: "Sucção digital" },
   { value: "onicofagia", label: "Onicofagia" },

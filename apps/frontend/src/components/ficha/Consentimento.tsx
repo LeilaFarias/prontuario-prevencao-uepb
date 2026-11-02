@@ -21,7 +21,7 @@ type ChaveTexto = "semestreLetivo" | "alunoOperador" | "alunoAuxiliar";
 
 type ExtraTexto = Partial<Pick<CampoTextoProps, "placeholder" | "inputMode" | "autoComplete" | "maxLength" | "type">>;
 
-const PARAGRAFOS_TERMO: ReadonlyArray<string> = [
+export const PARAGRAFOS_TERMO: ReadonlyArray<string> = [
   "Como responsável pelo(a) menor {IDADE}, concordo com o seu atendimento pelos acadêmicos, monitores, alunos de pós-graduação e professores vinculados à Clínica de Prevenção em Saúde Bucal do Departamento de Odontologia da Universidade Estadual da Paraíba. Sei que ocorre o apoio de outros funcionários (quadro técnico) e que poderá existir a participação de outros pesquisadores autorizados previamente.",
   "Também aceito a documentação do caso (imagens, radiografias, modelos e outros meios) com a finalidade exclusivamente acadêmica (apresentação em eventos científicos da área e publicação em periódicos científicos), se respeitada a idade da criança/adolescente em questão.",
   "Estou certo(a) de que durante as consultas serão utilizados materiais e técnicas objetivando promover melhor qualidade de saúde bucal, assim como medidas para reduzir a possibilidade de riscos ou danos durante a prática clínica. Fui informado(a) de que a minha colaboração é muito importante para o sucesso no tratamento desse paciente. Desse modo, aceito participar das palestras ou atividades de orientação sobre saúde bucal a fim de esclarecer as dúvidas que possuo e apresentar sugestões sobre o tema/assunto.",

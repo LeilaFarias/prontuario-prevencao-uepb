@@ -57,7 +57,6 @@ function FormularioSangramento({ prontuario }: { prontuario: LocalProntuario }) 
     <div className="flex flex-col gap-3 pb-2">
       <GrupoFicha
         titulo="Sangramento gengival"
-        subtitulo="Registre o índice de sangramento a cada avaliação. Quanto maior o percentual, pior a saúde gengival."
       >
         {registros.length === 0 && (
           <div className="flex flex-col items-center gap-3 rounded-field border border-line-soft bg-paper px-4 py-8 text-center">

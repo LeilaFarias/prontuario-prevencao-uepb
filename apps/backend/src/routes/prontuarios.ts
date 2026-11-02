@@ -61,6 +61,10 @@ export const prontuariosRoutes: FastifyPluginAsync = async (app) => {
      WHERE p.id = ?`,
   );
   const buscarSecoes = db.prepare("SELECT secaoId, conteudo FROM Secao WHERE prontuarioId = ?");
+  const buscarEnvio = db.prepare(
+    `SELECT MAX(ts) AS ts FROM SyncOperationLog
+     WHERE prontuarioId = ? AND entity = 'prontuario' AND op = 'enviar' AND descartada = 0`,
+  );
 
   const registrarLog = db.prepare(
     `INSERT INTO SyncOperationLog (id, prontuarioId, entity, entityId, op, ts, descartada)
@@ -92,7 +96,14 @@ export const prontuariosRoutes: FastifyPluginAsync = async (app) => {
       }
     }
 
-    return { ...linha, secoes };
+    // RN-08: qualquer professor consulta; só o supervisor do prontuário pode assinar/devolver (e só enquanto ENVIADO).
+    const ehSupervisor = !ehAluno(req.user.perfil) && linha.professorSupervisorId === req.user.sub;
+    const podeAgir = ehSupervisor && linha.status.toUpperCase() === "ENVIADO";
+
+    const envio = buscarEnvio.get(linha.id) as unknown as { ts: number | null } | undefined;
+    const enviadoEm = envio?.ts ? new Date(envio.ts).toISOString() : null;
+
+    return { ...linha, secoes, podeAgir, ehSupervisor, enviadoEm };
   });
 
   app.post<{ Params: { id: string } }>("/prontuarios/:id/enviar", protegida, async (req, reply) => {

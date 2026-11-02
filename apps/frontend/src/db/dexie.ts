@@ -15,6 +15,13 @@ export interface LocalProntuario {
   erroEnvio?: "professor_nao_encontrado" | "falha";
 }
 
+/** Plano preventivo do professor (RF-15). Local ao aparelho dele: nunca entra na syncQueue. */
+export interface LocalPlanoProfessor {
+  prontuarioId: string;
+  sessoes: Array<{ numero: number; descricao: string }>;
+  atualizadoEm: number;
+}
+
 export interface LocalSyncOp {
   id?: number;
   prontuarioId: string;
@@ -28,12 +35,16 @@ export interface LocalSyncOp {
 class ProntuarioDB extends Dexie {
   prontuarios!: Table<LocalProntuario, string>;
   syncQueue!: Table<LocalSyncOp, number>;
+  planosProfessor!: Table<LocalPlanoProfessor, string>;
 
   constructor() {
     super("prontuario-digital");
     this.version(1).stores({
       prontuarios: "id, status, atualizadoEm, sincronizado",
       syncQueue: "++id, prontuarioId, ts",
+    });
+    this.version(2).stores({
+      planosProfessor: "prontuarioId, atualizadoEm",
     });
   }
 }

@@ -54,6 +54,7 @@
   .btn {
     @apply inline-flex h-[50px] w-full items-center justify-center gap-2 rounded-field text-[15px] font-semibold transition disabled:opacity-60;
   }
+  .btn-prof { @apply btn bg-prof text-white; }
   .btn-dark { @apply btn bg-ink text-white; }
   .btn-primary { @apply btn bg-primary text-white; }
   .btn-ghost { @apply btn border border-line bg-raised text-ink-soft; }

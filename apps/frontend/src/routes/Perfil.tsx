@@ -16,6 +16,7 @@ import PerfilLinha from "../components/PerfilLinha";
 import Topbar from "../components/Topbar";
 import { api, ApiError } from "../lib/api";
 import { clearSession, getSession, updateSessionUser } from "../lib/session";
+import { rotaInicial } from "../lib/rotas";
 
 type ModalAberto = null | "nome" | "email" | "matricula" | "senha" | "excluir";
 
@@ -222,7 +223,7 @@ export default function Perfil() {
 
   return (
     <div className="flex flex-1 flex-col">
-      <Topbar titulo="Perfil" subtitulo="Suas informações de conta" onVoltar={() => navigate("/prontuarios")} />
+      <Topbar titulo="Perfil" subtitulo="Suas informações de conta" onVoltar={() => navigate(rotaInicial(u.perfil))} />
 
       <main className="flex flex-1 flex-col px-5 pb-4 pt-2">
         <div className="flex flex-col items-center py-4">

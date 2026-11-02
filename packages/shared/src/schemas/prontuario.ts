@@ -216,6 +216,23 @@ export const planoSchema = z.object({
 
 export type Plano = z.infer<typeof planoSchema>;
 
+/**
+ * Plano preventivo do PROFESSOR (RF-15). Fica separado de `planoSchema` de propósito: o plano do aluno é
+ * sincronizado inteiro com o servidor, e este dado é local ao professor até a assinatura.
+ */
+export const planoProfessorSchema = z.object({
+  sessoes: z
+    .array(
+      z.object({
+        numero: z.number(),
+        descricao: z.string().default(""),
+      }),
+    )
+    .default([]),
+});
+
+export type PlanoProfessor = z.infer<typeof planoProfessorSchema>;
+
 /** `crypto` não existe nos tipos deste pacote (lib ES2022 sem DOM), por isso o acesso via globalThis. */
 const gerarIdPadrao = (): string => {
   const c = (globalThis as { crypto?: { randomUUID?: () => string } }).crypto;
