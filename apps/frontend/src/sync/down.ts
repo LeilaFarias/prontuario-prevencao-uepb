@@ -4,7 +4,6 @@ import { notifyChanged } from "./queue";
 
 export const ULTIMO_SYNC_DOWN_KEY = "prontuario:ultimoSyncDown";
 
-/** Resposta de GET /prontuarios (sem seções). */
 export interface ProntuarioRemotoResumo {
   id: string;
   pacienteNome: string;
@@ -17,7 +16,6 @@ export interface ProntuarioRemotoResumo {
   alunoNome: string;
 }
 
-/** Resposta de GET /prontuarios/:id (com seções já decodificadas). */
 export interface ProntuarioRemoto extends ProntuarioRemotoResumo {
   secoes: Record<string, unknown>;
 }
@@ -29,7 +27,6 @@ const STATUS_VALIDOS: ReadonlySet<string> = new Set<LocalStatus>([
   "devolvido",
 ]);
 
-/** Backend usa MAIÚSCULAS (EM_ANDAMENTO); o Dexie usa minúsculas (em_andamento). */
 export function normalizarStatus(s: string): LocalProntuario["status"] {
   const v = s.trim().toLowerCase();
   return STATUS_VALIDOS.has(v) ? (v as LocalStatus) : "em_andamento";
@@ -52,14 +49,7 @@ export function buscarDetalhe(id: string): Promise<ProntuarioRemoto> {
   return api.get<ProntuarioRemoto>(`/prontuarios/${encodeURIComponent(id)}`);
 }
 
-/**
- * Grava no Dexie o prontuário vindo do servidor, respeitando as edições locais.
- *
- * A checagem da fila e a escrita acontecem na MESMA transação: assim uma edição que
- * entre na fila durante o sync down não é sobrescrita (regra crítica de merge).
- *
- * @returns true se o Dexie foi alterado.
- */
+// Checagem da fila e escrita na mesma transação: edição que entra na fila durante o sync não é sobrescrita.
 export async function aplicarRemoto(remoto: ProntuarioRemoto): Promise<boolean> {
   const remotoEm = paraTimestamp(remoto.atualizadoEm);
 
@@ -75,17 +65,15 @@ export async function aplicarRemoto(remoto: ProntuarioRemoto): Promise<boolean> 
         secoes: remoto.secoes ?? {},
         criadoEm: paraTimestamp(remoto.criadoEm),
         atualizadoEm: remotoEm,
-        sincronizado: true, // já veio do servidor
+        sincronizado: true,
         alunoTitularId: remoto.alunoTitularId,
       });
       return true;
     }
 
-    // Edições pendentes: o local vence e será enviado pela fila.
     const pendentes = await db.syncQueue.where("prontuarioId").equals(local.id).count();
     if (pendentes > 0) return false;
 
-    // Local igual ou mais recente: mantém.
     if (remotoEm <= local.atualizadoEm) return false;
 
     await db.prontuarios.put({
@@ -93,7 +81,6 @@ export async function aplicarRemoto(remoto: ProntuarioRemoto): Promise<boolean> 
       pacienteNome: remoto.pacienteNome,
       pacienteDataNascimento: remoto.pacienteDataNascimento ?? local.pacienteDataNascimento,
       status: normalizarStatus(remoto.status),
-      // Sem pendências, tudo o que existe localmente já foi enviado; o servidor tem prioridade por seção.
       secoes: { ...local.secoes, ...(remoto.secoes ?? {}) },
       atualizadoEm: remotoEm,
       sincronizado: true,
@@ -103,7 +90,6 @@ export async function aplicarRemoto(remoto: ProntuarioRemoto): Promise<boolean> 
   });
 }
 
-/** Decide, só pelo resumo, se vale buscar o detalhe (novo ou mais recente que o local). */
 async function precisaAtualizar(resumo: ProntuarioRemotoResumo): Promise<boolean> {
   const local = await db.prontuarios.get(resumo.id);
   if (!local) return true;
@@ -114,10 +100,6 @@ async function precisaAtualizar(resumo: ProntuarioRemotoResumo): Promise<boolean
 
 const SIMULTANEOS = 4;
 
-/**
- * Sync down completo: lista no servidor e traz (com seções) apenas o que é novo ou mais recente.
- * Lança erro se a LISTA falhar; falhas no detalhe de um prontuário só pulam aquele item.
- */
 export async function sincronizarParaBaixo(): Promise<void> {
   const resumos = await buscarResumos();
   const alvos: ProntuarioRemotoResumo[] = [];
@@ -140,7 +122,6 @@ export async function sincronizarParaBaixo(): Promise<void> {
   try {
     localStorage.setItem(ULTIMO_SYNC_DOWN_KEY, String(Date.now()));
   } catch {
-    // armazenamento indisponível: apenas não registra a hora
   }
   if (alterou) notifyChanged();
 }

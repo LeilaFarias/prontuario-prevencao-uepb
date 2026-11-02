@@ -84,7 +84,7 @@ export function useSecao<T extends SchemaSecao>(
       if (montado.current) setSalvoEm(Date.now());
     } catch (err) {
       console.error("[useSecao] falha ao salvar seção:", err);
-      ultimoSalvo.current = anterior; // permite nova tentativa na próxima edição
+      ultimoSalvo.current = anterior;
     } finally {
       emAndamento.current -= 1;
       if (montado.current && timer.current === undefined && emAndamento.current === 0) setSalvando(false);
@@ -94,7 +94,6 @@ export function useSecao<T extends SchemaSecao>(
   const salvarRef = useRef(salvar);
   salvarRef.current = salvar;
 
-  // Autosave: qualquer mudança (digitação ou setValue) agenda a gravação
   useEffect(() => {
     if (somenteLeitura) return;
     const sub = watch(() => {

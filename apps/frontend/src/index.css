@@ -57,6 +57,7 @@
   .btn-prof { @apply btn bg-prof text-white; }
   .btn-dark { @apply btn bg-ink text-white; }
   .btn-primary { @apply btn bg-primary text-white; }
+  .btn-alt { @apply btn bg-alt text-white; }
   .btn-ghost { @apply btn border border-line bg-raised text-ink-soft; }
   .banner-erro { @apply rounded-field bg-alt-tint px-3.5 py-2.5 text-[13px] text-alt; }
   .banner-ok { @apply rounded-field bg-primary-tint px-3.5 py-2.5 text-[13px] text-primary; }

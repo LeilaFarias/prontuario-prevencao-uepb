@@ -22,14 +22,12 @@ function SomenteVisitante({ children }: { children: ReactElement }) {
   return sessao ? <Navigate to={rotaInicial(sessao.user.perfil)} replace /> : children;
 }
 
-/** Telas do professor (fila e revisão). Aluno volta para os próprios prontuários. */
 function SomenteProfessor({ children }: { children: ReactElement }) {
   const sessao = getSession();
   if (!sessao) return <Navigate to="/login" replace />;
   return sessao.user.perfil === "professor" ? children : <Navigate to="/prontuarios" replace />;
 }
 
-/** Lista "Meus prontuários" é do aluno; o professor trabalha pela fila. */
 function SomenteAluno({ children }: { children: ReactElement }) {
   const sessao = getSession();
   if (!sessao) return <Navigate to="/login" replace />;

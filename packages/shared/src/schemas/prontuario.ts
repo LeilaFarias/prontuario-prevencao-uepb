@@ -201,7 +201,6 @@ export type Conclusao = z.infer<typeof conclusaoSchema>;
 export const vazioConclusao = (): Conclusao => conclusaoSchema.parse({});
 
 export const sessaoPlanoSchema = z.object({
-  /** UUID da sessão. Fica com default "" só para ler dados antigos (sem id); o formulário gera o id ao carregar. */
   id: z.string().default(""),
   numero: z.number(),
   descricao: z.string().default(""),
@@ -216,10 +215,6 @@ export const planoSchema = z.object({
 
 export type Plano = z.infer<typeof planoSchema>;
 
-/**
- * Plano preventivo do PROFESSOR (RF-15). Fica separado de `planoSchema` de propósito: o plano do aluno é
- * sincronizado inteiro com o servidor, e este dado é local ao professor até a assinatura.
- */
 export const planoProfessorSchema = z.object({
   sessoes: z
     .array(

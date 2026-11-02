@@ -68,7 +68,6 @@ export default function Prontuario() {
     await salvarSecaoLocal(id, p.secaoId, { texto: p.texto });
   }, [id]);
 
-  // Garante que nada digitado se perde ao sair da tela ou ocultar o app
   useEffect(() => {
     const aoOcultar = () => document.visibilityState === "hidden" && void salvarPendente();
     document.addEventListener("visibilitychange", aoOcultar);

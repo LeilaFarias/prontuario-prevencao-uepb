@@ -15,7 +15,6 @@ export interface LocalProntuario {
   erroEnvio?: "professor_nao_encontrado" | "falha";
 }
 
-/** Plano preventivo do professor (RF-15). Local ao aparelho dele: nunca entra na syncQueue. */
 export interface LocalPlanoProfessor {
   prontuarioId: string;
   sessoes: Array<{ numero: number; descricao: string }>;

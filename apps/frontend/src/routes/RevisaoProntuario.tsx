@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import { useNavigate, useParams } from "react-router-dom";
-import { AlertTriangle, Check, RotateCcw } from "lucide-react";
+import { AlertTriangle, WifiOff } from "lucide-react";
 import {
   SECOES,
   conclusaoSchema,
@@ -16,7 +16,6 @@ import {
   sangramentoSchema,
   type SecaoId,
 } from "@prontuario/shared";
-import BottomSheet from "../components/BottomSheet";
 import ConclusaoLeitura from "../components/ficha/revisao/ConclusaoLeitura";
 import ConsentimentoLeitura from "../components/ficha/revisao/ConsentimentoLeitura";
 import CPODLeitura from "../components/ficha/revisao/CPODLeitura";
@@ -29,29 +28,43 @@ import PlanoLeitura from "../components/ficha/revisao/PlanoLeitura";
 import ProcedimentosLeitura from "../components/ficha/revisao/ProcedimentosLeitura";
 import { formatarDataHoraCompleta, lerSecao } from "../components/ficha/revisao/rotulos";
 import SangramentoLeitura from "../components/ficha/revisao/SangramentoLeitura";
+import AssinarModal from "../components/revisao/AssinarModal";
+import DevolverModal from "../components/revisao/DevolverModal";
+import StatusBanner from "../components/revisao/StatusBanner";
 import Topbar from "../components/Topbar";
 import { useProntuario, type ProntuarioRevisao } from "../hooks/useProntuario";
 import { temDivergenciaCPOD } from "../lib/comparacaoCPOD";
 import { formatarIdade } from "../lib/idade";
+import { getSession } from "../lib/session";
 
-type AcaoPendente = "assinar" | "devolver" | null;
+interface ConteudoProps {
+  prontuario: ProntuarioRevisao;
+  onAtualizar: () => Promise<void>;
+}
 
-const PILL_STATUS: Record<string, { texto: string; classe: string; icone: typeof Check }> = {
-  ASSINADO: { texto: "Já assinado", classe: "bg-primary-tint text-primary", icone: Check },
-  DEVOLVIDO: { texto: "Devolvido ao aluno", classe: "bg-alt-tint text-alt", icone: RotateCcw },
-};
-
-function ConteudoRevisao({ prontuario }: { prontuario: ProntuarioRevisao }) {
+function ConteudoRevisao({ prontuario, onAtualizar }: ConteudoProps) {
   const navigate = useNavigate();
   const [indice, setIndice] = useState(0);
-  const [acao, setAcao] = useState<AcaoPendente>(null);
+  const [modalAssinar, setModalAssinar] = useState(false);
+  const [modalDevolver, setModalDevolver] = useState(false);
+  const [offline, setOffline] = useState(!navigator.onLine);
   const chipAtivo = useRef<HTMLButtonElement | null>(null);
+
+  useEffect(() => {
+    const aoFicarOnline = () => setOffline(false);
+    const aoFicarOffline = () => setOffline(true);
+    window.addEventListener("online", aoFicarOnline);
+    window.addEventListener("offline", aoFicarOffline);
+    return () => {
+      window.removeEventListener("online", aoFicarOnline);
+      window.removeEventListener("offline", aoFicarOffline);
+    };
+  }, []);
 
   useEffect(() => {
     chipAtivo.current?.scrollIntoView({ inline: "center", block: "nearest", behavior: "smooth" });
   }, [indice]);
 
-  // Seções lidas e normalizadas uma única vez; o professor nunca altera nada disto.
   const secoes = useMemo(() => {
     const bruto = prontuario.secoes;
     return {
@@ -76,7 +89,11 @@ function ConteudoRevisao({ prontuario }: { prontuario: ProntuarioRevisao }) {
   const nomePaciente = prontuario.pacienteNome.trim() || secoes.dadosPessoais.nomeCompleto.trim() || "Prontuário";
   const nascimento = prontuario.pacienteDataNascimento ?? secoes.dadosPessoais.dataNascimento;
   const idade = nascimento ? formatarIdade(nascimento) : "";
-  const pillStatus = PILL_STATUS[prontuario.status.toUpperCase()];
+  const aguardando = prontuario.status.toUpperCase() === "ENVIADO";
+  const bloqueado = !podeAgir || offline;
+  const nomeProfessor = getSession()?.user.nome ?? "";
+  const procedimentosPendentes = secoes.procedimentos.itens.length;
+  const voltarParaFila = () => navigate("/fila");
 
   function renderSecao(id: SecaoId) {
     switch (id) {
@@ -111,7 +128,7 @@ function ConteudoRevisao({ prontuario }: { prontuario: ProntuarioRevisao }) {
         titulo={nomePaciente}
         subtitulo={secao.titulo}
         tituloClassName="text-[18px]"
-        onVoltar={() => navigate("/fila")}
+        onVoltar={voltarParaFila}
       />
 
       <nav aria-label="Seções" className="flex gap-2 overflow-x-auto px-5 pb-3 pt-1 [scrollbar-width:none]">
@@ -143,6 +160,8 @@ function ConteudoRevisao({ prontuario }: { prontuario: ProntuarioRevisao }) {
       </nav>
 
       <main className="flex flex-1 flex-col gap-3 px-5 pb-4 pt-2">
+        <StatusBanner prontuario={prontuario} />
+
         <section aria-label="Resumo do envio" className="rounded-card border border-line bg-raised p-4">
           <div className="flex flex-col gap-1.5 text-[13px]">
             <p className="text-ink-soft">
@@ -156,20 +175,12 @@ function ConteudoRevisao({ prontuario }: { prontuario: ProntuarioRevisao }) {
               <span className="font-semibold text-ink">Em:</span> {formatarDataHoraCompleta(prontuario.enviadoEm) || "—"}
             </p>
           </div>
-          {pillStatus && (
-            <span
-              className={`mt-3 inline-flex items-center gap-1.5 rounded-pill px-3 py-1 text-[12px] font-semibold ${pillStatus.classe}`}
-            >
-              <pillStatus.icone size={12} aria-hidden="true" />
-              {pillStatus.texto}
-            </span>
-          )}
         </section>
 
-        {!ehSupervisor && (
+        {aguardando && !ehSupervisor && (
           <div role="note" className="banner-erro flex items-start gap-2">
             <AlertTriangle size={16} className="mt-0.5 shrink-0" aria-hidden="true" />
-            <span>Você pode consultar, mas apenas o professor supervisor pode assinar ou devolver.</span>
+            <span>Apenas o professor supervisor pode agir sobre este prontuário.</span>
           </div>
         )}
 
@@ -177,28 +188,61 @@ function ConteudoRevisao({ prontuario }: { prontuario: ProntuarioRevisao }) {
       </main>
 
       <footer className="sticky bottom-0 mt-2 border-t border-line bg-paper px-5 py-3">
-        <div className="grid grid-cols-2 gap-3">
-          <button type="button" className="btn-ghost" disabled={!podeAgir} onClick={() => setAcao("devolver")}>
-            Devolver
+        {aguardando ? (
+          <>
+            {offline && podeAgir && (
+              <p role="status" className="mb-2 flex items-center gap-1.5 text-[12px] text-ink-soft">
+                <WifiOff size={13} aria-hidden="true" />
+                Sem conexão — conecte-se para assinar ou devolver
+              </p>
+            )}
+            <div className="grid grid-cols-2 gap-3">
+              <button
+                type="button"
+                className="btn-ghost"
+                disabled={bloqueado}
+                title={offline ? "Sem conexão — conecte-se para devolver" : undefined}
+                onClick={() => setModalDevolver(true)}
+              >
+                Devolver
+              </button>
+              <button
+                type="button"
+                className="btn-prof"
+                disabled={bloqueado}
+                title={offline ? "Sem conexão — conecte-se para assinar" : undefined}
+                onClick={() => setModalAssinar(true)}
+              >
+                Assinar prontuário
+              </button>
+            </div>
+          </>
+        ) : (
+          <button type="button" className="btn-ghost" onClick={voltarParaFila}>
+            Voltar para a fila
           </button>
-          <button type="button" className="btn-prof" disabled={!podeAgir} onClick={() => setAcao("assinar")}>
-            Assinar prontuário
-          </button>
-        </div>
+        )}
       </footer>
 
-      {/* Placeholder: os modais completos de assinatura e devolução ficam para a próxima etapa. */}
-      <BottomSheet
-        open={acao !== null}
-        onClose={() => setAcao(null)}
-        title={acao === "assinar" ? "Assinar prontuário" : "Devolver ao aluno"}
-        subtitle={nomePaciente}
-      >
-        <p className="text-[14px] text-ink-soft">Em breve.</p>
-        <button type="button" className="btn-ghost mt-4" onClick={() => setAcao(null)}>
-          Fechar
-        </button>
-      </BottomSheet>
+      <AssinarModal
+        open={modalAssinar}
+        onClose={() => setModalAssinar(false)}
+        prontuarioId={prontuario.id}
+        pacienteNome={nomePaciente}
+        professorNome={nomeProfessor}
+        procedimentosPendentes={procedimentosPendentes}
+        onSucesso={() => void onAtualizar()}
+        onVoltarParaFila={voltarParaFila}
+      />
+      <DevolverModal
+        open={modalDevolver}
+        onClose={() => setModalDevolver(false)}
+        prontuarioId={prontuario.id}
+        pacienteNome={nomePaciente}
+        alunoNome={prontuario.alunoNome || "—"}
+        onSucesso={() => void onAtualizar()}
+        onVoltarParaFila={voltarParaFila}
+      />
     </div>
   );
 }
@@ -235,6 +279,5 @@ export default function RevisaoProntuario() {
     );
   }
 
-  // key: ao trocar de prontuário, a aba e o plano do professor recomeçam do zero.
-  return <ConteudoRevisao key={estado.prontuario.id} prontuario={estado.prontuario} />;
+  return <ConteudoRevisao key={estado.prontuario.id} prontuario={estado.prontuario} onAtualizar={estado.atualizar} />;
 }

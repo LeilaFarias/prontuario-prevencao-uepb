@@ -42,7 +42,6 @@ interface TokenRow {
 export const recuperacaoRoutes: FastifyPluginAsync = async (app) => {
   const { db } = app;
 
-  // Limpeza periódica do Map para não crescer indefinidamente
   const limpeza = setInterval(() => {
     const agora = Date.now();
     for (const [email, ts] of pedidos) {
@@ -69,7 +68,6 @@ export const recuperacaoRoutes: FastifyPluginAsync = async (app) => {
       | undefined;
     if (!usuario) return resposta;
 
-    // Acima do limite: mesma resposta, mas nenhum e-mail é enviado
     if (excedeuLimite(email)) return resposta;
 
     const token = gerarToken();

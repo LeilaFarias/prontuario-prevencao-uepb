@@ -4,8 +4,8 @@ import { Clock } from "lucide-react";
 import { clearSession, getSession, sessionExpiresAt } from "../lib/session";
 import { useSyncStatus } from "../hooks/useSyncStatus";
 
-const AVISO_MS = 10 * 60 * 1000; // primeiro aviso: 10 min antes do fim
-const AVISO_FINAL_MS = 2 * 60 * 1000; // reaparece mesmo se dispensado
+const AVISO_MS = 10 * 60 * 1000;
+const AVISO_FINAL_MS = 2 * 60 * 1000;
 
 function formatar(ms: number): string {
   const total = Math.max(0, Math.ceil(ms / 1000));
@@ -14,7 +14,6 @@ function formatar(ms: number): string {
   return `${m}:${String(s).padStart(2, "0")}`;
 }
 
-/** Avisa que a sessão (5 h) está acabando e leva ao login quando termina. */
 export default function SessaoAviso() {
   const navigate = useNavigate();
   const { pendentes } = useSyncStatus();

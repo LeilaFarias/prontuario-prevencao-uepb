@@ -57,7 +57,6 @@ function CardFila({
   );
 }
 
-/** Fila de revisão do professor: prontuários enviados e ainda sem assinatura/devolução. */
 export default function Fila() {
   const navigate = useNavigate();
   const usuario = getSession()?.user;

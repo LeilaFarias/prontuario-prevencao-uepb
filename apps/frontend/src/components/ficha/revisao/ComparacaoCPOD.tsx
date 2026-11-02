@@ -42,7 +42,6 @@ function Grupo({ grupo }: { grupo: GrupoComparacao }) {
   );
 }
 
-/** Bloco lado a lado: Componente | Aluno (cálculo manual) | Sistema (calculado do odontograma). */
 export default function ComparacaoCPOD({ comparacao }: { comparacao: ComparacaoRegistro }) {
   return (
     <div>

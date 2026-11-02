@@ -8,7 +8,6 @@ export interface Session {
 
 const KEY = "prontuario:session";
 
-/** Lê o campo `exp` (segundos) de um JWT sem validar a assinatura. */
 function expDoToken(token: string): number | null {
   try {
     const payload = token.split(".")[1];

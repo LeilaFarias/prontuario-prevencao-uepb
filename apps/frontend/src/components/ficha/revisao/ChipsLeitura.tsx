@@ -1,4 +1,3 @@
-/** Lista de opções marcadas como chips somente leitura. */
 export default function ChipsLeitura({ valores }: { valores: ReadonlyArray<string> }) {
   if (valores.length === 0) return <span className="text-[13.5px] text-ink-faint">—</span>;
   return (

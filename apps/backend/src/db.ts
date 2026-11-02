@@ -2,7 +2,6 @@ import path from "node:path";
 import { DatabaseSync } from "node:sqlite";
 import { env } from "./env";
 
-// SQLite não tem enum nem Json: ambos são TEXT. Datas em ISO 8601.
 const AGORA = `strftime('%Y-%m-%dT%H:%M:%fZ','now')`;
 
 const SCHEMA = `
@@ -11,7 +10,7 @@ CREATE TABLE IF NOT EXISTS Usuario (
   nome       TEXT NOT NULL,
   email      TEXT NOT NULL UNIQUE,
   senhaHash  TEXT NOT NULL,
-  perfil     TEXT NOT NULL,            -- 'ALUNO' | 'PROFESSOR'
+  perfil     TEXT NOT NULL,
   matricula  TEXT UNIQUE,
   criadoEm   TEXT NOT NULL DEFAULT (${AGORA}),
   ativo      INTEGER NOT NULL DEFAULT 1
@@ -38,8 +37,8 @@ CREATE INDEX IF NOT EXISTS idx_pront_paciente ON Prontuario(pacienteNome, pacien
 CREATE TABLE IF NOT EXISTS Secao (
   id           TEXT PRIMARY KEY,
   prontuarioId TEXT NOT NULL REFERENCES Prontuario(id) ON DELETE CASCADE,
-  secaoId      TEXT NOT NULL,          -- 'dados-pessoais', 'historia-medica', etc
-  conteudo     TEXT NOT NULL,          -- JSON serializado
+  secaoId      TEXT NOT NULL,
+  conteudo     TEXT NOT NULL,
   atualizadoEm TEXT NOT NULL DEFAULT (${AGORA}),
   UNIQUE (prontuarioId, secaoId)
 );
@@ -85,6 +84,25 @@ function migrarColunaSinalizadoDuplicidade(db: DatabaseSync): void {
   }
 }
 
+const COLUNAS_REVISAO: ReadonlyArray<readonly [string, string]> = [
+  ["assinadoEm", "TEXT"],
+  ["assinadoPorId", "TEXT REFERENCES Usuario(id)"],
+  ["assinadoPorNome", "TEXT"],
+  ["devolvidoEm", "TEXT"],
+  ["devolvidoPorId", "TEXT REFERENCES Usuario(id)"],
+  ["devolvidoPorNome", "TEXT"],
+  ["motivoDevolucao", "TEXT"],
+  ["comentarioDevolucao", "TEXT"],
+];
+
+function migrarColunasRevisao(db: DatabaseSync): void {
+  const colunas = db.prepare("PRAGMA table_info(Prontuario)").all() as unknown as { name: string }[];
+  const existentes = new Set(colunas.map((c) => c.name));
+  for (const [nome, definicao] of COLUNAS_REVISAO) {
+    if (!existentes.has(nome)) db.exec(`ALTER TABLE Prontuario ADD COLUMN ${nome} ${definicao}`);
+  }
+}
+
 export function abrirBanco(): DatabaseSync {
   const arquivo = path.resolve(process.cwd(), env.DATABASE_URL.replace(/^file:/, ""));
   const db = new DatabaseSync(arquivo);
@@ -92,6 +110,7 @@ export function abrirBanco(): DatabaseSync {
   db.exec(SCHEMA);
   migrarColunaAtivo(db);
   migrarColunaSinalizadoDuplicidade(db);
+  migrarColunasRevisao(db);
   return db;
 }
 

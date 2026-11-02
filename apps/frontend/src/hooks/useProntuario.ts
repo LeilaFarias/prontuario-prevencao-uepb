@@ -2,14 +2,16 @@ import { useCallback, useEffect, useState } from "react";
 import { ApiError, api } from "../lib/api";
 import type { ProntuarioRemoto } from "../sync/down";
 
-/** Resposta de GET /prontuarios/:id para a revisão do professor. */
 export interface ProntuarioRevisao extends ProntuarioRemoto {
-  /** Professor supervisor + prontuário ainda ENVIADO: pode assinar/devolver. */
   podeAgir: boolean;
-  /** O professor logado é o supervisor deste prontuário. */
   ehSupervisor: boolean;
-  /** ISO do momento em que o aluno enviou; null se não houver registro. */
   enviadoEm: string | null;
+  assinadoEm: string | null;
+  assinadoPorNome: string | null;
+  devolvidoEm: string | null;
+  devolvidoPorNome: string | null;
+  motivoDevolucao: string | null;
+  comentarioDevolucao: string | null;
 }
 
 export type EstadoProntuario =
@@ -17,11 +19,7 @@ export type EstadoProntuario =
   | { situacao: "erro"; mensagem: string; status: number }
   | { situacao: "ok"; prontuario: ProntuarioRevisao };
 
-/**
- * Carrega o prontuário (com todas as seções) direto do servidor. Não grava nada no Dexie:
- * dados que o professor apenas consulta não entram na base local nem na fila de sync.
- */
-export function useProntuario(id: string | undefined): EstadoProntuario & { recarregar: () => void } {
+export function useProntuario(id: string | undefined) {
   const [estado, setEstado] = useState<EstadoProntuario>({ situacao: "carregando" });
   const [tentativa, setTentativa] = useState(0);
 
@@ -50,5 +48,16 @@ export function useProntuario(id: string | undefined): EstadoProntuario & { reca
   }, [id, tentativa]);
 
   const recarregar = useCallback(() => setTentativa((n) => n + 1), []);
-  return { ...estado, recarregar };
+
+  const atualizar = useCallback(async () => {
+    if (!id) return;
+    try {
+      const prontuario = await api.get<ProntuarioRevisao>(`/prontuarios/${encodeURIComponent(id)}`);
+      setEstado({ situacao: "ok", prontuario });
+    } catch {
+      return;
+    }
+  }, [id]);
+
+  return { ...estado, recarregar, atualizar };
 }

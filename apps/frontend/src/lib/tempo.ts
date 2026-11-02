@@ -2,7 +2,6 @@ const pad = (n: number) => String(n).padStart(2, "0");
 
 const inicioDoDia = (d: Date) => new Date(d.getFullYear(), d.getMonth(), d.getDate()).getTime();
 
-/** "agora", "há 12 min", "há 2h", "ontem", "há 3 dias" ou "em 15/09" (a partir de 7 dias). */
 export function tempoRelativo(ts: number, agora: number = Date.now()): string {
   const minutos = Math.floor((agora - ts) / 60_000);
   if (minutos < 1) return "agora";
@@ -18,7 +17,6 @@ export function tempoRelativo(ts: number, agora: number = Date.now()): string {
   return `em ${pad(data.getDate())}/${pad(data.getMonth() + 1)}`;
 }
 
-/** Idade em anos completos a partir de uma data ISO (AAAA-MM-DD); null se ausente ou inválida. */
 export function calcularIdade(dataNascimento?: string, agora: Date = new Date()): number | null {
   if (!dataNascimento) return null;
   const m = /^(\d{4})-(\d{2})-(\d{2})/.exec(dataNascimento);

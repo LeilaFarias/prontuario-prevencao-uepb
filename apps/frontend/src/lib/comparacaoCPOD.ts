@@ -4,9 +4,7 @@ import { calcularCEOD, calcularCPOD } from "./cpod";
 export interface LinhaComparacao {
   chave: string;
   rotulo: string;
-  /** Valor digitado pelo aluno ("" = não preenchido). */
   aluno: string;
-  /** Valor calculado pelo sistema a partir do odontograma. */
   sistema: number;
   confere: boolean;
   total: boolean;
@@ -16,7 +14,6 @@ export interface GrupoComparacao {
   titulo: string;
   subtitulo: string;
   linhas: LinhaComparacao[];
-  /** Nenhum dente deste tipo foi avaliado e o aluno também não preencheu nada: nada a comparar. */
   semRegistro: boolean;
 }
 
@@ -45,10 +42,6 @@ function montarGrupo(
   return { titulo, subtitulo, linhas, semRegistro };
 }
 
-/**
- * Compara o cálculo manual do aluno (cpodManual/ceodManual) com o cálculo do sistema
- * (calcularCPOD/calcularCEOD sobre os códigos do odontograma).
- */
 export function compararRegistroCPOD(registro: RegistroCPODDados): ComparacaoRegistro {
   const cpod = calcularCPOD(registro.dentes);
   const ceod = calcularCEOD(registro.dentes);
@@ -72,7 +65,6 @@ export function compararRegistroCPOD(registro: RegistroCPODDados): ComparacaoReg
   return { cpod: grupoCPOD, ceod: grupoCEOD, confere };
 }
 
-/** true se algum registro de CPO-D/ceo-d tem divergência (usado para sinalizar o chip da seção). */
 export function temDivergenciaCPOD(registros: ReadonlyArray<RegistroCPODDados>): boolean {
   return registros.some((r) => !compararRegistroCPOD(r).confere);
 }

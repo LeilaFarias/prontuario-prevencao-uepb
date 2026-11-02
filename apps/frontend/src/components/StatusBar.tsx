@@ -8,7 +8,6 @@ function formatarHora(ts: number): string {
   return `${pad(d.getHours())}:${pad(d.getMinutes())}`;
 }
 
-/** Pill compacta com o estado de sincronização. Oculta quando online, sem fila e sem salvamento prévio. */
 export default function StatusBar({ className = "" }: { className?: string }) {
   const { online, pendentes, ultimoSalvamento } = useSyncStatus();
 

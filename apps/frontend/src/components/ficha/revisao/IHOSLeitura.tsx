@@ -18,10 +18,6 @@ function formatarMedia(valor: number): string {
   return valor.toLocaleString("pt-BR", { minimumFractionDigits: 2, maximumFractionDigits: 2 });
 }
 
-/**
- * O schema atual não tem `ihosManual` (o aluno não digita o IHOS, só as notas dos 6 dentes),
- * então não há o que comparar: mostramos as notas e o resultado calculado pelo sistema.
- */
 function RegistroLeitura({ registro, indice }: { registro: RegistroIHOSDados; indice: number }) {
   const dentes = useMemo(() => ({ ...dentesIHOSVazios(), ...registro.dentes }), [registro.dentes]);
   const resultado = useMemo(() => calcularIHOS(dentes), [dentes]);

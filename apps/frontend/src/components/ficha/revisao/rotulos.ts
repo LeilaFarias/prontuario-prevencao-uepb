@@ -3,7 +3,6 @@ import { formatarDataBR } from "../../../lib/data";
 
 const pad = (n: number) => String(n).padStart(2, "0");
 
-/** Lê o conteúdo bruto de uma seção com o schema Zod; seção ausente ou inválida vira o valor vazio. */
 export function lerSecao<T>(
   schema: { safeParse: (v: unknown) => { success: true; data: T } | { success: false }; parse: (v: unknown) => T },
   bruto: unknown,
@@ -28,7 +27,6 @@ export function dataOuVazio(iso: string | null | undefined): string {
   return formatarDataBR(iso) || "";
 }
 
-/** "01/11/2026 às 14:32" (ISO com fuso → horário local). */
 export function formatarDataHoraCompleta(iso: string | null | undefined): string {
   if (!iso) return "";
   const d = new Date(iso);

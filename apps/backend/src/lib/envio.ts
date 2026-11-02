@@ -28,7 +28,7 @@ export function enviarProntuario(db: DatabaseSync, prontuarioId: string, alunoId
     )
     .get(prontuarioId, alunoId) as unknown as ProntuarioEnvioRow | undefined;
   if (!pront) return { ok: false, erro: "nao_encontrado" };
-  if (pront.status !== "EM_ANDAMENTO") return { ok: false, erro: "ja_enviado" };
+  if (pront.status !== "EM_ANDAMENTO" && pront.status !== "DEVOLVIDO") return { ok: false, erro: "ja_enviado" };
 
   const secao = db
     .prepare("SELECT conteudo FROM Secao WHERE prontuarioId = ? AND secaoId = 'consentimento'")
@@ -40,7 +40,6 @@ export function enviarProntuario(db: DatabaseSync, prontuarioId: string, alunoId
       const conteudo = JSON.parse(secao.conteudo) as { professorSupervisor?: unknown };
       if (typeof conteudo.professorSupervisor === "string") nomeProfessor = conteudo.professorSupervisor.trim();
     } catch {
-      // JSON inválido: tratado como professor não informado
     }
   }
   if (!nomeProfessor) return { ok: false, erro: "professor_nao_encontrado" };

@@ -18,7 +18,6 @@ function registrarSalvamento(ts: number): void {
   try {
     localStorage.setItem(ULTIMO_SALVAMENTO_KEY, String(ts));
   } catch {
-    // armazenamento indisponível: a pill apenas não mostra a hora
   }
 }
 
@@ -84,7 +83,6 @@ export async function salvarSecaoLocal(
     const atual = await db.prontuarios.get(dados.prontuarioId);
     if (!atual) throw new Error("Prontuário não encontrado no aparelho");
 
-    // Só entra no cabeçalho o que é válido e realmente mudou (vazio nunca apaga o nome/nascimento)
     const nome = cabecalho?.pacienteNome?.trim();
     const novoNome = nome && nome.length >= 2 && nome !== atual.pacienteNome ? nome : undefined;
     const nascimento = cabecalho?.pacienteDataNascimento?.trim();
@@ -173,7 +171,6 @@ async function executarFlush(): Promise<void> {
       notifyChanged();
     }
   } catch {
-    // mantém a fila; tenta de novo no próximo ciclo ou quando voltar online
   }
 }
 

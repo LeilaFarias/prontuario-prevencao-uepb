@@ -4,7 +4,6 @@ export interface CampoLeituraProps {
   label: string;
   valor?: string | number | boolean | null;
   multiline?: boolean;
-  /** Conteúdo próprio no lugar do texto (chips, tags…). Vazio continua mostrando "—". */
   children?: ReactNode;
 }
 
@@ -14,7 +13,6 @@ function formatar(v: CampoLeituraProps["valor"]): string {
   return String(v).trim();
 }
 
-/** Campo somente leitura: rótulo + valor em texto. Vazio → "—" em cinza claro; booleano → Sim/Não. */
 export default function CampoLeitura({ label, valor, multiline = false, children }: CampoLeituraProps) {
   const texto = formatar(valor);
   const vazio = !children && texto === "";

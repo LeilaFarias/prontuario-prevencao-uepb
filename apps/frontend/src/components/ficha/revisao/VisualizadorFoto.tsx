@@ -7,7 +7,6 @@ interface VisualizadorProps {
   onFechar: () => void;
 }
 
-/** Visualizador em tela cheia (somente leitura: o professor não remove fotos do aluno). Fecha com X ou ESC. */
 export default function VisualizadorFoto({ src, nome, onFechar }: VisualizadorProps) {
   useEffect(() => {
     const aoTeclar = (e: KeyboardEvent) => {
@@ -47,7 +46,6 @@ export default function VisualizadorFoto({ src, nome, onFechar }: VisualizadorPr
   );
 }
 
-/** Miniatura clicável que abre o visualizador. */
 export function MiniaturaFoto({
   src,
   nome,
