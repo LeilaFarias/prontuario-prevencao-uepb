@@ -7,6 +7,7 @@ import {
 } from "@prontuario/shared";
 import { db } from "../db/dexie";
 import { ApiError, api } from "../lib/api";
+import { ACESSO_EXPIRADO_EVENT, acessoVigente } from "../lib/acesso";
 import { uuid } from "../lib/uuid";
 
 export const SYNC_EVENT = "sync:changed";
@@ -65,6 +66,12 @@ export async function criarProntuarioLocal(alunoTitularId: string): Promise<stri
   return id;
 }
 
+export class AcessoExpiradoError extends Error {
+  constructor() {
+    super("O acesso temporário expirou.");
+  }
+}
+
 export interface CabecalhoPaciente {
   pacienteNome?: string;
   pacienteDataNascimento?: string;
@@ -83,6 +90,9 @@ export async function salvarSecaoLocal(
     const atual = await db.prontuarios.get(dados.prontuarioId);
     if (!atual) throw new Error("Prontuário não encontrado no aparelho");
 
+    const invalidaAssinatura = atual.status === "assinado";
+    if (invalidaAssinatura && !acessoVigente(atual, agora)) throw new AcessoExpiradoError();
+
     const nome = cabecalho?.pacienteNome?.trim();
     const novoNome = nome && nome.length >= 2 && nome !== atual.pacienteNome ? nome : undefined;
     const nascimento = cabecalho?.pacienteDataNascimento?.trim();
@@ -93,6 +103,16 @@ export async function salvarSecaoLocal(
 
     await db.prontuarios.put({
       ...atual,
+      ...(invalidaAssinatura
+        ? {
+            status: "em_andamento" as const,
+            assinadoEm: undefined,
+            assinadoPorNome: undefined,
+            acessoSolicitadoEm: undefined,
+            acessoExpiraEm: undefined,
+            acessoRevogadoEm: undefined,
+          }
+        : {}),
       ...(novoNome ? { pacienteNome: novoNome } : {}),
       ...(novoNascimento ? { pacienteDataNascimento: novoNascimento } : {}),
       secoes: { ...atual.secoes, [dados.secaoId]: dados.conteudo },
@@ -163,6 +183,7 @@ async function executarFlush(): Promise<void> {
 
       await db.syncQueue.bulkDelete(lote.map((o) => o.id!));
       await tratarEnviosRecusados(resposta.envios ?? []);
+      await tratarAcessosExpirados(resposta.acessoExpirado ?? []);
 
       for (const pid of new Set(lote.map((o) => o.prontuarioId))) {
         const restantes = await db.syncQueue.where("prontuarioId").equals(pid).count();
@@ -186,6 +207,12 @@ async function tratarEnviosRecusados(envios: EnvioSincronizado[]): Promise<void>
         p.erroEnvio = e.erro === "professor_nao_encontrado" ? "professor_nao_encontrado" : "falha";
       });
   }
+}
+
+async function tratarAcessosExpirados(ids: string[]): Promise<void> {
+  if (ids.length === 0) return;
+  await Promise.all(ids.map((id) => db.prontuarios.update(id, { atualizadoEm: 0, sincronizado: true })));
+  window.dispatchEvent(new CustomEvent(ACESSO_EXPIRADO_EVENT));
 }
 
 export type ResultadoEnvioLocal =

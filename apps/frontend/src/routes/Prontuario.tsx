@@ -1,7 +1,7 @@
-import { useCallback, useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useReducer, useRef, useState } from "react";
 import { useLiveQuery } from "dexie-react-hooks";
 import { useNavigate, useParams, useSearchParams } from "react-router-dom";
-import { Check, Clock, RotateCcw, Send } from "lucide-react";
+import { Check, Clock, RotateCcw, Send, Unlock, X } from "lucide-react";
 import { SECOES, type SecaoId } from "@prontuario/shared";
 import Consentimento from "../components/ficha/Consentimento";
 import Conclusao from "../components/ficha/Conclusao";
@@ -14,31 +14,57 @@ import IHOS from "../components/ficha/IHOS";
 import Plano from "../components/ficha/Plano";
 import Sangramento from "../components/ficha/Sangramento";
 import Procedimentos from "../components/ficha/Procedimentos";
+import AvisoInvalidacaoAssinatura from "../components/AvisoInvalidacaoAssinatura";
 import DevolucaoAlunoModal from "../components/DevolucaoAlunoModal";
 import EnviarProntuarioModal from "../components/EnviarProntuarioModal";
+import SolicitarAcessoModal from "../components/SolicitarAcessoModal";
 import StatusBar from "../components/StatusBar";
+import TimerAcesso from "../components/TimerAcesso";
 import Topbar from "../components/Topbar";
-import { db, type LocalProntuario } from "../db/dexie";
+import { db, type LocalProntuario, type LocalStatus } from "../db/dexie";
 import { useProntuarioSync } from "../hooks/useProntuarioSync";
 import { salvarSecoesPendentes } from "../hooks/useSecao";
+import { ACESSO_EXPIRADO_EVENT, acessoVigente, pedidoPendente } from "../lib/acesso";
+import { confirmarInvalidacaoAssinatura, registrarConfirmadorInvalidacao } from "../lib/invalidacaoAssinatura";
+import { tempoRelativo } from "../lib/tempo";
 import { formatarDataHoraCompleta } from "../components/ficha/revisao/rotulos";
 import { marcarComoVisto, reabrirParaCorrecao, salvarSecaoLocal } from "../sync/queue";
 
 const DEBOUNCE_MS = 800;
+const POLLING_ACESSO_MS = 15_000;
+const AVISO_APROVACAO_MS = 5_000;
+
+function TempoDesde({ iso }: { iso: string }) {
+  const [agora, setAgora] = useState(Date.now);
+  useEffect(() => {
+    const t = window.setInterval(() => setAgora(Date.now()), 30_000);
+    return () => window.clearInterval(t);
+  }, []);
+  return <>{tempoRelativo(new Date(iso).getTime(), agora)}</>;
+}
 
 export default function Prontuario() {
   const { id } = useParams<{ id: string }>();
   const navigate = useNavigate();
   const [params] = useSearchParams();
   const modoLeitura = params.get("modo") === "leitura";
-  const { carregando: sincronizando, versao } = useProntuarioSync(id);
+  const { carregando: sincronizando, versao, recarregar } = useProntuarioSync(id);
   const [verDevolucao, setVerDevolucao] = useState(false);
+  const [modalSolicitar, setModalSolicitar] = useState(false);
+  const [confirmacaoAberta, setConfirmacaoAberta] = useState(false);
+  const resolverConfirmacao = useRef<((ok: boolean) => void) | null>(null);
+  const [avisoAprovado, setAvisoAprovado] = useState(false);
+  const [avisoExpirado, setAvisoExpirado] = useState(false);
+  const [, renderizar] = useReducer((n: number) => n + 1, 0);
+  const assinaturaJaInvalidada = useRef(false);
+  const statusRef = useRef<LocalStatus | undefined>(undefined);
 
   const [estado, setEstado] = useState<"carregando" | "ok" | "nao-encontrado">("carregando");
   const [pront, setPront] = useState<LocalProntuario | null>(null);
   const [indice, setIndice] = useState(0);
   const vivo = useLiveQuery(async () => (id ? await db.prontuarios.get(id) : undefined), [id]);
   const nomeAoVivo = vivo?.pacienteNome;
+  statusRef.current = vivo?.status;
   const [paraEnvio, setParaEnvio] = useState<LocalProntuario | null>(null);
   const [valores, setValores] = useState<Record<string, string>>({});
 
@@ -70,6 +96,11 @@ export default function Prontuario() {
     const p = pendente.current;
     if (!p || !id) return;
     pendente.current = null;
+    if (statusRef.current === "assinado" && !(await confirmarInvalidacaoAssinatura())) {
+      const salvo = (await db.prontuarios.get(id))?.secoes[p.secaoId];
+      setValores((v) => ({ ...v, [p.secaoId]: String(salvo?.texto ?? "") }));
+      return;
+    }
     await salvarSecaoLocal(id, p.secaoId, { texto: p.texto });
   }, [id]);
 
@@ -88,6 +119,69 @@ export default function Prontuario() {
 
   const jaVisto = vivo?.vistoPeloAluno;
   const statusAoVivo = vivo?.status;
+  const pendenteAoVivo = vivo ? pedidoPendente(vivo) : false;
+  const vigenteAoVivo = vivo ? acessoVigente(vivo) : false;
+  const monitorarAcesso = pendenteAoVivo || vigenteAoVivo;
+  const estadoAnterior = useRef({ pendente: pendenteAoVivo, vigente: vigenteAoVivo });
+
+  useEffect(() => {
+    const desregistrar = registrarConfirmadorInvalidacao(() =>
+      assinaturaJaInvalidada.current
+        ? Promise.resolve(true)
+        : new Promise<boolean>((resolver) => {
+            resolverConfirmacao.current = resolver;
+            setConfirmacaoAberta(true);
+          }),
+    );
+    return () => {
+      desregistrar();
+      resolverConfirmacao.current?.(false);
+      resolverConfirmacao.current = null;
+    };
+  }, []);
+
+  function decidirInvalidacao(confirmou: boolean) {
+    if (confirmou) assinaturaJaInvalidada.current = true;
+    resolverConfirmacao.current?.(confirmou);
+    resolverConfirmacao.current = null;
+    setConfirmacaoAberta(false);
+  }
+
+  useEffect(() => {
+    if (statusAoVivo === "assinado") assinaturaJaInvalidada.current = false;
+  }, [statusAoVivo]);
+
+  useEffect(() => {
+    const anterior = estadoAnterior.current;
+    if (monitorarAcesso) setAvisoExpirado(false);
+    if (anterior.pendente && vigenteAoVivo) {
+      setModalSolicitar(false);
+      setAvisoAprovado(true);
+    }
+    if (anterior.vigente && !vigenteAoVivo && statusAoVivo === "assinado") setAvisoExpirado(true);
+    estadoAnterior.current = { pendente: pendenteAoVivo, vigente: vigenteAoVivo };
+  }, [pendenteAoVivo, vigenteAoVivo, monitorarAcesso, statusAoVivo]);
+
+  useEffect(() => {
+    if (!avisoAprovado) return;
+    const t = window.setTimeout(() => setAvisoAprovado(false), AVISO_APROVACAO_MS);
+    return () => window.clearTimeout(t);
+  }, [avisoAprovado]);
+
+  useEffect(() => {
+    if (!monitorarAcesso) return;
+    const t = window.setInterval(() => void recarregar(), POLLING_ACESSO_MS);
+    return () => window.clearInterval(t);
+  }, [monitorarAcesso, recarregar]);
+
+  useEffect(() => {
+    const aoExpirar = () => {
+      renderizar();
+      void recarregar();
+    };
+    window.addEventListener(ACESSO_EXPIRADO_EVENT, aoExpirar);
+    return () => window.removeEventListener(ACESSO_EXPIRADO_EVENT, aoExpirar);
+  }, [recarregar]);
   useEffect(() => {
     if (id && statusAoVivo === "assinado" && !jaVisto) void marcarComoVisto(id);
   }, [id, statusAoVivo, jaVisto]);
@@ -135,11 +229,15 @@ export default function Prontuario() {
   const nomeExibido = (nomeAoVivo ?? pront.pacienteNome).trim();
   const atual = vivo ?? pront;
   const status = atual.status;
-  const somenteLeitura = status !== "em_andamento" || modoLeitura;
+  const vigente = acessoVigente(atual);
+  const pendenteAcesso = pedidoPendente(atual);
+  const podeEditar = status === "em_andamento" || vigente;
+  const somenteLeitura = !podeEditar || modoLeitura;
   const professorDigitado = String(
     (atual.secoes["consentimento"] as { professorSupervisor?: unknown } | undefined)?.professorSupervisor ?? "",
   ).trim();
   const nomeAssinatura = atual.assinadoPorNome || professorDigitado;
+  const nomeProfessor = atual.professorSupervisorNome || nomeAssinatura;
   const quandoAssinado = formatarDataHoraCompleta(atual.assinadoEm);
 
   async function corrigir() {
@@ -157,13 +255,37 @@ export default function Prontuario() {
         </span>
         <p className="text-[12px] text-ink-soft">Se precisar alterar, peça ao professor devolver.</p>
       </div>
-    ) : status === "assinado" ? (
+    ) : status === "assinado" && vigente ? (
       <span className={`${PILL} bg-primary-tint text-primary`}>
-        <Check size={12} aria-hidden="true" />
-        {nomeAssinatura
-          ? `Assinado por ${nomeAssinatura}${quandoAssinado ? ` em ${quandoAssinado}` : ""}`
-          : "Assinado"}
+        <Unlock size={12} aria-hidden="true" />
+        <TimerAcesso expiraEm={atual.acessoExpiraEm!} rotulo="Acesso liberado — expira em" />
       </span>
+    ) : status === "assinado" && pendenteAcesso ? (
+      <div className="flex flex-col gap-1.5">
+        <span className={`${PILL} bg-sync-tint text-sync`}>
+          <Clock size={12} aria-hidden="true" />
+          Aguardando aprovação do professor
+        </span>
+        <p className="text-[12px] text-ink-soft">
+          Pedido enviado <TempoDesde iso={atual.acessoSolicitadoEm!} />
+        </p>
+      </div>
+    ) : status === "assinado" ? (
+      <div className="flex flex-wrap items-center gap-2">
+        <span className={`${PILL} bg-primary-tint text-primary`}>
+          <Check size={12} aria-hidden="true" />
+          {nomeAssinatura
+            ? `Assinado por ${nomeAssinatura}${quandoAssinado ? ` em ${quandoAssinado}` : ""}`
+            : "Assinado"}
+        </span>
+        <button
+          type="button"
+          onClick={() => setModalSolicitar(true)}
+          className="inline-flex w-fit items-center rounded-pill border border-line bg-raised px-3.5 py-1.5 text-[12.5px] font-semibold text-primary"
+        >
+          Solicitar acesso
+        </button>
+      </div>
     ) : status === "devolvido" ? (
       <div className="flex flex-wrap items-center gap-2">
         <span className={`${PILL} bg-alt-tint text-alt`}>
@@ -190,6 +312,25 @@ export default function Prontuario() {
       <StatusBar className="mx-5 mb-2" />
 
       {bannerStatus && <div className="mx-5 mb-2">{bannerStatus}</div>}
+
+      {avisoAprovado && (
+        <div role="status" className="banner-ok mx-5 mb-2 flex items-center gap-2">
+          <Check size={16} className="shrink-0" aria-hidden="true" />
+          <span className="min-w-0 flex-1">Acesso liberado{nomeProfessor ? ` por ${nomeProfessor}` : ""}</span>
+          <button type="button" onClick={() => setAvisoAprovado(false)} aria-label="Dispensar aviso" className="shrink-0 opacity-70">
+            <X size={16} />
+          </button>
+        </div>
+      )}
+
+      {avisoExpirado && (
+        <div role="alert" className="banner-erro mx-5 mb-2 flex items-center gap-2">
+          <span className="min-w-0 flex-1">Acesso expirado. Solicite um novo acesso para continuar editando.</span>
+          <button type="button" onClick={() => setAvisoExpirado(false)} aria-label="Dispensar aviso" className="shrink-0 opacity-70">
+            <X size={16} />
+          </button>
+        </div>
+      )}
 
       {status === "em_andamento" && atual.erroEnvio && (
         <div role="alert" className="banner-erro mx-5 mb-2">
@@ -284,7 +425,7 @@ export default function Prontuario() {
             Próxima
           </button>
         </div>
-        {!somenteLeitura && (
+        {!somenteLeitura && status === "em_andamento" && (
           <button type="button" className="btn-primary" onClick={() => void abrirEnvio()}>
             <Send size={16} aria-hidden="true" />
             Enviar ao professor
@@ -301,6 +442,22 @@ export default function Prontuario() {
           onVerFicha={() => setVerDevolucao(false)}
         />
       )}
+
+      {modalSolicitar && status === "assinado" && (
+        <SolicitarAcessoModal
+          open
+          onClose={() => setModalSolicitar(false)}
+          prontuario={atual}
+          professorNome={nomeProfessor}
+          onJaLiberado={() => void recarregar()}
+        />
+      )}
+
+      <AvisoInvalidacaoAssinatura
+        open={confirmacaoAberta}
+        onCancelar={() => decidirInvalidacao(false)}
+        onConfirmar={() => decidirInvalidacao(true)}
+      />
 
       {paraEnvio && (
         <EnviarProntuarioModal

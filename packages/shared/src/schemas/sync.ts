@@ -37,4 +37,5 @@ export interface SyncResponse {
   descartadas: number;
   serverTime: number;
   envios?: EnvioSincronizado[];
+  acessoExpirado?: string[];
 }

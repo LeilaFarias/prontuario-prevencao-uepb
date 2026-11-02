@@ -7,6 +7,7 @@ import Cadastro from "./routes/Cadastro";
 import ListaProntuarios from "./routes/ListaProntuarios";
 import Prontuario from "./routes/Prontuario";
 import Fila from "./routes/Fila";
+import Acessos from "./routes/Acessos";
 import RevisaoProntuario from "./routes/RevisaoProntuario";
 import Perfil from "./routes/Perfil";
 import RecuperarSenha from "./routes/RecuperarSenha";
@@ -49,6 +50,7 @@ export default function App() {
         <Route path="/redefinir-senha" element={<RedefinirSenha />} />
         <Route path="/prontuarios" element={<SomenteAluno><ListaProntuarios /></SomenteAluno>} />
         <Route path="/fila" element={<SomenteProfessor><Fila /></SomenteProfessor>} />
+        <Route path="/acessos" element={<SomenteProfessor><Acessos /></SomenteProfessor>} />
         <Route path="/fila/:id" element={<SomenteProfessor><RevisaoProntuario /></SomenteProfessor>} />
         <Route path="/perfil" element={<Protegida><Perfil /></Protegida>} />
         <Route path="/prontuario/:id" element={<Protegida><Prontuario /></Protegida>} />

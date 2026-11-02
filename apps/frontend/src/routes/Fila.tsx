@@ -3,6 +3,7 @@ import { useNavigate } from "react-router-dom";
 import { Clock, UserRound } from "lucide-react";
 import { ApiError } from "../lib/api";
 import { getSession } from "../lib/session";
+import TabBarProfessor from "../components/TabBarProfessor";
 import { calcularIdade, tempoRelativo } from "../lib/tempo";
 import { buscarResumos, normalizarStatus, type ProntuarioRemotoResumo } from "../sync/down";
 
@@ -146,6 +147,8 @@ export default function Fila() {
           </ul>
         )}
       </main>
+
+      <TabBarProfessor ativa="fila" />
     </div>
   );
 }

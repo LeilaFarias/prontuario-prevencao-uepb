@@ -15,6 +15,10 @@ export interface LocalProntuario {
   erroEnvio?: "professor_nao_encontrado" | "falha";
   assinadoEm?: string;
   assinadoPorNome?: string;
+  professorSupervisorNome?: string;
+  acessoSolicitadoEm?: string;
+  acessoExpiraEm?: string;
+  acessoRevogadoEm?: string;
   devolvidoEm?: string;
   devolvidoPorNome?: string;
   motivoDevolucao?: string;

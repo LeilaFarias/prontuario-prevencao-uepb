@@ -8,6 +8,7 @@ import {
   type SyncResponse,
 } from "@prontuario/shared";
 import { transacao } from "../db";
+import { acessoCobreOperacao, type AcessoRow } from "../lib/acesso";
 import { enviarProntuario } from "../lib/envio";
 import { reabrirProntuario } from "../lib/reabertura";
 
@@ -23,15 +24,29 @@ const secaoPayload = z.object({
   conteudo: z.unknown(),
 });
 
-interface ProntRow {
+interface ProntRow extends AcessoRow {
   id: string;
-  acessoRevogadoEm: string | null;
+  status: string;
 }
+
+const editaFicha = (op: SyncOperation): boolean =>
+  op.entity === "secao" || (op.entity === "prontuario" && (op.op === "create" || op.op === "update"));
 
 export const syncRoutes: FastifyPluginAsync = async (app) => {
   const { db } = app;
 
-  const buscarPront = db.prepare("SELECT id, acessoRevogadoEm FROM Prontuario WHERE id = ?");
+  const buscarPront = db.prepare(
+    "SELECT id, status, acessoSolicitadoEm, acessoExpiraEm, acessoRevogadoEm FROM Prontuario WHERE id = ?",
+  );
+  const invalidarAssinatura = db.prepare(
+    `UPDATE Prontuario
+     SET status = 'EM_ANDAMENTO',
+         assinadoEm = NULL, assinadoPorId = NULL, assinadoPorNome = NULL,
+         assinaturaInvalidada = 1,
+         acessoSolicitadoEm = NULL, acessoExpiraEm = NULL, acessoRevogadoEm = NULL,
+         atualizadoEm = ?
+     WHERE id = ?`,
+  );
   const inserirPront = db.prepare(
     `INSERT INTO Prontuario (id, pacienteNome, pacienteDataNascimento, alunoTitularId, status)
      VALUES (?, ?, ?, ?, COALESCE(?, 'EM_ANDAMENTO'))`,
@@ -101,14 +116,29 @@ export const syncRoutes: FastifyPluginAsync = async (app) => {
     let aplicadas = 0;
     let descartadas = 0;
     const envios: EnvioSincronizado[] = [];
+    const acessoExpirado = new Set<string>();
 
     // sort é estável: operações com o mesmo ts mantêm a ordem de chegada
     for (const op of [...operations].sort((a, b) => a.ts - b.ts)) {
       const descartada = transacao(db, () => {
         const pront = buscarPront.get(op.prontuarioId) as unknown as ProntRow | undefined;
 
-        let descartar =
-          !!pront?.acessoRevogadoEm && op.ts > new Date(pront.acessoRevogadoEm).getTime();
+        const assinado = pront?.status.toUpperCase() === "ASSINADO";
+        let descartar = false;
+
+        if (pront && assinado && editaFicha(op)) {
+          if (acessoCobreOperacao(pront, op.ts)) {
+            const agora = new Date().toISOString();
+            invalidarAssinatura.run(agora, pront.id);
+            registrar.run(randomUUID(), pront.id, "prontuario", pront.id, "invalidar-assinatura", Date.now(), 0);
+            pront.status = "EM_ANDAMENTO";
+          } else {
+            descartar = true;
+            acessoExpirado.add(op.prontuarioId);
+          }
+        } else if (pront?.acessoRevogadoEm && op.ts > new Date(pront.acessoRevogadoEm).getTime()) {
+          descartar = true;
+        }
 
         if (!descartar) {
           try {
@@ -138,7 +168,13 @@ export const syncRoutes: FastifyPluginAsync = async (app) => {
       else aplicadas++;
     }
 
-    const resposta: SyncResponse = { aplicadas, descartadas, serverTime: Date.now(), envios };
+    const resposta: SyncResponse = {
+      aplicadas,
+      descartadas,
+      serverTime: Date.now(),
+      envios,
+      acessoExpirado: [...acessoExpirado],
+    };
     return resposta;
   });
 };

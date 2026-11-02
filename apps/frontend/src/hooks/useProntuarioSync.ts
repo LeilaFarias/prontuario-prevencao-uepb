@@ -1,42 +1,49 @@
-import { useEffect, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import { ApiError } from "../lib/api";
 import { aplicarRemoto, buscarDetalhe, estaOnline } from "../sync/down";
 import { notifyChanged } from "../sync/queue";
 
-export function useProntuarioSync(id: string | undefined): { carregando: boolean; versao: number } {
+export function useProntuarioSync(id: string | undefined): {
+  carregando: boolean;
+  versao: number;
+  recarregar: () => Promise<void>;
+} {
   const [carregando, setCarregando] = useState(Boolean(id) && estaOnline());
   const [versao, setVersao] = useState(0);
+  const montado = useRef(true);
+
+  const buscar = useCallback(async () => {
+    if (!id || !estaOnline()) return;
+    try {
+      const remoto = await buscarDetalhe(id);
+      const alterou = await aplicarRemoto(remoto);
+      if (alterou) {
+        notifyChanged();
+        if (montado.current) setVersao((v) => v + 1);
+      }
+    } catch (err) {
+      if (!(err instanceof ApiError && (err.status === 404 || err.status === 403))) {
+        console.warn("[prontuarioSync] falhou:", err);
+      }
+    }
+  }, [id]);
 
   useEffect(() => {
+    montado.current = true;
     if (!id || !estaOnline()) {
       setCarregando(false);
       return;
     }
 
-    let ativo = true;
     setCarregando(true);
-
-    void (async () => {
-      try {
-        const remoto = await buscarDetalhe(id);
-        const alterou = await aplicarRemoto(remoto);
-        if (alterou) {
-          notifyChanged();
-          if (ativo) setVersao((v) => v + 1);
-        }
-      } catch (err) {
-        if (!(err instanceof ApiError && (err.status === 404 || err.status === 403))) {
-          console.warn("[prontuarioSync] falhou:", err);
-        }
-      } finally {
-        if (ativo) setCarregando(false);
-      }
-    })();
+    void buscar().finally(() => {
+      if (montado.current) setCarregando(false);
+    });
 
     return () => {
-      ativo = false;
+      montado.current = false;
     };
-  }, [id]);
+  }, [id, buscar]);
 
-  return { carregando, versao };
+  return { carregando, versao, recarregar: buscar };
 }

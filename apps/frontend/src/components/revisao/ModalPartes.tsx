@@ -1,11 +1,12 @@
 import type { ReactNode } from "react";
 
-type Tom = "primary" | "alt" | "prof";
+type Tom = "primary" | "alt" | "prof" | "sync";
 
 const CORES_ICONE: Record<Tom, string> = {
   primary: "bg-primary-tint text-primary",
   alt: "bg-alt-tint text-alt",
   prof: "bg-prof-tint text-prof",
+  sync: "bg-sync-tint text-sync",
 };
 
 export function IconeModal({ children, tom }: { children: ReactNode; tom: Tom }) {

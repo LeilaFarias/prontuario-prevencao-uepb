@@ -20,6 +20,10 @@ export interface ProntuarioRemoto extends ProntuarioRemotoResumo {
   secoes: Record<string, unknown>;
   assinadoEm: string | null;
   assinadoPorNome: string | null;
+  professorSupervisorNome: string | null;
+  acessoSolicitadoEm: string | null;
+  acessoExpiraEm: string | null;
+  acessoRevogadoEm: string | null;
   devolvidoEm: string | null;
   devolvidoPorNome: string | null;
   motivoDevolucao: string | null;
@@ -42,6 +46,10 @@ function camposDeRevisao(remoto: ProntuarioRemoto) {
   return {
     assinadoEm: remoto.assinadoEm ?? undefined,
     assinadoPorNome: remoto.assinadoPorNome ?? undefined,
+    professorSupervisorNome: remoto.professorSupervisorNome ?? undefined,
+    acessoSolicitadoEm: remoto.acessoSolicitadoEm ?? undefined,
+    acessoExpiraEm: remoto.acessoExpiraEm ?? undefined,
+    acessoRevogadoEm: remoto.acessoRevogadoEm ?? undefined,
     devolvidoEm: remoto.devolvidoEm ?? undefined,
     devolvidoPorNome: remoto.devolvidoPorNome ?? undefined,
     motivoDevolucao: remoto.motivoDevolucao ?? undefined,

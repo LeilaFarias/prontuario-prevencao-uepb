@@ -103,6 +103,16 @@ function migrarColunasRevisao(db: DatabaseSync): void {
   }
 }
 
+const COLUNAS_ACESSO: ReadonlyArray<string> = ["acessoSolicitadoEm", "acessoExpiraEm", "acessoRevogadoEm"];
+
+function migrarColunasAcesso(db: DatabaseSync): void {
+  const colunas = db.prepare("PRAGMA table_info(Prontuario)").all() as unknown as { name: string }[];
+  const existentes = new Set(colunas.map((c) => c.name));
+  for (const nome of COLUNAS_ACESSO) {
+    if (!existentes.has(nome)) db.exec(`ALTER TABLE Prontuario ADD COLUMN ${nome} TEXT`);
+  }
+}
+
 export function abrirBanco(): DatabaseSync {
   const arquivo = path.resolve(process.cwd(), env.DATABASE_URL.replace(/^file:/, ""));
   const db = new DatabaseSync(arquivo);
@@ -111,6 +121,7 @@ export function abrirBanco(): DatabaseSync {
   migrarColunaAtivo(db);
   migrarColunaSinalizadoDuplicidade(db);
   migrarColunasRevisao(db);
+  migrarColunasAcesso(db);
   return db;
 }
 
