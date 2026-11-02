@@ -24,6 +24,7 @@ export interface ProntuarioRemoto extends ProntuarioRemotoResumo {
   acessoSolicitadoEm: string | null;
   acessoExpiraEm: string | null;
   acessoRevogadoEm: string | null;
+  acessoRecusadoEm: string | null;
   devolvidoEm: string | null;
   devolvidoPorNome: string | null;
   motivoDevolucao: string | null;
@@ -74,7 +75,6 @@ export function buscarDetalhe(id: string): Promise<ProntuarioRemoto> {
   return api.get<ProntuarioRemoto>(`/prontuarios/${encodeURIComponent(id)}`);
 }
 
-// Checagem da fila e escrita na mesma transação: edição que entra na fila durante o sync não é sobrescrita.
 export async function aplicarRemoto(remoto: ProntuarioRemoto): Promise<boolean> {
   const remotoEm = paraTimestamp(remoto.atualizadoEm);
 
@@ -88,28 +88,56 @@ export async function aplicarRemoto(remoto: ProntuarioRemoto): Promise<boolean> 
         pacienteDataNascimento: remoto.pacienteDataNascimento ?? undefined,
         status: normalizarStatus(remoto.status),
         ...camposDeRevisao(remoto),
+        acessoRecusadoEm: remoto.acessoRecusadoEm ?? undefined,
         vistoPeloAluno: false,
         secoes: remoto.secoes ?? {},
         criadoEm: paraTimestamp(remoto.criadoEm),
         atualizadoEm: remotoEm,
         sincronizado: true,
         alunoTitularId: remoto.alunoTitularId,
+        professorSupervisorId: remoto.professorSupervisorId ?? undefined,
+        professorSupervisorNome: remoto.professorSupervisorNome ?? undefined,
       });
       return true;
     }
 
-    const pendentes = await db.syncQueue.where("prontuarioId").equals(local.id).count();
-    if (pendentes > 0) return false;
-
-    if (remotoEm <= local.atualizadoEm) return false;
-
     const novoStatus = normalizarStatus(remoto.status);
+
+    const acessoMudou =
+      remoto.acessoSolicitadoEm !== (local.acessoSolicitadoEm ?? null) ||
+      remoto.acessoExpiraEm !== (local.acessoExpiraEm ?? null) ||
+      remoto.acessoRevogadoEm !== (local.acessoRevogadoEm ?? null) ||
+      remoto.acessoRecusadoEm !== (local.acessoRecusadoEm ?? null) ||
+      novoStatus !== local.status;
+
+    const pendentes = await db.syncQueue.where("prontuarioId").equals(local.id).count();
+
+    if (pendentes > 0) {
+      if (!acessoMudou) return false;
+
+      await db.prontuarios.put({
+        ...local,
+        status: novoStatus,
+        acessoSolicitadoEm: remoto.acessoSolicitadoEm ?? undefined,
+        acessoExpiraEm: remoto.acessoExpiraEm ?? undefined,
+        acessoRevogadoEm: remoto.acessoRevogadoEm ?? undefined,
+        acessoRecusadoEm: remoto.acessoRecusadoEm ?? undefined,
+        professorSupervisorId: remoto.professorSupervisorId ?? undefined,
+        professorSupervisorNome: remoto.professorSupervisorNome ?? undefined,
+        vistoPeloAluno: novoStatus === local.status ? local.vistoPeloAluno : false,
+      });
+      return true;
+    }
+
+    if (remotoEm <= local.atualizadoEm && !acessoMudou) return false;
+
     await db.prontuarios.put({
       ...local,
       pacienteNome: remoto.pacienteNome,
       pacienteDataNascimento: remoto.pacienteDataNascimento ?? local.pacienteDataNascimento,
       status: novoStatus,
       ...camposDeRevisao(remoto),
+      acessoRecusadoEm: remoto.acessoRecusadoEm ?? undefined,
       vistoPeloAluno: novoStatus === local.status ? local.vistoPeloAluno : false,
       secoes: { ...local.secoes, ...(remoto.secoes ?? {}) },
       atualizadoEm: remotoEm,
@@ -125,9 +153,7 @@ export async function aplicarRemoto(remoto: ProntuarioRemoto): Promise<boolean> 
 async function precisaAtualizar(resumo: ProntuarioRemotoResumo): Promise<boolean> {
   const local = await db.prontuarios.get(resumo.id);
   if (!local) return true;
-  if (paraTimestamp(resumo.atualizadoEm) <= local.atualizadoEm) return false;
-  const pendentes = await db.syncQueue.where("prontuarioId").equals(local.id).count();
-  return pendentes === 0;
+  return paraTimestamp(resumo.atualizadoEm) > local.atualizadoEm;
 }
 
 const SIMULTANEOS = 4;

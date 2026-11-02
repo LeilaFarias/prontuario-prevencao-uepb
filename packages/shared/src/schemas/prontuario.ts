@@ -228,7 +228,6 @@ export const planoProfessorSchema = z.object({
 
 export type PlanoProfessor = z.infer<typeof planoProfessorSchema>;
 
-/** `crypto` não existe nos tipos deste pacote (lib ES2022 sem DOM), por isso o acesso via globalThis. */
 const gerarIdPadrao = (): string => {
   const c = (globalThis as { crypto?: { randomUUID?: () => string } }).crypto;
   if (c?.randomUUID) return c.randomUUID();

@@ -43,6 +43,7 @@ interface ProntuarioRevisaoRow {
   acessoExpiraEm: string | null;
   acessoRevogadoEm: string | null;
   acessoSolicitadoEm: string | null;
+  acessoRecusadoEm: string | null;
 }
 
 interface ProntuarioAcessoRow extends AcessoRow {
@@ -121,46 +122,57 @@ export const prontuariosRoutes: FastifyPluginAsync = async (app) => {
   );
   const buscarRevisao = db.prepare(
     `SELECT assinadoEm, assinadoPorNome, devolvidoEm, devolvidoPorNome, motivoDevolucao, comentarioDevolucao,
-            acessoSolicitadoEm, acessoExpiraEm, acessoRevogadoEm
-     FROM Prontuario WHERE id = ?`,
+       acessoSolicitadoEm, acessoExpiraEm, acessoRevogadoEm, acessoRecusadoEm
+      FROM Prontuario WHERE id = ?`,
   );
   const buscarNomeProfessor = db.prepare("SELECT nome FROM Usuario WHERE id = ?");
   const buscarAcesso = db.prepare(
-    `SELECT status, alunoTitularId, professorSupervisorId, acessoSolicitadoEm, acessoExpiraEm, acessoRevogadoEm
-     FROM Prontuario WHERE id = ?`,
+    `SELECT status, alunoTitularId, professorSupervisorId,
+       acessoSolicitadoEm, acessoExpiraEm, acessoRevogadoEm, acessoRecusadoEm
+      FROM Prontuario WHERE id = ?`,
   );
   const gravarSolicitacao = db.prepare(
     `UPDATE Prontuario
-     SET acessoSolicitadoEm = ?,
-         acessoExpiraEm = NULL,
-         acessoRevogadoEm = NULL,
-         professorSupervisorId = COALESCE(?, professorSupervisorId),
-         atualizadoEm = ?
-     WHERE id = ?`,
+      SET acessoSolicitadoEm = ?,
+          acessoExpiraEm = NULL,
+          acessoRevogadoEm = NULL,
+          acessoRecusadoEm = NULL,
+          professorSupervisorId = COALESCE(?, professorSupervisorId),
+          atualizadoEm = ?
+      WHERE id = ?`,
   );
   const gravarAprovacao = db.prepare(
     `UPDATE Prontuario
-     SET acessoExpiraEm = ?, acessoRevogadoEm = NULL, acessoSolicitadoEm = NULL, atualizadoEm = ?
-     WHERE id = ?`,
+      SET acessoExpiraEm = ?, acessoRevogadoEm = NULL, acessoSolicitadoEm = NULL,
+          acessoRecusadoEm = NULL, atualizadoEm = ?
+      WHERE id = ?`,
   );
   const gravarRevogacao = db.prepare(
-    "UPDATE Prontuario SET acessoRevogadoEm = ?, acessoExpiraEm = NULL, atualizadoEm = ? WHERE id = ?",
+    `UPDATE Prontuario
+      SET acessoRevogadoEm = ?, acessoExpiraEm = NULL, acessoRecusadoEm = NULL, atualizadoEm = ?
+      WHERE id = ?`,
   );
   const gravarRecusa = db.prepare(
-    "UPDATE Prontuario SET acessoSolicitadoEm = NULL, acessoRevogadoEm = ?, atualizadoEm = ? WHERE id = ?",
+    `UPDATE Prontuario
+      SET acessoSolicitadoEm = NULL,
+          acessoRecusadoEm = ?,
+          acessoRevogadoEm = ?,
+          atualizadoEm = ?
+      WHERE id = ?`,
   );
   const buscarProfessor = db.prepare(
     "SELECT id, nome, matricula, senhaHash FROM Usuario WHERE id = ? AND UPPER(perfil) = 'PROFESSOR' AND ativo = 1",
   );
   const buscarParaAcao = db.prepare(
     `SELECT status, professorSupervisorId,
-            acessoExpiraEm, acessoRevogadoEm, acessoSolicitadoEm
+            acessoExpiraEm, acessoRevogadoEm, acessoSolicitadoEm, acessoRecusadoEm
      FROM Prontuario WHERE id = ?`,
   );
   const gravarAssinatura = db.prepare(
     `UPDATE Prontuario
      SET status = 'ASSINADO', assinadoEm = ?, assinadoPorId = ?, assinadoPorNome = ?, assinaturaInvalidada = 0,
-         acessoSolicitadoEm = NULL, acessoExpiraEm = NULL, acessoRevogadoEm = NULL, atualizadoEm = ?
+         acessoSolicitadoEm = NULL, acessoExpiraEm = NULL, acessoRevogadoEm = NULL, acessoRecusadoEm = NULL,
+         atualizadoEm = ?
      WHERE id = ?`,
   );
   const gravarDevolucao = db.prepare(
@@ -169,7 +181,7 @@ export const prontuariosRoutes: FastifyPluginAsync = async (app) => {
          devolvidoEm = ?, devolvidoPorId = ?, devolvidoPorNome = ?, motivoDevolucao = ?, comentarioDevolucao = ?,
          assinaturaInvalidada = CASE WHEN assinadoEm IS NULL THEN assinaturaInvalidada ELSE 1 END,
          assinadoEm = NULL, assinadoPorId = NULL, assinadoPorNome = NULL,
-         acessoExpiraEm = ?, acessoRevogadoEm = NULL, acessoSolicitadoEm = NULL,
+         acessoExpiraEm = ?, acessoRevogadoEm = NULL, acessoSolicitadoEm = NULL, acessoRecusadoEm = NULL,
          atualizadoEm = ?
      WHERE id = ?`,
   );
@@ -218,6 +230,7 @@ export const prontuariosRoutes: FastifyPluginAsync = async (app) => {
         acessoExpiraEm: revisao.acessoExpiraEm,
         acessoSolicitadoEm: revisao.acessoSolicitadoEm,
         acessoRevogadoEm: revisao.acessoRevogadoEm,
+        acessoRecusadoEm: revisao.acessoRecusadoEm,
         professorSupervisorId: linha.professorSupervisorId,
         professorSupervisorNome,
         secoes: {},
@@ -411,7 +424,7 @@ export const prontuariosRoutes: FastifyPluginAsync = async (app) => {
       if (!pedidoPendente(pront)) return SEM_PEDIDO;
 
       const agora = new Date().toISOString();
-      gravarRecusa.run(agora, agora, id);
+      gravarRecusa.run(agora, agora, agora, id);
       registrarLog.run(randomUUID(), id, id, "recusar-acesso", Date.now());
       return { ok: true as const };
     });

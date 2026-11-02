@@ -22,10 +22,11 @@ import StatusBar from "../components/StatusBar";
 import TelaBloqueio from "../components/TelaBloqueio";
 import TimerAcesso from "../components/TimerAcesso";
 import Topbar from "../components/Topbar";
+import BottomSheet from "../components/BottomSheet";
 import { db, type LocalProntuario, type LocalStatus } from "../db/dexie";
 import { useProntuarioSync } from "../hooks/useProntuarioSync";
 import { salvarSecoesPendentes } from "../hooks/useSecao";
-import { ACESSO_EXPIRADO_EVENT, acessoVigente, pedidoPendente } from "../lib/acesso";
+import { ACESSO_EXPIRADO_EVENT, acessoVigente, pedidoPendente, pedidoRecusado } from "../lib/acesso";
 import { confirmarInvalidacaoAssinatura, registrarConfirmadorInvalidacao } from "../lib/invalidacaoAssinatura";
 import { tempoRelativo } from "../lib/tempo";
 import { formatarDataHoraCompleta } from "../components/ficha/revisao/rotulos";
@@ -51,14 +52,16 @@ export default function Prontuario() {
   const modoLeitura = params.get("modo") === "leitura";
   const { carregando: sincronizando, versao, recarregar } = useProntuarioSync(id);
   const [verDevolucao, setVerDevolucao] = useState(false);
-  const [modalSolicitar, setModalSolicitar] = useState(() => params.get("solicitar") === "1");
+  const [modalSolicitar, setModalSolicitar] = useState(false);
   const [confirmacaoAberta, setConfirmacaoAberta] = useState(false);
   const resolverConfirmacao = useRef<((ok: boolean) => void) | null>(null);
   const [avisoAprovado, setAvisoAprovado] = useState(false);
   const [avisoExpirado, setAvisoExpirado] = useState(false);
+  const [avisoRecusado, setAvisoRecusado] = useState(false);
   const [, renderizar] = useReducer((n: number) => n + 1, 0);
   const assinaturaJaInvalidada = useRef(false);
   const statusRef = useRef<LocalStatus | undefined>(undefined);
+  const [modalManual, setModalManual] = useState(false);
 
   const [estado, setEstado] = useState<"carregando" | "ok" | "nao-encontrado">("carregando");
   const [pront, setPront] = useState<LocalProntuario | null>(null);
@@ -124,8 +127,13 @@ export default function Prontuario() {
   const statusAoVivo = vivo?.status;
   const pendenteAoVivo = vivo ? pedidoPendente(vivo) : false;
   const vigenteAoVivo = vivo ? acessoVigente(vivo) : false;
+  const recusadoAoVivo = vivo ? pedidoRecusado(vivo) : false;
   const monitorarAcesso = pendenteAoVivo || vigenteAoVivo;
-  const estadoAnterior = useRef({ pendente: pendenteAoVivo, vigente: vigenteAoVivo });
+  const estadoAnterior = useRef({
+    pendente: pendenteAoVivo,
+    vigente: vigenteAoVivo,
+    recusado: recusadoAoVivo,
+  });
 
   useEffect(() => {
     const desregistrar = registrarConfirmadorInvalidacao(() =>
@@ -160,9 +168,17 @@ export default function Prontuario() {
       setModalSolicitar(false);
       setAvisoAprovado(true);
     }
+    if (anterior.pendente && !vigenteAoVivo && recusadoAoVivo) {
+      setModalSolicitar(false);
+      setAvisoRecusado(true);
+    }
     if (anterior.vigente && !vigenteAoVivo) setAvisoExpirado(true);
-    estadoAnterior.current = { pendente: pendenteAoVivo, vigente: vigenteAoVivo };
-  }, [pendenteAoVivo, vigenteAoVivo]);
+    estadoAnterior.current = {
+      pendente: pendenteAoVivo,
+      vigente: vigenteAoVivo,
+      recusado: recusadoAoVivo,
+    };
+  }, [pendenteAoVivo, vigenteAoVivo, recusadoAoVivo]);
 
   useEffect(() => {
     if (!avisoAprovado) return;
@@ -175,6 +191,12 @@ export default function Prontuario() {
     const t = window.setTimeout(() => setAvisoExpirado(false), AVISO_APROVACAO_MS);
     return () => window.clearTimeout(t);
   }, [avisoExpirado]);
+
+  useEffect(() => {
+    if (!avisoRecusado) return;
+    const t = window.setTimeout(() => setAvisoRecusado(false), AVISO_APROVACAO_MS);
+    return () => window.clearTimeout(t);
+  }, [avisoRecusado]);
 
   useEffect(() => {
     if (!monitorarAcesso) return;
@@ -266,12 +288,43 @@ export default function Prontuario() {
   if (bloqueado) {
     return (
       <>
+        {avisoExpirado && (
+          <div
+            role="alert"
+            className="fixed inset-x-4 top-4 z-50 flex items-center gap-2 rounded-lg bg-alt-tint px-4 py-2.5 text-[13px] text-alt shadow-lg"
+          >
+            <span className="min-w-0 flex-1">Acesso expirado.</span>
+            <button
+              type="button"
+              onClick={() => setAvisoExpirado(false)}
+              aria-label="Dispensar aviso"
+              className="shrink-0 opacity-70"
+            >
+              <X size={16} />
+            </button>
+          </div>
+        )}
+        {avisoRecusado && (
+          <div
+            role="alert"
+            className="fixed inset-x-4 top-4 z-50 flex items-center gap-2 rounded-lg bg-alt-tint px-4 py-2.5 text-[13px] text-alt shadow-lg"
+          >
+            <span className="min-w-0 flex-1">Pedido de acesso recusado pelo professor.</span>
+            <button
+              type="button"
+              onClick={() => setAvisoRecusado(false)}
+              aria-label="Dispensar aviso"
+              className="shrink-0 opacity-70"
+            >
+              <X size={16} />
+            </button>
+          </div>
+        )}
         <TelaBloqueio
           prontuario={atual}
           professorNome={nomeProfessor || null}
-          avisoExpirado={avisoExpirado}
-          onDispensarAviso={() => setAvisoExpirado(false)}
           onSolicitarAcesso={() => setModalSolicitar(true)}
+          onSolicitarManual={() => setModalManual(true)}
           onVoltar={() => navigate("/prontuarios")}
         />
         {modalSolicitar && (
@@ -281,7 +334,25 @@ export default function Prontuario() {
             prontuario={atual}
             professorNome={nomeProfessor || ""}
             onJaLiberado={() => void recarregar()}
+            onSolicitarManual={() => setModalManual(true)}
+            onVoltarParaLista={() => navigate("/prontuarios")}
           />
+        )}
+        {modalManual && (
+          <BottomSheet
+            open
+            onClose={() => setModalManual(false)}
+            title="Solicitar acesso manual"
+            subtitle="Peça ao professor para liberar no seu aparelho."
+          >
+            <p className="text-[13px] leading-relaxed text-ink-soft">
+              Esta opção permite que o professor libere o acesso diretamente no seu aparelho, mesmo sem internet.
+            </p>
+            <p className="mt-3 text-[13px] leading-relaxed text-ink-soft">Funcionalidade em implementação.</p>
+            <button type="button" className="btn-ghost mt-4" onClick={() => setModalManual(false)}>
+              Fechar
+            </button>
+          </BottomSheet>
         )}
       </>
     );

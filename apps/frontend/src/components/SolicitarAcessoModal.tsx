@@ -1,5 +1,5 @@
 import { useEffect, useState } from "react";
-import { Clock, Lock } from "lucide-react";
+import { CircleAlert, Clock, Loader2, Lock, WifiOff } from "lucide-react";
 import { ACESSO_TEMPORARIO_HORAS, ERRO_ACESSO_EXPIRADO, type SolicitarAcessoResponse } from "@prontuario/shared";
 import { db, type LocalProntuario } from "../db/dexie";
 import { ApiError, api } from "../lib/api";
@@ -18,7 +18,11 @@ interface Props {
   prontuario: LocalProntuario;
   professorNome: string;
   onJaLiberado: () => void;
+  onSolicitarManual?: () => void;
+  onVoltarParaLista?: () => void;
 }
+
+type Etapa = "formulario" | "aguardando" | "offline";
 
 function mensagemDeErro(err: unknown): string {
   if (err instanceof ApiError) {
@@ -36,15 +40,21 @@ export default function SolicitarAcessoModal({
   prontuario,
   professorNome,
   onJaLiberado,
+  onSolicitarManual,
+  onVoltarParaLista,
 }: Props) {
-  const [etapa, setEtapa] = useState<"formulario" | "aguardando">("formulario");
+  const [etapa, setEtapa] = useState<Etapa>("formulario");
   const [enviando, setEnviando] = useState(false);
   const [erro, setErro] = useState<string | null>(null);
   const [enviadoEm, setEnviadoEm] = useState<string | null>(null);
   const [professores, setProfessores] = useState<Professor[]>([]);
   const [carregandoProfessores, setCarregandoProfessores] = useState(false);
-  const [professorSelecionadoId, setProfessorSelecionadoId] = useState("");
-  const [professorSelecionadoNome, setProfessorSelecionadoNome] = useState("");
+  const [professorSelecionadoId, setProfessorSelecionadoId] = useState(
+    prontuario.professorSupervisorId ?? "",
+  );
+  const [professorSelecionadoNome, setProfessorSelecionadoNome] = useState(
+    prontuario.professorSupervisorNome ?? professorNome ?? "",
+  );
 
   const paciente = prontuario.pacienteNome.trim();
 
@@ -52,22 +62,19 @@ export default function SolicitarAcessoModal({
     (prontuario.secoes["consentimento"] as { professorSupervisor?: unknown } | undefined)?.professorSupervisor ?? "",
   ).trim();
 
-  const nomePreferido = (prontuario.professorSupervisorNome || professorNome || nomeConsentimento).trim();
-  const temProfessorVinculado = !!prontuario.professorSupervisorId;
-  const precisaEscolherProfessor = !temProfessorVinculado;
+  const nomePreferido = (professorSelecionadoNome || professorNome || nomeConsentimento).trim();
 
   useEffect(() => {
-    if (!open || !precisaEscolherProfessor || professores.length > 0) return;
+    if (!open || professores.length > 0) return;
     setCarregandoProfessores(true);
     api
       .get<Professor[]>("/professores")
       .then(setProfessores)
       .catch(() => setErro("Não foi possível carregar a lista de professores."))
       .finally(() => setCarregandoProfessores(false));
-  }, [open, precisaEscolherProfessor, professores.length]);
+  }, [open, professores.length]);
 
   useEffect(() => {
-    if (!precisaEscolherProfessor) return;
     if (professorSelecionadoId) return;
     if (professores.length === 0) return;
     if (!nomePreferido) return;
@@ -77,10 +84,22 @@ export default function SolicitarAcessoModal({
       setProfessorSelecionadoId(encontrado.id);
       setProfessorSelecionadoNome(encontrado.nome);
     }
-  }, [precisaEscolherProfessor, professores, nomePreferido, professorSelecionadoId]);
+  }, [professores, nomePreferido, professorSelecionadoId]);
+
+  useEffect(() => {
+    if (!professorSelecionadoId) return;
+    if (professorSelecionadoNome) return;
+    const p = professores.find((x) => x.id === professorSelecionadoId);
+    if (p) setProfessorSelecionadoNome(p.nome);
+  }, [professores, professorSelecionadoId, professorSelecionadoNome]);
 
   async function enviar() {
-    if (precisaEscolherProfessor && !professorSelecionadoId) {
+    if (!navigator.onLine) {
+      setEtapa("offline");
+      return;
+    }
+
+    if (!professorSelecionadoId) {
       setErro("Selecione o professor responsável.");
       return;
     }
@@ -88,15 +107,12 @@ export default function SolicitarAcessoModal({
     setEnviando(true);
     setErro(null);
     try {
-      const corpo: Record<string, string> = {};
-      if (precisaEscolherProfessor) {
-        corpo.professorSupervisorId = professorSelecionadoId;
-        corpo.professorSupervisorNome = professorSelecionadoNome;
-      }
-
       const resposta = await api.post<SolicitarAcessoResponse>(
         `/prontuarios/${encodeURIComponent(prontuario.id)}/solicitar-acesso`,
-        corpo,
+        {
+          professorSupervisorId: professorSelecionadoId,
+          professorSupervisorNome: professorSelecionadoNome,
+        },
       );
 
       if (resposta.jaTemAcesso) {
@@ -110,24 +126,73 @@ export default function SolicitarAcessoModal({
         acessoSolicitadoEm: agora,
         acessoExpiraEm: undefined,
         acessoRevogadoEm: undefined,
-        ...(precisaEscolherProfessor && professorSelecionadoId
-          ? {
-              professorSupervisorId: professorSelecionadoId,
-              professorSupervisorNome: professorSelecionadoNome,
-            }
-          : {}),
+        acessoRecusadoEm: undefined,
+        professorSupervisorId: professorSelecionadoId,
+        professorSupervisorNome: professorSelecionadoNome,
       });
 
       setEnviadoEm(agora);
       setEtapa("aguardando");
     } catch (err) {
-      setErro(mensagemDeErro(err));
+      if (!navigator.onLine || (err instanceof ApiError && err.status === 0)) {
+        setEtapa("offline");
+      } else {
+        setErro(mensagemDeErro(err));
+      }
     } finally {
       setEnviando(false);
     }
   }
 
-  const professorExibido = professorNome || professorSelecionadoNome || "—";
+  const professorExibido = professorSelecionadoNome || professorNome || "—";
+
+  if (etapa === "offline") {
+    return (
+      <BottomSheet
+        open={open}
+        onClose={onClose}
+        centralizado
+        title="Sem internet"
+        subtitle="Desculpe, não foi possível enviar o pedido de acesso devido à falta de conexão com a internet."
+        icone={
+          <IconeModal tom="sync">
+            <WifiOff size={26} />
+          </IconeModal>
+        }
+      >
+        <div className="flex flex-col gap-3">
+          <div className="flex items-start gap-2 rounded-lg bg-primary-tint p-3 text-primary">
+            <CircleAlert size={16} className="mt-0.5 shrink-0" aria-hidden="true" />
+            <p className="text-[12.5px] leading-relaxed">
+              O professor pode te conceder acesso manualmente
+            </p>
+          </div>
+
+          <div className="flex flex-col gap-2.5">
+            <button
+              type="button"
+              className="btn-primary"
+              onClick={onVoltarParaLista ?? onClose}
+            >
+              Voltar para meus prontuários
+            </button>
+            {onSolicitarManual && (
+              <button
+                type="button"
+                className="btn bg-alt text-white"
+                onClick={() => {
+                  onClose();
+                  onSolicitarManual();
+                }}
+              >
+                Solicitar acesso manual
+              </button>
+            )}
+          </div>
+        </div>
+      </BottomSheet>
+    );
+  }
 
   if (etapa === "aguardando") {
     return (
@@ -159,6 +224,11 @@ export default function SolicitarAcessoModal({
     );
   }
 
+  const valorSelect =
+    professorSelecionadoId && !professores.some((p) => p.id === professorSelecionadoId)
+      ? "__atual__"
+      : professorSelecionadoId;
+
   return (
     <BottomSheet
       open={open}
@@ -174,44 +244,57 @@ export default function SolicitarAcessoModal({
       }
     >
       <div className="flex flex-col gap-3">
-        {precisaEscolherProfessor ? (
-          <div>
-            <label htmlFor="professor-supervisor" className="label">
-              Professor responsável
-            </label>
-            {carregandoProfessores ? (
-              <p className="hint">Carregando professores…</p>
-            ) : professores.length === 0 ? (
-              <p className="hint">Nenhum professor disponível no momento.</p>
-            ) : (
+        <div>
+          <label htmlFor="professor-supervisor" className="label">
+            Professor responsável
+          </label>
+          {carregandoProfessores ? (
+            <div className="input flex items-center gap-2 text-ink-soft">
+              <Loader2 size={14} className="animate-spin" aria-hidden="true" />
+              Carregando professores…
+            </div>
+          ) : professores.length === 0 && !professorSelecionadoId ? (
+            <p className="hint">Nenhum professor disponível no momento.</p>
+          ) : (
+            <>
               <select
                 id="professor-supervisor"
                 className="input"
-                value={professorSelecionadoId}
+                value={valorSelect}
                 onChange={(e) => {
                   const id = e.target.value;
+                  if (id === "__atual__") return;
                   setProfessorSelecionadoId(id);
                   setProfessorSelecionadoNome(professores.find((p) => p.id === id)?.nome ?? "");
                 }}
                 disabled={enviando}
               >
-                <option value="">Selecione…</option>
+                {!professorSelecionadoId && <option value="">Selecione…</option>}
+                {professorSelecionadoId && !professores.some((p) => p.id === professorSelecionadoId) && (
+                  <option value="__atual__">
+                    {professorSelecionadoNome || "Professor atual"}
+                  </option>
+                )}
                 {professores.map((p) => (
                   <option key={p.id} value={p.id}>
                     {p.nome}
                   </option>
                 ))}
               </select>
-            )}
-          </div>
-        ) : (
-          <Detalhes
-            linhas={[
-              ["Paciente", paciente],
-              ["Professor", professorNome || nomePreferido || "—"],
-            ]}
-          />
-        )}
+              <p className="hint mt-1">
+                {professorSelecionadoId
+                  ? "Professor atual. Altere apenas se precisar."
+                  : "Escolha o professor responsável pela liberação."}
+              </p>
+            </>
+          )}
+        </div>
+
+        <Detalhes
+          linhas={[
+            ["Paciente", paciente],
+          ]}
+        />
 
         {erro && (
           <p role="alert" className="banner-erro">
@@ -221,11 +304,18 @@ export default function SolicitarAcessoModal({
 
         <button
           type="button"
-          className="btn-primary"
-          disabled={enviando || (precisaEscolherProfessor && !professorSelecionadoId)}
+          className="btn-primary inline-flex items-center justify-center gap-2"
+          disabled={enviando || !professorSelecionadoId}
           onClick={() => void enviar()}
         >
-          {enviando ? "Enviando…" : "Enviar pedido"}
+          {enviando ? (
+            <>
+              <Loader2 size={16} className="animate-spin" aria-hidden="true" />
+              Enviando…
+            </>
+          ) : (
+            "Enviar pedido"
+          )}
         </button>
         <button type="button" className="btn-ghost" disabled={enviando} onClick={onClose}>
           Cancelar

@@ -6,6 +6,7 @@ export interface AcessoRow {
   acessoSolicitadoEm: string | null;
   acessoExpiraEm: string | null;
   acessoRevogadoEm: string | null;
+  acessoRecusadoEm: string | null;
 }
 
 const paraMs = (iso: string): number => new Date(iso).getTime();

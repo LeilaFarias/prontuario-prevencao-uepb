@@ -29,6 +29,7 @@ CREATE TABLE IF NOT EXISTS Prontuario (
   assinaturaInvalidada   INTEGER NOT NULL DEFAULT 0,
   acessoExpiraEm         TEXT,
   acessoRevogadoEm       TEXT,
+  acessoRecusadoEm       TEXT
   acessoSolicitadoEm     TEXT
 );
 CREATE INDEX IF NOT EXISTS idx_pront_aluno ON Prontuario(alunoTitularId);
@@ -119,8 +120,12 @@ function migrarColunasRevisao(db: DatabaseSync): void {
   }
 }
 
-const COLUNAS_ACESSO: ReadonlyArray<string> = ["acessoSolicitadoEm", "acessoExpiraEm", "acessoRevogadoEm"];
-
+const COLUNAS_ACESSO: ReadonlyArray<string> = [
+  "acessoSolicitadoEm",
+  "acessoExpiraEm",
+  "acessoRevogadoEm",
+  "acessoRecusadoEm",
+];
 function migrarColunasAcesso(db: DatabaseSync): void {
   const colunas = db.prepare("PRAGMA table_info(Prontuario)").all() as unknown as { name: string }[];
   const existentes = new Set(colunas.map((c) => c.name));

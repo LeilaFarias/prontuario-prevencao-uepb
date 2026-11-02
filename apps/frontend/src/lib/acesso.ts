@@ -5,7 +5,7 @@ export const ACESSOS_ATUALIZADOS_EVENT = "acessos:atualizados";
 
 type CamposAcesso = Pick<
   LocalProntuario,
-  "acessoSolicitadoEm" | "acessoExpiraEm" | "acessoRevogadoEm"
+  "acessoSolicitadoEm" | "acessoExpiraEm" | "acessoRevogadoEm" | "acessoRecusadoEm"
 >;
 
 export function acessoVigente(p: CamposAcesso, agora: number = Date.now()): boolean {
@@ -15,6 +15,7 @@ export function acessoVigente(p: CamposAcesso, agora: number = Date.now()): bool
 }
 
 export function pedidoPendente(p: CamposAcesso): boolean {
+  if (p.acessoRecusadoEm) return false;
   return Boolean(p.acessoSolicitadoEm) && !acessoVigente(p);
 }
 
@@ -24,4 +25,8 @@ export function formatarContagem(ms: number): string {
   const m = Math.floor((total % 3600) / 60);
   const s = total % 60;
   return `${h}:${String(m).padStart(2, "0")}:${String(s).padStart(2, "0")}`;
+}
+
+export function pedidoRecusado(p: CamposAcesso): boolean {
+  return !!p.acessoRecusadoEm && !acessoVigente(p);
 }

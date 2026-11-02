@@ -36,7 +36,8 @@ export const syncRoutes: FastifyPluginAsync = async (app) => {
   const { db } = app;
 
   const buscarPront = db.prepare(
-    "SELECT id, status, acessoSolicitadoEm, acessoExpiraEm, acessoRevogadoEm FROM Prontuario WHERE id = ?",
+    `SELECT id, status, acessoSolicitadoEm, acessoExpiraEm, acessoRevogadoEm, acessoRecusadoEm
+      FROM Prontuario WHERE id = ?`,
   );
   const invalidarAssinatura = db.prepare(
     `UPDATE Prontuario

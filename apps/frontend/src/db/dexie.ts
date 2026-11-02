@@ -20,6 +20,7 @@ export interface LocalProntuario {
   acessoSolicitadoEm?: string;
   acessoExpiraEm?: string;
   acessoRevogadoEm?: string;
+  acessoRecusadoEm?: string;
   devolvidoEm?: string;
   devolvidoPorNome?: string;
   motivoDevolucao?: string;
