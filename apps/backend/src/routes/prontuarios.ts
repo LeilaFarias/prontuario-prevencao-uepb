@@ -159,17 +159,17 @@ export const prontuariosRoutes: FastifyPluginAsync = async (app) => {
   const gravarManutencao = db.prepare(
     `UPDATE Prontuario SET professorSupervisorId = ?, sinalizadoDuplicidade = 0, atualizadoEm = ? WHERE id = ?`,
   );
-  const buscarAlunoAtivo = db.prepare(
-    "SELECT id, nome FROM Usuario WHERE id = ? AND UPPER(perfil) = 'ALUNO' AND ativo = 1",
-  );
-  const gravarTransferenciaAntigo = db.prepare(
+  const gravarTransferenciaArquivado = db.prepare(
     `UPDATE Prontuario
      SET status = 'TRANSFERIDO', transferidoPara = ?, sinalizadoDuplicidade = 0, atualizadoEm = ?
      WHERE id = ?`,
   );
-  const gravarTransferenciaNovo = db.prepare(
+  const gravarTransferenciaAtivo = db.prepare(
     `UPDATE Prontuario
-     SET alunoTitularId = ?, professorSupervisorId = ?, transferidoDe = ?, sinalizadoDuplicidade = 0, atualizadoEm = ?
+     SET status = 'EM_ANDAMENTO', transferidoDe = ?, professorSupervisorId = ?,
+         assinaturaInvalidada = CASE WHEN assinadoEm IS NULL THEN assinaturaInvalidada ELSE 1 END,
+         assinadoEm = NULL, assinadoPorId = NULL, assinadoPorNome = NULL,
+         sinalizadoDuplicidade = 0, atualizadoEm = ?
      WHERE id = ?`,
   );
   const registrarAuditoria = db.prepare(
@@ -545,9 +545,6 @@ export const prontuariosRoutes: FastifyPluginAsync = async (app) => {
     return resultado;
   });
 
-  const ALUNO_INVALIDO: FalhaAcesso = { falha: 400, error: "Aluno inválido ou inativo." };
-  const MESMO_ALUNO: FalhaAcesso = { falha: 409, error: "O aluno informado já é o titular deste prontuário." };
-
   type PartesRow = PartesDuplicidade & {
     pacienteNome: string;
     pacienteDataNascimento: string | null;
@@ -658,16 +655,15 @@ export const prontuariosRoutes: FastifyPluginAsync = async (app) => {
     "/prontuarios/:id/transferir-titularidade",
     protegida,
     async (req, reply) => {
-      const { prontuarioNovoId, novoAlunoTitularId, novoProfessorSupervisorId } = transferirTitularidadeSchema.parse(
-        req.body,
-      );
-      const { id } = req.params;
+      const { prontuarioAntigoId, prontuarioNovoId, quemRecebe } = transferirTitularidadeSchema.parse(req.body);
+      if (req.params.id !== prontuarioAntigoId) {
+        return reply.status(400).send({ error: "O prontuário da URL não é o prontuário anterior informado." });
+      }
 
       const resultado = transacao(db, () => {
-        const antigo = buscarPartes.get(id) as unknown as PartesRow | undefined;
-        if (!antigo) return NAO_ENCONTRADO;
+        const antigo = buscarPartes.get(prontuarioAntigoId) as unknown as PartesRow | undefined;
         const novo = buscarPartes.get(prontuarioNovoId) as unknown as PartesRow | undefined;
-        if (!novo) return NAO_ENCONTRADO;
+        if (!antigo || !novo) return NAO_ENCONTRADO;
 
         if (antigo.professorId !== req.user.sub && novo.professorId !== req.user.sub) return NAO_SUPERVISOR;
         if (antigo.prontuarioId === novo.prontuarioId) return MESMO_PRONTUARIO;
@@ -677,60 +673,54 @@ export const prontuariosRoutes: FastifyPluginAsync = async (app) => {
         ) {
           return PACIENTE_DIVERGENTE;
         }
-        if (antigo.status.toUpperCase() === "TRANSFERIDO") return JA_TRANSFERIDO;
-        if (antigo.alunoId === novoAlunoTitularId) return MESMO_ALUNO;
-        const novoAluno = buscarAlunoAtivo.get(novoAlunoTitularId) as unknown as { nome: string } | undefined;
-        if (!novoAluno) return ALUNO_INVALIDO;
-        if (novoProfessorSupervisorId && !buscarProfessor.get(novoProfessorSupervisorId)) return PROFESSOR_INVALIDO;
+        if (antigo.status.toUpperCase() === "TRANSFERIDO" || novo.status.toUpperCase() === "TRANSFERIDO") {
+          return JA_TRANSFERIDO;
+        }
 
-        const professorNovo = novoProfessorSupervisorId ?? novo.professorId;
-        const duplaAnterior = resumirPartes(antigo);
-        const duplaNova = resumirPartes(novo);
+        const recebe = quemRecebe === "anterior" ? antigo : novo;
+        const arquiva = quemRecebe === "anterior" ? novo : antigo;
+        const duplaRecebe = resumirPartes(recebe);
+        const duplaArquiva = resumirPartes(arquiva);
         const agora = new Date().toISOString();
 
-        gravarTransferenciaAntigo.run(novo.prontuarioId, agora, antigo.prontuarioId);
-        gravarTransferenciaNovo.run(novoAlunoTitularId, professorNovo, antigo.prontuarioId, agora, novo.prontuarioId);
+        gravarTransferenciaArquivado.run(recebe.prontuarioId, agora, arquiva.prontuarioId);
+        gravarTransferenciaAtivo.run(arquiva.prontuarioId, req.user.sub, agora, recebe.prontuarioId);
 
         registrarAuditoria.run(
           randomUUID(),
           req.user.sub,
-          novo.prontuarioId,
+          recebe.prontuarioId,
           "transferencia-titularidade",
           JSON.stringify({
-            prontuarioAntigoId: antigo.prontuarioId,
-            prontuarioNovoId: novo.prontuarioId,
-            duplaAnteriorId: antigo.alunoId,
-            duplaNovaId: novoAlunoTitularId,
-            professorAnteriorId: antigo.professorId,
-            professorNovoId: professorNovo,
+            idRecebe: recebe.prontuarioId,
+            idArquiva: arquiva.prontuarioId,
+            quemRecebe,
           }),
         );
         const agoraMs = Date.now();
-        registrarLog.run(randomUUID(), antigo.prontuarioId, antigo.prontuarioId, "transferir-titularidade", agoraMs);
-        registrarLog.run(randomUUID(), novo.prontuarioId, novo.prontuarioId, "transferir-titularidade", agoraMs);
+        registrarLog.run(randomUUID(), arquiva.prontuarioId, arquiva.prontuarioId, "transferir-titularidade", agoraMs);
+        registrarLog.run(randomUUID(), recebe.prontuarioId, recebe.prontuarioId, "transferir-titularidade", agoraMs);
 
-        const responsavel = professorNovo
-          ? (buscarNomeProfessor.get(professorNovo) as unknown as { nome: string } | undefined)?.nome
-          : undefined;
+        const responsavel = (buscarNomeProfessor.get(req.user.sub) as unknown as { nome: string } | undefined)?.nome;
         const sufixoProfessor = responsavel ? ` Professor responsável: ${responsavel}.` : "";
         notificar(
-          antigo.alunoId,
-          antigo.prontuarioId,
+          arquiva.alunoId,
+          arquiva.prontuarioId,
           "titularidade-transferida",
-          `O prontuário de ${antigo.pacienteNome} foi transferido para ${textoDupla(duplaNova)}. Ele continua disponível apenas para consulta.${sufixoProfessor}`,
+          `O prontuário de ${arquiva.pacienteNome} foi transferido para ${textoDupla(duplaRecebe)}. Ele continua disponível apenas para consulta.${sufixoProfessor}`,
         );
         notificar(
-          novoAlunoTitularId,
-          novo.prontuarioId,
+          recebe.alunoId,
+          recebe.prontuarioId,
           "titularidade-recebida",
-          `Você recebeu a titularidade do prontuário de ${novo.pacienteNome}. O histórico de ${textoDupla(duplaAnterior)} está disponível em cada seção.${sufixoProfessor}`,
+          `O prontuário de ${recebe.pacienteNome} ficou com ${textoDupla(duplaRecebe)}. O histórico de ${textoDupla(duplaArquiva)} está disponível em cada seção.${sufixoProfessor}`,
         );
         return { ok: true as const };
       });
 
       if ("falha" in resultado) return responderFalha(reply, resultado);
       req.log.info(
-        { prontuarioAntigoId: id, prontuarioNovoId, professorId: req.user.sub, novoAlunoTitularId },
+        { prontuarioAntigoId, prontuarioNovoId, quemRecebe, professorId: req.user.sub },
         "titularidade transferida",
       );
       return resultado;

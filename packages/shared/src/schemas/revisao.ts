@@ -35,10 +35,14 @@ export const devolverSchema = z.object({
     .max(COMENTARIO_DEVOLUCAO_MAX, `O comentário pode ter no máximo ${COMENTARIO_DEVOLUCAO_MAX} caracteres`),
 });
 
+export const QUEM_RECEBE = ["anterior", "novo"] as const;
+
+export type QuemRecebe = (typeof QUEM_RECEBE)[number];
+
 export const transferirTitularidadeSchema = z.object({
+  prontuarioAntigoId: z.string().trim().min(1, "Informe o prontuário anterior"),
   prontuarioNovoId: z.string().trim().min(1, "Informe o prontuário novo"),
-  novoAlunoTitularId: z.string().trim().min(1, "Selecione a nova dupla"),
-  novoProfessorSupervisorId: z.string().trim().min(1).optional(),
+  quemRecebe: z.enum(QUEM_RECEBE, { errorMap: () => ({ message: "Escolha qual dupla recebe o prontuário" }) }),
 });
 
 export const manterTitularidadeSchema = z.object({

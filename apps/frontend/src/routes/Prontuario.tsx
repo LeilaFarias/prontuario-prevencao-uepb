@@ -386,11 +386,9 @@ export default function Prontuario() {
       <div className="flex flex-col gap-1.5">
         <span className={`${PILL} bg-paper text-ink-soft`}>
           <ArrowRightLeft size={12} aria-hidden="true" />
-          Transferido — somente leitura
+          {atual.transferidoParaNome ? `Transferido para ${atual.transferidoParaNome}` : "Transferido para outra dupla"}
         </span>
-        {atual.transferidoParaNome && (
-          <p className="text-[12px] text-ink-soft">Titularidade transferida para {atual.transferidoParaNome}.</p>
-        )}
+        <p className="text-[12px] text-ink-soft">Somente leitura.</p>
       </div>
     ) : status === "devolvido" ? (
       <div className="flex flex-wrap items-center gap-2">
