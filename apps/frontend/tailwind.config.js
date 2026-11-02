@@ -12,6 +12,8 @@ export default {
         prof: { DEFAULT: "var(--prof)", tint: "var(--prof-tint)" },
         alt: { DEFAULT: "var(--alt)", tint: "var(--alt-tint)" },
         sync: { DEFAULT: "var(--sync)", tint: "var(--sync-tint)" },
+        amber: { DEFAULT: "#9C7A23", tint: "#F1EAD2" },
+        orange: { DEFAULT: "#B1602E", tint: "#F3E1D1" },
       },
       fontFamily: {
         display: ['"Fraunces"', "Georgia", "serif"],

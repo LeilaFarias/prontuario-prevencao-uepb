@@ -249,3 +249,30 @@ export const sangramentoSchema = z.object({
 export type Sangramento = z.infer<typeof sangramentoSchema>;
 
 export const vazioSangramento = (): Sangramento => sangramentoSchema.parse({});
+
+const notaIHOS = z.union([z.literal(0), z.literal(1), z.literal(2), z.literal(3), z.null()]).default(null);
+
+export const registroIHOSSchema = z.object({
+  id: z.string(),
+  data: z.string().default(""),
+  dentes: z
+    .object({
+      V11: notaIHOS,
+      V16: notaIHOS,
+      V26: notaIHOS,
+      V31: notaIHOS,
+      L36: notaIHOS,
+      L46: notaIHOS,
+    })
+    .default({}),
+});
+
+export type RegistroIHOSDados = z.infer<typeof registroIHOSSchema>;
+
+export const ihosSchema = z.object({
+  registros: z.array(registroIHOSSchema).default([]),
+});
+
+export type IHOS = z.infer<typeof ihosSchema>;
+
+export const vazioIHOS = (): IHOS => ihosSchema.parse({});
