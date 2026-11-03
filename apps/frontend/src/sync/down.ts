@@ -1,6 +1,7 @@
 import type { HistoricoProntuario } from "@prontuario/shared";
 import { db, type LocalProntuario, type LocalStatus } from "../db/dexie";
 import { api } from "../lib/api";
+import { avisoJaVisto, marcadorDeAviso } from "../lib/avisosVistos";
 import { getSession } from "../lib/session";
 import { notifyChanged } from "./queue";
 
@@ -100,15 +101,21 @@ export async function aplicarRemoto(remoto: ProntuarioRemoto): Promise<boolean> 
     const local = await db.prontuarios.get(remoto.id);
 
     if (!local) {
+      const status = normalizarStatus(remoto.status);
+      const visto = avisoJaVisto(
+        getSession()?.user.id,
+        remoto.id,
+        marcadorDeAviso(status, remoto.assinadoEm ?? undefined, remoto.devolvidoEm ?? undefined),
+      );
       await db.prontuarios.add({
         id: remoto.id,
         pacienteNome: remoto.pacienteNome,
         pacienteDataNascimento: remoto.pacienteDataNascimento ?? undefined,
-        status: normalizarStatus(remoto.status),
+        status,
         ...camposDeRevisao(remoto),
         ...camposDeTransferencia(remoto),
         acessoRecusadoEm: remoto.acessoRecusadoEm ?? undefined,
-        vistoPeloAluno: false,
+        vistoPeloAluno: visto,
         secoes: remoto.secoes ?? {},
         criadoEm: paraTimestamp(remoto.criadoEm),
         atualizadoEm: remotoEm,

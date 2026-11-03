@@ -9,6 +9,8 @@ import { db } from "../db/dexie";
 import type { LocalProntuario } from "../db/dexie";
 import { ApiError, api } from "../lib/api";
 import { ACESSO_EXPIRADO_EVENT, acessoVigente } from "../lib/acesso";
+import { marcadorDeAviso, registrarAvisoVisto } from "../lib/avisosVistos";
+import { getSession } from "../lib/session";
 import { uuid } from "../lib/uuid";
 
 export const SYNC_EVENT = "sync:changed";
@@ -396,7 +398,9 @@ export async function liberarAcessoManual(prontuarioId: string, matricula: strin
 }
 
 export async function marcarComoVisto(prontuarioId: string): Promise<void> {
+  const p = await db.prontuarios.get(prontuarioId);
   await db.prontuarios.update(prontuarioId, { vistoPeloAluno: true });
+  if (p) registrarAvisoVisto(getSession()?.user.id, prontuarioId, marcadorDeAviso(p.status, p.assinadoEm, p.devolvidoEm));
 }
 
 let iniciado = false;

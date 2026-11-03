@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import type { NotificacaoAluno } from "@prontuario/shared";
 import { api } from "../lib/api";
 
@@ -6,6 +6,7 @@ const POLLING_MS = 30_000;
 
 export function useNotificacoes(): { notificacoes: NotificacaoAluno[]; dispensar: (id: string) => void } {
   const [notificacoes, setNotificacoes] = useState<NotificacaoAluno[]>([]);
+  const exibidas = useRef(new Set<string>());
 
   useEffect(() => {
     let ativo = true;
@@ -13,7 +14,16 @@ export function useNotificacoes(): { notificacoes: NotificacaoAluno[]; dispensar
       if (!navigator.onLine) return;
       api
         .get<NotificacaoAluno[]>("/notificacoes")
-        .then((lista) => ativo && setNotificacoes(lista))
+        .then((lista) => {
+          if (!ativo) return;
+          const novas = lista.filter((n) => !exibidas.current.has(n.id));
+          if (novas.length === 0) return;
+          for (const n of novas) {
+            exibidas.current.add(n.id);
+            api.post(`/notificacoes/${encodeURIComponent(n.id)}/lida`, {}).catch(() => undefined);
+          }
+          setNotificacoes((atual) => [...novas, ...atual]);
+        })
         .catch(() => undefined);
     };
     const aoFicarVisivel = () => {
@@ -34,7 +44,6 @@ export function useNotificacoes(): { notificacoes: NotificacaoAluno[]; dispensar
 
   const dispensar = useCallback((id: string) => {
     setNotificacoes((atual) => atual.filter((n) => n.id !== id));
-    api.post(`/notificacoes/${encodeURIComponent(id)}/lida`, {}).catch(() => undefined);
   }, []);
 
   return { notificacoes, dispensar };

@@ -477,8 +477,8 @@ export default function Prontuario() {
       </nav>
 
       <main className="flex-1 px-5 pb-4 pt-2">
-        {atual.historico && atual.historico.secoes[secao.id] && (
-          <div className="mb-3">
+        {atual.historico && !!atual.historico.secoes[secao.id] && (
+            <div className="mb-3">
             <HistoricoSecao
               key={`${atual.id}-${secao.id}`}
               secaoId={secao.id}
