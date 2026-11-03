@@ -6,19 +6,23 @@ import {
   type SyncResponse,
 } from "@prontuario/shared";
 import { db } from "../db/dexie";
+import type { LocalProntuario } from "../db/dexie";
 import { ApiError, api } from "../lib/api";
+import { ACESSO_EXPIRADO_EVENT, acessoVigente } from "../lib/acesso";
+import { marcadorDeAviso, registrarAvisoVisto } from "../lib/avisosVistos";
+import { getSession } from "../lib/session";
 import { uuid } from "../lib/uuid";
 
 export const SYNC_EVENT = "sync:changed";
 export const ULTIMO_SALVAMENTO_KEY = "prontuario:ultimoSalvamento";
 const INTERVALO_MS = 30_000;
 const LOTE = 200;
+const ACESSO_DURACAO_MS = 4 * 60 * 60 * 1000;
 
 function registrarSalvamento(ts: number): void {
   try {
     localStorage.setItem(ULTIMO_SALVAMENTO_KEY, String(ts));
   } catch {
-    // armazenamento indisponível: a pill apenas não mostra a hora
   }
 }
 
@@ -33,6 +37,7 @@ export function contarPendentes(): Promise<number> {
 export async function criarProntuarioLocal(alunoTitularId: string): Promise<string> {
   const id = uuid();
   const agora = Date.now();
+  const acessoExpiraEm = new Date(agora + ACESSO_DURACAO_MS).toISOString();
 
   await db.transaction("rw", db.prontuarios, db.syncQueue, async () => {
     await db.prontuarios.add({
@@ -44,6 +49,7 @@ export async function criarProntuarioLocal(alunoTitularId: string): Promise<stri
       atualizadoEm: agora,
       sincronizado: false,
       alunoTitularId,
+      acessoExpiraEm,
     });
     await db.syncQueue.add({
       prontuarioId: id,
@@ -66,6 +72,12 @@ export async function criarProntuarioLocal(alunoTitularId: string): Promise<stri
   return id;
 }
 
+export class AcessoExpiradoError extends Error {
+  constructor() {
+    super("O acesso temporário expirou.");
+  }
+}
+
 export interface CabecalhoPaciente {
   pacienteNome?: string;
   pacienteDataNascimento?: string;
@@ -83,8 +95,11 @@ export async function salvarSecaoLocal(
   await db.transaction("rw", db.prontuarios, db.syncQueue, async () => {
     const atual = await db.prontuarios.get(dados.prontuarioId);
     if (!atual) throw new Error("Prontuário não encontrado no aparelho");
+    if (atual.status === "transferido") throw new Error("Prontuário transferido é somente leitura");
 
-    // Só entra no cabeçalho o que é válido e realmente mudou (vazio nunca apaga o nome/nascimento)
+    const invalidaAssinatura = atual.status === "assinado";
+    if (invalidaAssinatura && !acessoVigente(atual, agora)) throw new AcessoExpiradoError();
+
     const nome = cabecalho?.pacienteNome?.trim();
     const novoNome = nome && nome.length >= 2 && nome !== atual.pacienteNome ? nome : undefined;
     const nascimento = cabecalho?.pacienteDataNascimento?.trim();
@@ -95,6 +110,16 @@ export async function salvarSecaoLocal(
 
     await db.prontuarios.put({
       ...atual,
+      ...(invalidaAssinatura
+        ? {
+            status: "em_andamento" as const,
+            assinadoEm: undefined,
+            assinadoPorNome: undefined,
+            acessoSolicitadoEm: undefined,
+            acessoExpiraEm: undefined,
+            acessoRevogadoEm: undefined,
+          }
+        : {}),
       ...(novoNome ? { pacienteNome: novoNome } : {}),
       ...(novoNascimento ? { pacienteDataNascimento: novoNascimento } : {}),
       secoes: { ...atual.secoes, [dados.secaoId]: dados.conteudo },
@@ -116,8 +141,6 @@ export async function salvarSecaoLocal(
       });
     }
 
-    // Cada operação de seção leva o conteúdo COMPLETO (upsert). Ops pendentes da mesma seção ficam
-    // obsoletas: mantê-las só incharia a fila (e o corpo do /sync, se a seção tiver foto).
     const entityIdSecao = `${dados.prontuarioId}:${dados.secaoId}`;
     const obsoletas = await db.syncQueue
       .where("prontuarioId")
@@ -143,7 +166,6 @@ export async function salvarSecaoLocal(
 
 let emVoo: Promise<void> | null = null;
 
-
 export function flush(): Promise<void> {
   if (!navigator.onLine) return Promise.resolve();
   if (emVoo) return emVoo;
@@ -159,26 +181,59 @@ async function executarFlush(): Promise<void> {
       const lote = await db.syncQueue.toCollection().limit(LOTE).toArray();
       if (lote.length === 0) break;
 
+      const prontCache = new Map<string, LocalProntuario | undefined>();
+
+      const getPront = async (pid: string): Promise<LocalProntuario | undefined> => {
+        if (prontCache.has(pid)) return prontCache.get(pid);
+        const p = await db.prontuarios.get(pid);
+        prontCache.set(pid, p);
+        return p;
+      };
+
+      const enviar: typeof lote = [];
+      for (const op of lote) {
+        const p = await getPront(op.prontuarioId);
+        if (!p) {
+          enviar.push(op);
+          continue;
+        }
+        const bloqueado =
+          (p.status === "enviado" || p.status === "assinado") && !acessoVigente(p, op.ts);
+        if (!bloqueado) enviar.push(op);
+      }
+
+      if (enviar.length === 0) break; 
+
       const resposta = await api.post<SyncResponse>("/sync", {
-        operations: lote.map(({ id: _id, ...op }) => op),
+        operations: enviar.map(({ id: _id, ...op }) => op),
       });
 
-      await db.syncQueue.bulkDelete(lote.map((o) => o.id!));
-      await tratarEnviosRecusados(resposta.envios ?? []);
+      const bloqueadasBackend = new Set(resposta.acessoExpirado ?? []);
+      const apagar = enviar.filter((op) => !bloqueadasBackend.has(op.prontuarioId));
+      if (apagar.length > 0) {
+        await db.syncQueue.bulkDelete(apagar.map((o) => o.id!));
+      }
 
-      for (const pid of new Set(lote.map((o) => o.prontuarioId))) {
+      await tratarEnviosRecusados(resposta.envios ?? []);
+      if (bloqueadasBackend.size > 0) {
+        await tratarAcessosExpirados([...bloqueadasBackend]);
+      }
+
+      for (const pid of new Set(enviar.map((o) => o.prontuarioId))) {
         const restantes = await db.syncQueue.where("prontuarioId").equals(pid).count();
         if (restantes === 0) await db.prontuarios.update(pid, { sincronizado: true });
       }
       notifyChanged();
+
+      if (apagar.length === 0) break;
     }
   } catch {
-    // mantém a fila; tenta de novo no próximo ciclo ou quando voltar online
   }
 }
 
 async function tratarEnviosRecusados(envios: EnvioSincronizado[]): Promise<void> {
   for (const e of envios) {
+    if (e.ok && e.duplicado) await db.prontuarios.update(e.prontuarioId, { sinalizadoDuplicidade: true });
     if (e.ok || e.erro === "ja_enviado") continue;
     await db.prontuarios
       .where("id")
@@ -191,6 +246,11 @@ async function tratarEnviosRecusados(envios: EnvioSincronizado[]): Promise<void>
   }
 }
 
+async function tratarAcessosExpirados(ids: string[]): Promise<void> {
+  if (ids.length === 0) return;
+  window.dispatchEvent(new CustomEvent(ACESSO_EXPIRADO_EVENT));
+}
+
 export type ResultadoEnvioLocal =
   | { tipo: "enviado"; resultado: ResultadoEnvio; enviadoEm: number }
   | { tipo: "offline"; salvoEm: number }
@@ -199,7 +259,12 @@ export type ResultadoEnvioLocal =
 
 const esperar = (ms: number) => new Promise<void>((resolve) => window.setTimeout(resolve, ms));
 
-async function marcarEnviadoLocal(prontuarioId: string, sincronizado: boolean, ts: number): Promise<void> {
+async function marcarEnviadoLocal(
+  prontuarioId: string,
+  sincronizado: boolean,
+  ts: number,
+  duplicado?: boolean,
+): Promise<void> {
   await db.prontuarios
     .where("id")
     .equals(prontuarioId)
@@ -207,6 +272,7 @@ async function marcarEnviadoLocal(prontuarioId: string, sincronizado: boolean, t
       p.status = "enviado";
       p.atualizadoEm = ts;
       p.sincronizado = sincronizado;
+      if (duplicado !== undefined) p.sinalizadoDuplicidade = duplicado;
       delete p.erroEnvio;
     });
 }
@@ -216,7 +282,7 @@ async function enfileirarEnvio(prontuarioId: string): Promise<number> {
 
   await db.transaction("rw", db.prontuarios, db.syncQueue, async () => {
     const naFila = await db.syncQueue.where("prontuarioId").equals(prontuarioId).toArray();
-    const ts = Math.max(agora, ...naFila.map((o) => o.ts + 1)); // o servidor aplica por ts: "enviar" tem de ser o último
+    const ts = Math.max(agora, ...naFila.map((o) => o.ts + 1)); 
     await marcarEnviadoLocal(prontuarioId, false, ts);
     if (!naFila.some((o) => o.op === "enviar")) {
       await db.syncQueue.add({
@@ -255,7 +321,7 @@ export async function enviarAoProfessor(prontuarioId: string): Promise<Resultado
       return { tipo: "erro", mensagem: "Não foi possível enviar o prontuário. Tente novamente." };
     }
     const enviadoEm = Date.now();
-    await marcarEnviadoLocal(prontuarioId, true, enviadoEm);
+    await marcarEnviadoLocal(prontuarioId, true, enviadoEm, Boolean(resultado.duplicado));
     notifyChanged();
     return { tipo: "enviado", resultado, enviadoEm };
   } catch (err) {
@@ -269,6 +335,72 @@ export async function enviarAoProfessor(prontuarioId: string): Promise<Resultado
     }
     return { tipo: "erro", mensagem: "Não foi possível enviar o prontuário. Tente novamente." };
   }
+}
+
+export async function reabrirParaCorrecao(prontuarioId: string): Promise<void> {
+  const agora = Date.now();
+
+  await db.transaction("rw", db.prontuarios, db.syncQueue, async () => {
+    const atual = await db.prontuarios.get(prontuarioId);
+    if (!atual || atual.status !== "devolvido") return;
+
+    await db.prontuarios.put({
+      ...atual,
+      status: "em_andamento",
+      devolvidoEm: undefined,
+      devolvidoPorNome: undefined,
+      motivoDevolucao: undefined,
+      comentarioDevolucao: undefined,
+      vistoPeloAluno: true,
+      atualizadoEm: agora,
+      sincronizado: false,
+    });
+    await db.syncQueue.add({
+      prontuarioId,
+      op: "reabrir",
+      entity: "prontuario",
+      entityId: prontuarioId,
+      payload: {},
+      ts: agora,
+    });
+  });
+
+  registrarSalvamento(agora);
+  notifyChanged();
+  void flush();
+}
+
+export async function liberarAcessoManual(prontuarioId: string, matricula: string): Promise<string> {
+  const agora = Date.now();
+  const acessoExpiraEm = new Date(agora + ACESSO_DURACAO_MS).toISOString();
+
+  await db.transaction("rw", db.prontuarios, db.syncQueue, async () => {
+    await db.prontuarios.update(prontuarioId, {
+      acessoExpiraEm,
+      acessoRevogadoEm: undefined,
+      acessoRecusadoEm: undefined,
+      sincronizado: false,
+    });
+    await db.syncQueue.add({
+      prontuarioId,
+      op: "liberacao-manual",
+      entity: "prontuario",
+      entityId: prontuarioId,
+      payload: { matricula, acessoExpiraEm },
+      ts: agora,
+    });
+  });
+
+  registrarSalvamento(agora);
+  notifyChanged();
+  void flush();
+  return acessoExpiraEm;
+}
+
+export async function marcarComoVisto(prontuarioId: string): Promise<void> {
+  const p = await db.prontuarios.get(prontuarioId);
+  await db.prontuarios.update(prontuarioId, { vistoPeloAluno: true });
+  if (p) registrarAvisoVisto(getSession()?.user.id, prontuarioId, marcadorDeAviso(p.status, p.assinadoEm, p.devolvidoEm));
 }
 
 let iniciado = false;

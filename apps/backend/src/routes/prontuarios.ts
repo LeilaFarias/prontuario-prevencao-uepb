@@ -1,7 +1,25 @@
 import { randomUUID } from "node:crypto";
-import type { FastifyPluginAsync } from "fastify";
+import type { FastifyPluginAsync, FastifyReply } from "fastify";
+import {
+  assinarSchema,
+  devolverSchema,
+  manterTitularidadeSchema,
+  transferirTitularidadeSchema,
+  type DuplicidadeResponse,
+  type Encaminhamento,
+  type FilaRevisaoResponse,
+  type ItemFilaRevisao,
+  type HistoricoProntuario,
+  type PartesDuplicidade,
+  type AssinarResponse,
+  type CodigoErroRevisao,
+  type DevolverResponse,
+} from "@prontuario/shared";
 import { transacao } from "../db";
-import { enviarProntuario } from "../lib/envio";
+import { ACESSO_DURACAO_MS, estadoAcesso, pedidoPendente, type AcessoRow } from "../lib/acesso";
+import { buscarDuplicado, enviarProntuario } from "../lib/envio";
+import { reabrirProntuario } from "../lib/reabertura";
+import { verificarSenha } from "../lib/senha";
 
 interface ProntuarioListaRow {
   id: string;
@@ -13,11 +31,62 @@ interface ProntuarioListaRow {
   alunoTitularId: string;
   professorSupervisorId: string | null;
   alunoNome: string;
+  professorSupervisorNome: string | null;
+  sinalizadoDuplicidade: number;
+  duplicidadeEmAnalise: number;
+  transferidoDe: string | null;
+  transferidoPara: string | null;
 }
 
 interface SecaoRow {
   secaoId: string;
   conteudo: string;
+}
+
+interface ProfessorRow {
+  id: string;
+  nome: string;
+  matricula: string | null;
+  senhaHash: string;
+}
+
+interface ProntuarioRevisaoRow {
+  status: string;
+  professorSupervisorId: string | null;
+  acessoExpiraEm: string | null;
+  acessoRevogadoEm: string | null;
+  acessoSolicitadoEm: string | null;
+  acessoRecusadoEm: string | null;
+}
+
+interface ProntuarioAcessoRow extends AcessoRow {
+  status: string;
+  alunoTitularId: string;
+  professorSupervisorId: string | null;
+}
+
+interface RevisaoDetalheRow extends AcessoRow {
+  assinadoEm: string | null;
+  assinadoPorNome: string | null;
+  devolvidoEm: string | null;
+  devolvidoPorNome: string | null;
+  motivoDevolucao: string | null;
+  comentarioDevolucao: string | null;
+}
+
+interface SolicitarAcessoBody {
+  professorSupervisorId?: string;
+  professorSupervisorNome?: string;
+}
+
+function contarProcedimentos(conteudo: string | undefined): number {
+  if (!conteudo) return 0;
+  try {
+    const dados = JSON.parse(conteudo) as { itens?: unknown };
+    return Array.isArray(dados.itens) ? dados.itens.length : 0;
+  } catch {
+    return 0;
+  }
 }
 
 const ATUALIZADO_EM_EFETIVO = `
@@ -35,7 +104,24 @@ const COLUNAS = `
   ${ATUALIZADO_EM_EFETIVO} AS atualizadoEm,
   p.alunoTitularId,
   p.professorSupervisorId,
-  u.nome AS alunoNome`;
+  p.sinalizadoDuplicidade,
+  CASE
+    WHEN p.sinalizadoDuplicidade = 0
+      AND p.status NOT IN ('EM_ANDAMENTO', 'TRANSFERIDO')
+      AND EXISTS (
+        SELECT 1 FROM Prontuario o
+        WHERE o.id != p.id
+          AND o.pacienteNome = p.pacienteNome
+          AND o.pacienteDataNascimento = p.pacienteDataNascimento
+          AND o.alunoTitularId != p.alunoTitularId
+          AND o.status = 'ENVIADO'
+          AND o.sinalizadoDuplicidade = 1
+      ) THEN 1 ELSE 0
+  END AS duplicidadeEmAnalise,
+  p.transferidoDe,
+  p.transferidoPara,
+  u.nome AS alunoNome,
+  pr.nome AS professorSupervisorNome`;
 
 export const prontuariosRoutes: FastifyPluginAsync = async (app) => {
   const { db } = app;
@@ -45,12 +131,14 @@ export const prontuariosRoutes: FastifyPluginAsync = async (app) => {
     `SELECT ${COLUNAS}
      FROM Prontuario p
      JOIN Usuario u ON u.id = p.alunoTitularId
+     LEFT JOIN Usuario pr ON pr.id = p.professorSupervisorId
      ORDER BY atualizadoEm DESC`,
   );
   const listarDoAluno = db.prepare(
     `SELECT ${COLUNAS}
      FROM Prontuario p
      JOIN Usuario u ON u.id = p.alunoTitularId
+     LEFT JOIN Usuario pr ON pr.id = p.professorSupervisorId
      WHERE p.alunoTitularId = ?
      ORDER BY atualizadoEm DESC`,
   );
@@ -58,41 +146,350 @@ export const prontuariosRoutes: FastifyPluginAsync = async (app) => {
     `SELECT ${COLUNAS}
      FROM Prontuario p
      JOIN Usuario u ON u.id = p.alunoTitularId
+     LEFT JOIN Usuario pr ON pr.id = p.professorSupervisorId
      WHERE p.id = ?`,
   );
+  const listarConclusoesDoProfessor = db.prepare(
+    `SELECT p.id, p.pacienteNome, u.nome AS alunoNome, s.conteudo
+     FROM Prontuario p
+     JOIN Secao s ON s.prontuarioId = p.id AND s.secaoId = 'conclusao'
+     JOIN Usuario u ON u.id = p.alunoTitularId
+     WHERE p.professorSupervisorId = ? AND p.status = 'ASSINADO'
+     ORDER BY p.atualizadoEm DESC`,
+  );
+  const listarEnviados = db.prepare(
+    `SELECT p.id, p.pacienteNome, p.pacienteDataNascimento, p.sinalizadoDuplicidade, p.professorSupervisorId,
+            p.alunoTitularId, ${ATUALIZADO_EM_EFETIVO} AS atualizadoEm, u.nome AS alunoNome,
+            pr.nome AS professorSupervisorNome
+     FROM Prontuario p
+     JOIN Usuario u ON u.id = p.alunoTitularId
+     LEFT JOIN Usuario pr ON pr.id = p.professorSupervisorId
+     WHERE p.status = 'ENVIADO'
+     ORDER BY atualizadoEm DESC`,
+  );
   const buscarSecoes = db.prepare("SELECT secaoId, conteudo FROM Secao WHERE prontuarioId = ?");
+  const buscarSecaoProcedimentos = db.prepare(
+    "SELECT conteudo FROM Secao WHERE prontuarioId = ? AND secaoId = 'procedimentos'",
+  );
+  const buscarRevisao = db.prepare(
+    `SELECT assinadoEm, assinadoPorNome, devolvidoEm, devolvidoPorNome, motivoDevolucao, comentarioDevolucao,
+       acessoSolicitadoEm, acessoExpiraEm, acessoRevogadoEm, acessoRecusadoEm
+      FROM Prontuario WHERE id = ?`,
+  );
+  const buscarPartes = db.prepare(
+    `SELECT p.id AS prontuarioId, p.pacienteNome, p.pacienteDataNascimento, p.status, p.criadoEm,
+            p.sinalizadoDuplicidade, p.alunoTitularId AS alunoId, u.nome AS alunoNome,
+            p.professorSupervisorId AS professorId, pr.nome AS professorNome
+     FROM Prontuario p
+     JOIN Usuario u ON u.id = p.alunoTitularId
+     LEFT JOIN Usuario pr ON pr.id = p.professorSupervisorId
+     WHERE p.id = ?`,
+  );
+  const buscarConsentimento = db.prepare(
+    "SELECT conteudo FROM Secao WHERE prontuarioId = ? AND secaoId = 'consentimento'",
+  );
+  const inserirNotificacao = db.prepare(
+    "INSERT INTO Notificacao (id, usuarioId, prontuarioId, tipo, mensagem) VALUES (?, ?, ?, ?, ?)",
+  );
+  const gravarManutencao = db.prepare(
+    `UPDATE Prontuario SET professorSupervisorId = ?, sinalizadoDuplicidade = 0, atualizadoEm = ? WHERE id = ?`,
+  );
+  const atualizarCarimbo = db.prepare("UPDATE Prontuario SET atualizadoEm = ? WHERE id = ?");
+  const gravarTransferenciaArquivado = db.prepare(
+    `UPDATE Prontuario
+     SET status = 'TRANSFERIDO', transferidoPara = ?, sinalizadoDuplicidade = 0, atualizadoEm = ?
+     WHERE id = ?`,
+  );
+  const gravarTransferenciaAtivo = db.prepare(
+    `UPDATE Prontuario
+     SET status = 'EM_ANDAMENTO', transferidoDe = ?, professorSupervisorId = ?,
+         assinaturaInvalidada = CASE WHEN assinadoEm IS NULL THEN assinaturaInvalidada ELSE 1 END,
+         assinadoEm = NULL, assinadoPorId = NULL, assinadoPorNome = NULL,
+         sinalizadoDuplicidade = 0, atualizadoEm = ?
+     WHERE id = ?`,
+  );
+  const registrarAuditoria = db.prepare(
+    "INSERT INTO AuditLog (id, usuarioId, prontuarioId, acao, detalhe) VALUES (?, ?, ?, ?, ?)",
+  );
+  const buscarNomeProfessor = db.prepare("SELECT nome FROM Usuario WHERE id = ?");
+  const buscarAcesso = db.prepare(
+    `SELECT status, alunoTitularId, professorSupervisorId,
+       acessoSolicitadoEm, acessoExpiraEm, acessoRevogadoEm, acessoRecusadoEm
+      FROM Prontuario WHERE id = ?`,
+  );
+  const gravarSolicitacao = db.prepare(
+    `UPDATE Prontuario
+      SET acessoSolicitadoEm = ?,
+          acessoExpiraEm = NULL,
+          acessoRevogadoEm = NULL,
+          acessoRecusadoEm = NULL,
+          professorSupervisorId = COALESCE(?, professorSupervisorId),
+          atualizadoEm = ?
+      WHERE id = ?`,
+  );
+  const gravarAprovacao = db.prepare(
+    `UPDATE Prontuario
+      SET acessoExpiraEm = ?, acessoRevogadoEm = NULL, acessoSolicitadoEm = NULL,
+          acessoRecusadoEm = NULL, atualizadoEm = ?
+      WHERE id = ?`,
+  );
+  const gravarRevogacao = db.prepare(
+    `UPDATE Prontuario
+      SET acessoRevogadoEm = ?, acessoExpiraEm = NULL, acessoRecusadoEm = NULL, atualizadoEm = ?
+      WHERE id = ?`,
+  );
+  const gravarRecusa = db.prepare(
+    `UPDATE Prontuario
+      SET acessoSolicitadoEm = NULL,
+          acessoRecusadoEm = ?,
+          acessoRevogadoEm = ?,
+          atualizadoEm = ?
+      WHERE id = ?`,
+  );
+  const buscarProfessor = db.prepare(
+    "SELECT id, nome, matricula, senhaHash FROM Usuario WHERE id = ? AND UPPER(perfil) = 'PROFESSOR' AND ativo = 1",
+  );
+  const buscarParaAcao = db.prepare(
+    `SELECT status, professorSupervisorId,
+            acessoExpiraEm, acessoRevogadoEm, acessoSolicitadoEm, acessoRecusadoEm
+     FROM Prontuario WHERE id = ?`,
+  );
+  const gravarAssinatura = db.prepare(
+    `UPDATE Prontuario
+     SET status = 'ASSINADO', assinadoEm = ?, assinadoPorId = ?, assinadoPorNome = ?, assinaturaInvalidada = 0,
+         acessoSolicitadoEm = NULL, acessoExpiraEm = NULL, acessoRevogadoEm = NULL, acessoRecusadoEm = NULL,
+         atualizadoEm = ?
+     WHERE id = ?`,
+  );
+  const gravarDevolucao = db.prepare(
+    `UPDATE Prontuario
+     SET status = 'DEVOLVIDO',
+         devolvidoEm = ?, devolvidoPorId = ?, devolvidoPorNome = ?, motivoDevolucao = ?, comentarioDevolucao = ?,
+         assinaturaInvalidada = CASE WHEN assinadoEm IS NULL THEN assinaturaInvalidada ELSE 1 END,
+         assinadoEm = NULL, assinadoPorId = NULL, assinadoPorNome = NULL,
+         acessoExpiraEm = ?, acessoRevogadoEm = NULL, acessoSolicitadoEm = NULL, acessoRecusadoEm = NULL,
+         atualizadoEm = ?
+     WHERE id = ?`,
+  );
+  const buscarEnvio = db.prepare(
+    `SELECT MAX(ts) AS ts FROM SyncOperationLog
+     WHERE prontuarioId = ? AND entity = 'prontuario' AND op = 'enviar' AND descartada = 0`,
+  );
 
   const registrarLog = db.prepare(
     `INSERT INTO SyncOperationLog (id, prontuarioId, entity, entityId, op, ts, descartada)
-     VALUES (?, ?, 'prontuario', ?, 'enviar', ?, 0)`,
+     VALUES (?, ?, 'prontuario', ?, ?, ?, 0)`,
   );
 
   const ehAluno = (perfil: string): boolean => perfil.toLowerCase() === "aluno";
 
+  const lerDupla = (prontuarioId: string): { alunoOperador: string; alunoAuxiliar: string } => {
+    const secao = buscarConsentimento.get(prontuarioId) as unknown as { conteudo: string } | undefined;
+    try {
+      const c = JSON.parse(secao?.conteudo ?? "{}") as { alunoOperador?: unknown; alunoAuxiliar?: unknown };
+      return {
+        alunoOperador: typeof c.alunoOperador === "string" ? c.alunoOperador.trim() : "",
+        alunoAuxiliar: typeof c.alunoAuxiliar === "string" ? c.alunoAuxiliar.trim() : "",
+      };
+    } catch {
+      return { alunoOperador: "", alunoAuxiliar: "" };
+    }
+  };
+
+  const textoDupla = (p: PartesDuplicidade): string =>
+    [p.alunoOperador, p.alunoAuxiliar].filter(Boolean).join(" e ") || p.alunoNome;
+
+  const nomeDuplaDe = (prontuarioId: string, alunoNome: string): string => {
+    const { alunoOperador, alunoAuxiliar } = lerDupla(prontuarioId);
+    return [alunoOperador, alunoAuxiliar].filter(Boolean).join(" e ") || alunoNome;
+  };
+
+  const nomeDuplaDestino = (prontuarioId: string | null): string | null => {
+    if (!prontuarioId) return null;
+    const partes = buscarPartes.get(prontuarioId) as unknown as { alunoNome: string } | undefined;
+    return partes ? nomeDuplaDe(prontuarioId, partes.alunoNome) : null;
+  };
+
+  const lerSecoes = (prontuarioId: string, log: { warn: (obj: object, msg: string) => void }): Record<string, unknown> => {
+    const secoes: Record<string, unknown> = {};
+    for (const s of buscarSecoes.all(prontuarioId) as unknown as SecaoRow[]) {
+      try {
+        secoes[s.secaoId] = JSON.parse(s.conteudo);
+      } catch {
+        log.warn({ prontuarioId, secaoId: s.secaoId }, "seção com JSON inválido ignorada");
+      }
+    }
+    return secoes;
+  };
+
+  const montarHistorico = (
+    origemId: string,
+    log: { warn: (obj: object, msg: string) => void },
+  ): HistoricoProntuario | null => {
+    const origem = buscarPartes.get(origemId) as unknown as
+      | { prontuarioId: string; alunoNome: string; professorNome: string | null; criadoEm: string }
+      | undefined;
+    if (!origem) return null;
+    return {
+      prontuarioId: origem.prontuarioId,
+      alunoNome: nomeDuplaDe(origem.prontuarioId, origem.alunoNome),
+      professorNome: origem.professorNome,
+      criadoEm: origem.criadoEm,
+      secoes: lerSecoes(origem.prontuarioId, log),
+    };
+  };
+
+  const comDestino = <T extends { transferidoPara: string | null }>(linha: T): T & { transferidoParaNome: string | null } => ({
+    ...linha,
+    transferidoParaNome: nomeDuplaDestino(linha.transferidoPara),
+  });
+
   app.get("/prontuarios", protegida, async (req) => {
     const userId = req.user.sub;
-    const linhas = ehAluno(req.user.perfil) ? listarDoAluno.all(userId) : listarTodos.all();
-    return linhas as unknown as ProntuarioListaRow[];
+    const linhas = (ehAluno(req.user.perfil) ? listarDoAluno.all(userId) : listarTodos.all()) as unknown as ProntuarioListaRow[];
+    return linhas.map(comDestino);
+  });
+
+  app.get<{ Querystring: { filtro?: string } }>("/fila-revisao", protegida, async (req, reply) => {
+    if (ehAluno(req.user.perfil)) {
+      return reply.status(403).send({ message: "Apenas professores podem consultar a fila de revisão." });
+    }
+
+    const enviados = listarEnviados.all() as unknown as Array<{
+      id: string;
+      pacienteNome: string;
+      pacienteDataNascimento: string | null;
+      sinalizadoDuplicidade: number;
+      professorSupervisorId: string | null;
+      alunoTitularId: string;
+      atualizadoEm: string;
+      alunoNome: string;
+      professorSupervisorNome: string | null;
+    }>;
+
+    const meus = enviados.filter((r) => r.professorSupervisorId === req.user.sub);
+    const visiveis = req.query.filtro === "todos" ? enviados : meus;
+
+    const prontuarios: ItemFilaRevisao[] = visiveis.map((r) => {
+      const sinalizado = r.sinalizadoDuplicidade === 1;
+      const duplicado = sinalizado ? buscarDuplicado(db, r, r.alunoTitularId) : undefined;
+      return {
+        id: r.id,
+        pacienteNome: r.pacienteNome,
+        pacienteDataNascimento: r.pacienteDataNascimento?.slice(0, 10) ?? null,
+        atualizadoEm: r.atualizadoEm,
+        sinalizadoDuplicidade: sinalizado,
+        professorSupervisorId: r.professorSupervisorId,
+        professorSupervisorNome: r.professorSupervisorNome,
+        alunoNome: r.alunoNome,
+        ...lerDupla(r.id),
+        duplaAnteriorNome: duplicado ? nomeDuplaDestino(duplicado.id) : null,
+      };
+    });
+
+    const resposta: FilaRevisaoResponse = {
+      contadores: { meus: meus.length, todos: enviados.length },
+      prontuarios,
+    };
+    return resposta;
+  });
+
+  app.get("/encaminhamentos", protegida, async (req, reply) => {
+    if (ehAluno(req.user.perfil)) {
+      return reply.status(403).send({ message: "Apenas professores podem consultar encaminhamentos." });
+    }
+
+    const linhas = listarConclusoesDoProfessor.all(req.user.sub) as unknown as Array<{
+      id: string;
+      pacienteNome: string;
+      alunoNome: string;
+      conteudo: string;
+    }>;
+
+    const encaminhamentos: Encaminhamento[] = [];
+    for (const linha of linhas) {
+      try {
+        const c = JSON.parse(linha.conteudo) as {
+          tipoDesfecho?: unknown;
+          encaminhamentoEm?: unknown;
+          encaminhamentoPara?: unknown;
+        };
+        if (c.tipoDesfecho !== "encaminhado") continue;
+        encaminhamentos.push({
+          prontuarioId: linha.id,
+          pacienteNome: linha.pacienteNome,
+          duplaNome: nomeDuplaDe(linha.id, linha.alunoNome),
+          encaminhamentoEm: typeof c.encaminhamentoEm === "string" ? c.encaminhamentoEm : "",
+          encaminhamentoPara: typeof c.encaminhamentoPara === "string" ? c.encaminhamentoPara.trim() : "",
+        });
+      } catch {
+        req.log.warn({ prontuarioId: linha.id }, "seção de conclusão com JSON inválido ignorada");
+      }
+    }
+    return encaminhamentos;
   });
 
   app.get<{ Params: { id: string } }>("/prontuarios/:id", protegida, async (req, reply) => {
     const linha = buscarUm.get(req.params.id) as unknown as ProntuarioListaRow | undefined;
     if (!linha) return reply.status(404).send({ message: "Prontuário não encontrado." });
 
-    if (ehAluno(req.user.perfil) && linha.alunoTitularId !== req.user.sub) {
+    const alunoUser = ehAluno(req.user.perfil);
+    if (alunoUser && linha.alunoTitularId !== req.user.sub) {
       return reply.status(403).send({ message: "Você não tem acesso a este prontuário." });
     }
 
-    const secoes: Record<string, unknown> = {};
-    for (const s of buscarSecoes.all(linha.id) as unknown as SecaoRow[]) {
-      try {
-        secoes[s.secaoId] = JSON.parse(s.conteudo);
-      } catch {
-        req.log.warn({ prontuarioId: linha.id, secaoId: s.secaoId }, "seção com JSON inválido ignorada");
-      }
+    const revisao = buscarRevisao.get(linha.id) as unknown as RevisaoDetalheRow;
+    const estado = estadoAcesso(revisao);
+    const professor = linha.professorSupervisorId
+      ? (buscarNomeProfessor.get(linha.professorSupervisorId) as unknown as { nome: string } | undefined)
+      : undefined;
+    const professorSupervisorNome = professor?.nome ?? null;
+
+    const podeVerConteudo = !alunoUser || estado.acessoVigente;
+
+    if (!podeVerConteudo) {
+      return {
+        id: linha.id,
+        pacienteNome: linha.pacienteNome,
+        status: linha.status,
+        bloqueado: true,
+        acessoExpiraEm: revisao.acessoExpiraEm,
+        acessoSolicitadoEm: revisao.acessoSolicitadoEm,
+        acessoRevogadoEm: revisao.acessoRevogadoEm,
+        acessoRecusadoEm: revisao.acessoRecusadoEm,
+        professorSupervisorId: linha.professorSupervisorId,
+        professorSupervisorNome,
+        sinalizadoDuplicidade: linha.sinalizadoDuplicidade,
+        duplicidadeEmAnalise: linha.duplicidadeEmAnalise,
+        transferidoDe: linha.transferidoDe,
+        transferidoPara: linha.transferidoPara,
+        transferidoParaNome: nomeDuplaDestino(linha.transferidoPara),
+        secoes: {},
+      };
     }
 
-    return { ...linha, secoes };
+    const secoes = lerSecoes(linha.id, req.log);
+    const historico = linha.transferidoDe ? montarHistorico(linha.transferidoDe, req.log) : null;
+
+    const ehSupervisor = !alunoUser && linha.professorSupervisorId === req.user.sub;
+    const podeAgir = ehSupervisor && linha.status.toUpperCase() === "ENVIADO";
+
+    const envio = buscarEnvio.get(linha.id) as unknown as { ts: number | null } | undefined;
+    const enviadoEm = envio?.ts ? new Date(envio.ts).toISOString() : null;
+
+    return {
+      ...linha,
+      ...revisao,
+      ...estado,
+      bloqueado: false,
+      professorSupervisorNome,
+      transferidoParaNome: nomeDuplaDestino(linha.transferidoPara),
+      secoes,
+      historico,
+      podeAgir,
+      ehSupervisor,
+      enviadoEm,
+    };
   });
 
   app.post<{ Params: { id: string } }>("/prontuarios/:id/enviar", protegida, async (req, reply) => {
@@ -103,7 +500,7 @@ export const prontuariosRoutes: FastifyPluginAsync = async (app) => {
     const { id } = req.params;
     const resultado = transacao(db, () => {
       const r = enviarProntuario(db, id, req.user.sub);
-      if (r.ok) registrarLog.run(randomUUID(), id, id, Date.now());
+      if (r.ok) registrarLog.run(randomUUID(), id, id, "enviar", Date.now());
       return r;
     });
 
@@ -119,5 +516,445 @@ export const prontuariosRoutes: FastifyPluginAsync = async (app) => {
 
     req.log.info({ prontuarioId: id, duplicado: resultado.duplicado }, "prontuário enviado ao professor");
     return resultado;
+  });
+
+  app.post<{ Params: { id: string } }>("/prontuarios/:id/reabrir", protegida, async (req, reply) => {
+    if (!ehAluno(req.user.perfil)) {
+      return reply.status(403).send({ message: "Apenas o aluno titular pode reabrir o prontuário." });
+    }
+
+    const { id } = req.params;
+    const resultado = transacao(db, () => {
+      const r = reabrirProntuario(db, id, req.user.sub);
+      if (r === "ok") registrarLog.run(randomUUID(), id, id, "reabrir", Date.now());
+      return r;
+    });
+
+    if (resultado === "nao_encontrado") return reply.status(404).send({ message: "Prontuário não encontrado." });
+    if (resultado === "nao_devolvido") {
+      return reply.status(409).send({ message: "Prontuário não está devolvido", codigo: "NAO_DEVOLVIDO" });
+    }
+
+    req.log.info({ prontuarioId: id }, "prontuário reaberto pelo aluno");
+    return { ok: true };
+  });
+
+  type FalhaAcesso = { falha: 400 | 403 | 404 | 409; error: string };
+
+  const responderFalha = (reply: FastifyReply, f: FalhaAcesso) => reply.status(f.falha).send({ error: f.error });
+
+  const NAO_ENCONTRADO: FalhaAcesso = { falha: 404, error: "Prontuário não encontrado." };
+  const NAO_SUPERVISOR: FalhaAcesso = { falha: 403, error: "Apenas o professor supervisor pode realizar esta ação." };
+  const SEM_PEDIDO: FalhaAcesso = { falha: 409, error: "Sem pedido pendente" };
+  const SEM_ACESSO_VIGENTE: FalhaAcesso = { falha: 409, error: "Sem acesso vigente para revogar" };
+  const STATUS_NAO_PERMITE_SOLICITAR: FalhaAcesso = {
+    falha: 409,
+    error: "Status não permite solicitação de acesso",
+  };
+  const PROFESSOR_INVALIDO: FalhaAcesso = { falha: 400, error: "Professor inválido ou inativo." };
+
+  const statusPermiteSolicitar = (status: string): boolean => {
+    const s = status.toUpperCase();
+    return s === "EM_ANDAMENTO" || s === "ASSINADO" || s === "TRANSFERIDO";
+  };
+
+  app.post<{ Params: { id: string }; Body: SolicitarAcessoBody }>(
+    "/prontuarios/:id/solicitar-acesso",
+    protegida,
+    async (req, reply) => {
+      const { id } = req.params;
+      const body = (req.body ?? {}) as SolicitarAcessoBody;
+
+      const resultado = transacao(db, () => {
+        const pront = buscarAcesso.get(id) as unknown as ProntuarioAcessoRow | undefined;
+        if (!pront || pront.alunoTitularId !== req.user.sub) return NAO_ENCONTRADO;
+
+        if (!statusPermiteSolicitar(pront.status)) return STATUS_NAO_PERMITE_SOLICITAR;
+
+        const estado = estadoAcesso(pront);
+        if (estado.acessoVigente) return { ok: true as const, jaTemAcesso: true };
+        if (estado.pedidoPendente) return { ok: true as const, jaSolicitado: true };
+
+        const professorDoBody = body.professorSupervisorId ?? null;
+
+        if (professorDoBody) {
+          const prof = buscarProfessor.get(professorDoBody) as unknown as
+            | { id: string; nome: string }
+            | undefined;
+          if (!prof) return PROFESSOR_INVALIDO;
+        }
+
+        const professorEfetivo = professorDoBody ?? pront.professorSupervisorId;
+        if (!professorEfetivo) return { ok: false as const, erro: "professor_obrigatorio" as const };
+
+        const agora = new Date().toISOString();
+        gravarSolicitacao.run(agora, professorDoBody, agora, id);
+        registrarLog.run(randomUUID(), id, id, "solicitar-acesso", Date.now());
+        return { ok: true as const };
+      });
+
+      if ("falha" in resultado) return responderFalha(reply, resultado);
+      if ("ok" in resultado && resultado.ok === false) {
+        return reply.status(400).send(resultado);
+      }
+      return resultado;
+    },
+  );
+
+  app.post<{ Params: { id: string } }>("/prontuarios/:id/aprovar-acesso", protegida, async (req, reply) => {
+    const { id } = req.params;
+    const resultado = transacao(db, () => {
+      const pront = buscarAcesso.get(id) as unknown as ProntuarioAcessoRow | undefined;
+      if (!pront) return NAO_ENCONTRADO;
+      if (pront.professorSupervisorId !== req.user.sub) return NAO_SUPERVISOR;
+      if (!pedidoPendente(pront)) return SEM_PEDIDO;
+
+      const agora = Date.now();
+      const acessoExpiraEm = new Date(agora + ACESSO_DURACAO_MS).toISOString();
+      gravarAprovacao.run(acessoExpiraEm, new Date(agora).toISOString(), id);
+      registrarLog.run(randomUUID(), id, id, "aprovar-acesso", agora);
+      return { ok: true as const, acessoExpiraEm };
+    });
+
+    if ("falha" in resultado) return responderFalha(reply, resultado);
+    req.log.info({ prontuarioId: id, professorId: req.user.sub }, "acesso temporário aprovado");
+    return resultado;
+  });
+
+  app.post<{ Params: { id: string } }>("/prontuarios/:id/revogar-acesso", protegida, async (req, reply) => {
+    const { id } = req.params;
+    const resultado = transacao(db, () => {
+      const pront = buscarAcesso.get(id) as unknown as ProntuarioAcessoRow | undefined;
+      if (!pront) return NAO_ENCONTRADO;
+      if (pront.professorSupervisorId !== req.user.sub) return NAO_SUPERVISOR;
+
+      const estado = estadoAcesso(pront);
+      if (!estado.acessoVigente) return SEM_ACESSO_VIGENTE;
+
+      const agora = new Date().toISOString();
+      gravarRevogacao.run(agora, agora, id);
+      registrarLog.run(randomUUID(), id, id, "revogar-acesso", Date.now());
+      return { ok: true as const };
+    });
+
+    if ("falha" in resultado) return responderFalha(reply, resultado);
+    req.log.info({ prontuarioId: id, professorId: req.user.sub }, "acesso temporário revogado");
+    return resultado;
+  });
+
+  app.post<{ Params: { id: string } }>("/prontuarios/:id/recusar-acesso", protegida, async (req, reply) => {
+    const { id } = req.params;
+    const resultado = transacao(db, () => {
+      const pront = buscarAcesso.get(id) as unknown as ProntuarioAcessoRow | undefined;
+      if (!pront) return NAO_ENCONTRADO;
+      if (pront.professorSupervisorId !== req.user.sub) return NAO_SUPERVISOR;
+      if (!pedidoPendente(pront)) return SEM_PEDIDO;
+
+      const agora = new Date().toISOString();
+      gravarRecusa.run(agora, agora, agora, id);
+      registrarLog.run(randomUUID(), id, id, "recusar-acesso", Date.now());
+      return { ok: true as const };
+    });
+
+    if ("falha" in resultado) return responderFalha(reply, resultado);
+    req.log.info({ prontuarioId: id, professorId: req.user.sub }, "pedido de acesso recusado");
+    return resultado;
+  });
+
+  type PartesRow = PartesDuplicidade & {
+    pacienteNome: string;
+    pacienteDataNascimento: string | null;
+    sinalizadoDuplicidade: number;
+  };
+
+  const resumirPartes = (r: PartesRow): PartesDuplicidade => ({
+    prontuarioId: r.prontuarioId,
+    alunoId: r.alunoId,
+    alunoNome: r.alunoNome,
+    ...lerDupla(r.prontuarioId),
+    professorId: r.professorId,
+    professorNome: r.professorNome,
+    criadoEm: r.criadoEm,
+    status: r.status,
+  });
+
+  const notificar = (usuarioId: string, prontuarioId: string, tipo: string, mensagem: string): void => {
+    inserirNotificacao.run(randomUUID(), usuarioId, prontuarioId, tipo, mensagem);
+  };
+
+  const SEM_DUPLICIDADE: FalhaAcesso = { falha: 409, error: "Este prontuário não está sinalizado como duplicado." };
+
+  const montarDuplicidade = (id: string): { falha: FalhaAcesso } | { partes: PartesRow; resposta: DuplicidadeResponse } => {
+    const partes = buscarPartes.get(id) as unknown as PartesRow | undefined;
+    if (!partes) return { falha: NAO_ENCONTRADO };
+    const duplicado = buscarDuplicado(db, { ...partes, id: partes.prontuarioId }, partes.alunoId);
+    const existente = duplicado
+      ? (buscarPartes.get(duplicado.id) as unknown as PartesRow | undefined)
+      : undefined;
+    return {
+      partes,
+      resposta: { atual: resumirPartes(partes), existente: existente ? resumirPartes(existente) : null },
+    };
+  };
+
+  app.get<{ Params: { id: string } }>("/prontuarios/:id/duplicidade", protegida, async (req, reply) => {
+    const r = montarDuplicidade(req.params.id);
+    if ("falha" in r) return responderFalha(reply, r.falha);
+    if (r.partes.professorId !== req.user.sub) return responderFalha(reply, NAO_SUPERVISOR);
+    return r.resposta;
+  });
+
+  app.post<{ Params: { id: string } }>(
+    "/prontuarios/:id/manter-titularidade",
+    protegida,
+    async (req, reply) => {
+      const { professorSupervisorId } = manterTitularidadeSchema.parse(req.body);
+      const { id } = req.params;
+
+      const resultado = transacao(db, () => {
+        const r = montarDuplicidade(id);
+        if ("falha" in r) return r.falha;
+        if (r.partes.professorId !== req.user.sub) return NAO_SUPERVISOR;
+        if (!r.partes.sinalizadoDuplicidade) return SEM_DUPLICIDADE;
+
+        const permitidos = new Set(
+          [r.resposta.atual.professorId, r.resposta.existente?.professorId].filter((v): v is string => !!v),
+        );
+        if (!permitidos.has(professorSupervisorId) || !buscarProfessor.get(professorSupervisorId)) {
+          return PROFESSOR_INVALIDO;
+        }
+
+        const agora = new Date().toISOString();
+        gravarManutencao.run(professorSupervisorId, agora, id);
+        if (r.resposta.existente) atualizarCarimbo.run(agora, r.resposta.existente.prontuarioId);
+        registrarAuditoria.run(
+          randomUUID(),
+          req.user.sub,
+          id,
+          "manutencao-titularidade",
+          JSON.stringify({
+            aluno: r.partes.alunoId,
+            professorAnterior: r.partes.professorId,
+            professorNovo: professorSupervisorId,
+          }),
+        );
+        registrarLog.run(randomUUID(), id, id, "manter-titularidade", Date.now());
+
+        const { atual, existente } = r.resposta;
+        const responsavel = (buscarNomeProfessor.get(professorSupervisorId) as unknown as { nome: string }).nome;
+        notificar(
+          atual.alunoId,
+          id,
+          "duplicidade-mantida",
+          `A duplicidade do prontuário de ${r.partes.pacienteNome} foi resolvida: ele permanece com ${textoDupla(atual)}. Professor responsável: ${responsavel}.`,
+        );
+        if (existente) {
+          notificar(
+            existente.alunoId,
+            existente.prontuarioId,
+            "duplicidade-mantida-outra-dupla",
+            `O prontuário de ${r.partes.pacienteNome} enviado por ${textoDupla(atual)} foi mantido com a outra dupla. O seu prontuário não foi alterado.`,
+          );
+        }
+        return { ok: true as const };
+      });
+
+      if ("falha" in resultado) return responderFalha(reply, resultado);
+      req.log.info({ prontuarioId: id, professorId: req.user.sub }, "titularidade mantida");
+      return resultado;
+    },
+  );
+
+  const PACIENTE_DIVERGENTE: FalhaAcesso = { falha: 409, error: "Os prontuários não são do mesmo paciente." };
+  const JA_TRANSFERIDO: FalhaAcesso = { falha: 409, error: "Este prontuário já foi transferido." };
+  const MESMO_PRONTUARIO: FalhaAcesso = { falha: 400, error: "Os prontuários informados são o mesmo." };
+
+  app.post<{ Params: { id: string } }>(
+    "/prontuarios/:id/transferir-titularidade",
+    protegida,
+    async (req, reply) => {
+      const { prontuarioAntigoId, prontuarioNovoId, quemRecebe, professorEscolhidoId } = transferirTitularidadeSchema.parse(
+        req.body,
+      );
+      if (req.params.id !== prontuarioAntigoId) {
+        return reply.status(400).send({ error: "O prontuário da URL não é o prontuário anterior informado." });
+      }
+
+      const resultado = transacao(db, () => {
+        const antigo = buscarPartes.get(prontuarioAntigoId) as unknown as PartesRow | undefined;
+        const novo = buscarPartes.get(prontuarioNovoId) as unknown as PartesRow | undefined;
+        if (!antigo || !novo) return NAO_ENCONTRADO;
+
+        if (antigo.professorId !== req.user.sub && novo.professorId !== req.user.sub) return NAO_SUPERVISOR;
+        if (antigo.prontuarioId === novo.prontuarioId) return MESMO_PRONTUARIO;
+        if (
+          antigo.pacienteNome !== novo.pacienteNome ||
+          antigo.pacienteDataNascimento !== novo.pacienteDataNascimento
+        ) {
+          return PACIENTE_DIVERGENTE;
+        }
+        if (antigo.status.toUpperCase() === "TRANSFERIDO" || novo.status.toUpperCase() === "TRANSFERIDO") {
+          return JA_TRANSFERIDO;
+        }
+
+        const professorResponsavelId = professorEscolhidoId ?? req.user.sub;
+        const professorResponsavel = buscarProfessor.get(professorResponsavelId) as unknown as
+          | { nome: string }
+          | undefined;
+        if (!professorResponsavel) return PROFESSOR_INVALIDO;
+
+        const recebe = quemRecebe === "anterior" ? antigo : novo;
+        const arquiva = quemRecebe === "anterior" ? novo : antigo;
+        const duplaRecebe = resumirPartes(recebe);
+        const duplaArquiva = resumirPartes(arquiva);
+        const agora = new Date().toISOString();
+
+        gravarTransferenciaArquivado.run(recebe.prontuarioId, agora, arquiva.prontuarioId);
+        gravarTransferenciaAtivo.run(arquiva.prontuarioId, professorResponsavelId, agora, recebe.prontuarioId);
+
+        registrarAuditoria.run(
+          randomUUID(),
+          req.user.sub,
+          recebe.prontuarioId,
+          "transferencia-titularidade",
+          JSON.stringify({
+            idRecebe: recebe.prontuarioId,
+            idArquiva: arquiva.prontuarioId,
+            quemRecebe,
+            professorEscolhidoId: professorResponsavelId,
+          }),
+        );
+        const agoraMs = Date.now();
+        registrarLog.run(randomUUID(), arquiva.prontuarioId, arquiva.prontuarioId, "transferir-titularidade", agoraMs);
+        registrarLog.run(randomUUID(), recebe.prontuarioId, recebe.prontuarioId, "transferir-titularidade", agoraMs);
+
+        const sufixoProfessor = ` Professor responsável: ${professorResponsavel.nome}.`;
+        notificar(
+          arquiva.alunoId,
+          arquiva.prontuarioId,
+          "titularidade-transferida",
+          `O prontuário de ${arquiva.pacienteNome} foi transferido para ${textoDupla(duplaRecebe)}. Ele continua disponível apenas para consulta.${sufixoProfessor}`,
+        );
+        notificar(
+          recebe.alunoId,
+          recebe.prontuarioId,
+          "titularidade-recebida",
+          `O prontuário de ${recebe.pacienteNome} ficou com ${textoDupla(duplaRecebe)}. O histórico de ${textoDupla(duplaArquiva)} está disponível em cada seção.${sufixoProfessor}`,
+        );
+        return { ok: true as const };
+      });
+
+      if ("falha" in resultado) return responderFalha(reply, resultado);
+      req.log.info(
+        { prontuarioAntigoId, prontuarioNovoId, quemRecebe, professorId: req.user.sub, professorEscolhidoId },
+        "titularidade transferida",
+      );
+      return resultado;
+    },
+  );
+
+  const recusar = (reply: FastifyReply, status: number, message: string, codigo: CodigoErroRevisao) =>
+    reply.status(status).send({ message, codigo });
+
+  app.post<{ Params: { id: string } }>("/prontuarios/:id/assinar", protegida, async (req, reply) => {
+    const { matricula, senha } = assinarSchema.parse(req.body);
+
+    const professor = buscarProfessor.get(req.user.sub) as unknown as ProfessorRow | undefined;
+    if (!professor) return reply.status(403).send({ message: "Apenas professores podem assinar prontuários." });
+
+    if (!professor.matricula || professor.matricula !== matricula) {
+      return recusar(reply, 401, "Matrícula não confere", "MATRICULA_NAO_CONFERE");
+    }
+    if (!(await verificarSenha(senha, professor.senhaHash))) {
+      return recusar(reply, 401, "Senha incorreta", "SENHA_INCORRETA");
+    }
+
+    const { id } = req.params;
+    const resultado = transacao(db, () => {
+      const pront = buscarParaAcao.get(id) as unknown as ProntuarioRevisaoRow | undefined;
+      if (!pront) return { erro: 404 as const };
+      if (pront.status.toUpperCase() !== "ENVIADO") return { erro: 409 as const };
+      if (pront.professorSupervisorId !== professor.id) return { erro: 403 as const };
+
+      const agora = new Date().toISOString();
+      gravarAssinatura.run(agora, professor.id, professor.nome, agora, id);
+      registrarLog.run(randomUUID(), id, id, "assinar", Date.now());
+
+      const secao = buscarSecaoProcedimentos.get(id) as unknown as { conteudo: string } | undefined;
+      return { agora, procedimentos: contarProcedimentos(secao?.conteudo) };
+    });
+
+    if ("erro" in resultado) {
+      if (resultado.erro === 404) return reply.status(404).send({ message: "Prontuário não encontrado." });
+      if (resultado.erro === 409) {
+        return recusar(reply, 409, "Prontuário não está aguardando assinatura", "NAO_AGUARDANDO");
+      }
+      return recusar(reply, 403, "Apenas o professor supervisor pode assinar", "NAO_SUPERVISOR");
+    }
+
+    req.log.info({ prontuarioId: id, professorId: professor.id }, "prontuário assinado");
+    const resposta: AssinarResponse = {
+      ok: true,
+      assinadoEm: resultado.agora,
+      assinadoPorNome: professor.nome,
+      procedimentosAssinados: resultado.procedimentos,
+    };
+    return resposta;
+  });
+
+  app.post<{ Params: { id: string } }>("/prontuarios/:id/devolver", protegida, async (req, reply) => {
+    const { motivo, comentario } = devolverSchema.parse(req.body);
+
+    const professor = buscarProfessor.get(req.user.sub) as unknown as ProfessorRow | undefined;
+    if (!professor) return reply.status(403).send({ message: "Apenas professores podem devolver prontuários." });
+
+    const { id } = req.params;
+    const resultado = transacao(db, () => {
+      const pront = buscarParaAcao.get(id) as unknown as ProntuarioRevisaoRow | undefined;
+      if (!pront) return { erro: 404 as const };
+      if (pront.status.toUpperCase() !== "ENVIADO") return { erro: 409 as const };
+      if (pront.professorSupervisorId !== professor.id) return { erro: 403 as const };
+
+      const agoraMs = Date.now();
+      const agora = new Date(agoraMs).toISOString();
+
+      const temAcessoVigente =
+        !!pront.acessoExpiraEm &&
+        new Date(pront.acessoExpiraEm).getTime() > agoraMs &&
+        !pront.acessoRevogadoEm;
+
+      const novoAcessoExpiraEm = temAcessoVigente
+        ? (pront.acessoExpiraEm as string)
+        : new Date(agoraMs + ACESSO_DURACAO_MS).toISOString();
+
+      gravarDevolucao.run(
+        agora,
+        professor.id,
+        professor.nome,
+        motivo,
+        comentario,
+        novoAcessoExpiraEm,
+        agora,
+        id,
+      );
+      registrarLog.run(randomUUID(), id, id, "devolver", agoraMs);
+      return { agora, novoAcessoExpiraEm };
+    });
+
+    if ("erro" in resultado) {
+      if (resultado.erro === 404) return reply.status(404).send({ message: "Prontuário não encontrado." });
+      if (resultado.erro === 409) {
+        return recusar(reply, 409, "Prontuário não está aguardando revisão", "NAO_AGUARDANDO");
+      }
+      return recusar(reply, 403, "Apenas o professor supervisor pode devolver", "NAO_SUPERVISOR");
+    }
+
+    req.log.info({ prontuarioId: id, professorId: professor.id, motivo }, "prontuário devolvido ao aluno");
+    const resposta: DevolverResponse = {
+      ok: true,
+      devolvidoEm: resultado.agora,
+      devolvidoPorNome: professor.nome,
+    };
+    return resposta;
   });
 };

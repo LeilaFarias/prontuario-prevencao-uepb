@@ -17,6 +17,11 @@ interface UsuarioRow {
   criadoEm: string;
 }
 
+interface AlunoRow {
+  id: string;
+  nome: string;
+}
+
 export const userRoutes: FastifyPluginAsync = async (app) => {
   const { db } = app;
   const protegida = { preHandler: app.autenticar };
@@ -32,6 +37,17 @@ export const userRoutes: FastifyPluginAsync = async (app) => {
     (db.prepare("SELECT senhaHash FROM Usuario WHERE id = ?").get(id) as unknown as
       | { senhaHash: string }
       | undefined)?.senhaHash;
+
+  const listarAlunos = db.prepare(
+    "SELECT id, nome FROM Usuario WHERE UPPER(perfil) = 'ALUNO' AND ativo = 1 ORDER BY nome",
+  );
+
+  app.get("/alunos", protegida, async (req, reply) => {
+    if (req.user.perfil.toLowerCase() !== "professor") {
+      return reply.status(403).send({ message: "Apenas professores podem listar alunos." });
+    }
+    return listarAlunos.all() as unknown as AlunoRow[];
+  });
 
   app.get("/users/me", protegida, async (req) => buscarMe(req.user.sub));
 

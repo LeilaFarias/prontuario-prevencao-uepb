@@ -7,7 +7,6 @@ interface Opcao<T extends string> {
 
 interface Props<T extends string> {
   label: string;
-  /** null = nenhuma opção marcada. */
   value: T | null;
   onChange: (valor: T) => void;
   options: ReadonlyArray<Opcao<T>>;

@@ -16,8 +16,10 @@ import PerfilLinha from "../components/PerfilLinha";
 import Topbar from "../components/Topbar";
 import { api, ApiError } from "../lib/api";
 import { clearSession, getSession, updateSessionUser } from "../lib/session";
+import { rotaInicial } from "../lib/rotas";
+import { useSemestre } from "../hooks/useSemestre";
 
-type ModalAberto = null | "nome" | "email" | "matricula" | "senha" | "excluir";
+type ModalAberto = null | "nome" | "email" | "matricula" | "senha" | "excluir" | "sair";
 
 interface Tema {
   texto: string;
@@ -27,8 +29,6 @@ interface Tema {
 
 const TEMA_ALUNO: Tema = { texto: "text-primary", fundo: "bg-primary", tint: "bg-primary-tint" };
 const TEMA_PROFESSOR: Tema = { texto: "text-prof", fundo: "bg-prof", tint: "bg-prof-tint" };
-
-const SEMESTRE_VIGENTE: { inicio: string | null; fim: string | null } = { inicio: null, fim: null };
 
 const mensagem = (e: unknown) => (e instanceof Error ? e.message : "Algo deu errado. Tente novamente.");
 
@@ -153,7 +153,7 @@ function ModalSenha({ tema, onClose, onSucesso }: { tema: Tema; onClose: () => v
   );
 }
 
-function ModalExcluir({ tema, onClose, onSucesso }: { tema: Tema; onClose: () => void; onSucesso: () => void }) {
+function ModalExcluir({ tema, onClose, onSucesso }: { tema: Tema; onClose: () => void; onSucesso: () => Promise<void> }) {
   const [erro, setErro] = useState<string | null>(null);
   const {
     register,
@@ -165,7 +165,7 @@ function ModalExcluir({ tema, onClose, onSucesso }: { tema: Tema; onClose: () =>
     setErro(null);
     try {
       await api.delete("/users/me", dados);
-      onSucesso();
+      await onSucesso();
     } catch (e) {
       setErro(e instanceof ApiError && e.status === 401 ? "Senha incorreta" : mensagem(e));
     }
@@ -188,6 +188,110 @@ function ModalExcluir({ tema, onClose, onSucesso }: { tema: Tema; onClose: () =>
         <BotoesModal tema={tema} enviando={isSubmitting} rotulo="Excluir minha conta" destrutivo onCancelar={onClose} />
       </form>
     </BottomSheet>
+  );
+}
+
+function ModalSair({ onClose, onSucesso }: { onClose: () => void; onSucesso: () => Promise<void> }) {
+  const [saindo, setSaindo] = useState(false);
+
+  async function confirmar() {
+    setSaindo(true);
+    await onSucesso();
+  }
+
+  return (
+    <BottomSheet open onClose={onClose} title="Sair da conta" bloqueado={saindo}>
+      <div className="-mt-1 mb-3 flex h-11 w-11 items-center justify-center rounded-full bg-alt-tint text-alt">
+        <LogOut size={22} />
+      </div>
+      <p className="text-[13px] leading-relaxed text-ink-soft">
+        Você será desconectado deste aparelho. Você poderá entrar novamente quando quiser.
+      </p>
+      <div className="mt-5 flex flex-col gap-2.5">
+        <button
+          type="button"
+          disabled={saindo}
+          onClick={() => void confirmar()}
+          className="btn bg-alt-tint text-alt"
+        >
+          {saindo ? "Saindo…" : "Sair da conta"}
+        </button>
+        <button type="button" disabled={saindo} onClick={onClose} className="btn-ghost">
+          Cancelar
+        </button>
+      </div>
+    </BottomSheet>
+  );
+}
+
+function SemestreVigente({ tema }: { tema: Tema }) {
+  const { inicio, fim, setInicio, setFim, carregando, salvando, salvar } = useSemestre();
+  const [erro, setErro] = useState<string | null>(null);
+  const [salvo, setSalvo] = useState(false);
+
+  const incompleto = !inicio || !fim;
+  const invertido = !incompleto && inicio >= fim;
+
+  async function enviar() {
+    setErro(null);
+    setSalvo(false);
+    const falha = await salvar();
+    if (falha) setErro(falha);
+    else setSalvo(true);
+  }
+
+  return (
+    <section className="mt-4 rounded-card border border-line-soft bg-raised p-4">
+      <div className="flex items-center gap-2">
+        <CalendarDays size={16} className={tema.texto} />
+        <h2 className="font-display text-[15px] font-semibold text-ink">Semestre vigente</h2>
+      </div>
+      <p className="mt-1 text-[12px] text-ink-soft">Define o intervalo usado no indicador de pacientes atendidos.</p>
+
+      <div className="mt-3 grid grid-cols-2 gap-3">
+        <div>
+          <label htmlFor="semestre-inicio" className="label">Início</label>
+          <input
+            id="semestre-inicio"
+            type="date"
+            className="input"
+            disabled={carregando}
+            value={inicio}
+            onChange={(e) => {
+              setInicio(e.target.value);
+              setSalvo(false);
+            }}
+          />
+        </div>
+        <div>
+          <label htmlFor="semestre-fim" className="label">Fim</label>
+          <input
+            id="semestre-fim"
+            type="date"
+            className="input"
+            disabled={carregando}
+            value={fim}
+            onChange={(e) => {
+              setFim(e.target.value);
+              setSalvo(false);
+            }}
+          />
+        </div>
+      </div>
+
+      {invertido && <p className="field-error">A data final deve ser posterior à data inicial.</p>}
+      {erro && <div role="alert" className="banner-erro mt-3">{erro}</div>}
+      {salvo && <div role="status" className="banner-ok mt-3">Semestre atualizado</div>}
+
+      <button
+        type="button"
+        className="btn-prof mt-3"
+        disabled={carregando || salvando || incompleto || invertido}
+        onClick={() => void enviar()}
+      >
+        {salvando ? "Salvando…" : "Salvar"}
+      </button>
+    </section>
   );
 }
 
@@ -215,14 +319,12 @@ export default function Perfil() {
   const fechar = () => setModal(null);
 
   function sair() {
-    if (!window.confirm("Deseja sair da sua conta?")) return;
-    clearSession();
-    navigate("/login", { replace: true });
+    setModal("sair");
   }
 
   return (
     <div className="flex flex-1 flex-col">
-      <Topbar titulo="Perfil" subtitulo="Suas informações de conta" onVoltar={() => navigate("/prontuarios")} />
+      <Topbar titulo="Perfil" subtitulo="Suas informações de conta" onVoltar={() => navigate(rotaInicial(u.perfil))} />
 
       <main className="flex flex-1 flex-col px-5 pb-4 pt-2">
         <div className="flex flex-col items-center py-4">
@@ -242,24 +344,7 @@ export default function Perfil() {
           <PerfilLinha label="Senha" value="" isPassword corClasse={tema.texto} onAlterar={() => setModal("senha")} />
         </div>
 
-        {professor && (
-          <section className="mt-4 rounded-card border border-line-soft bg-raised p-4">
-            <div className="flex items-center gap-2">
-              <CalendarDays size={16} className={tema.texto} />
-              <h2 className="font-display text-[15px] font-medium text-ink">Semestre vigente</h2>
-            </div>
-            <dl className="mt-3 grid grid-cols-2 gap-3">
-              <div>
-                <dt className="text-[12px] text-ink-faint">Início</dt>
-                <dd className="text-[14px] text-ink">{SEMESTRE_VIGENTE.inicio ?? "A definir"}</dd>
-              </div>
-              <div>
-                <dt className="text-[12px] text-ink-faint">Fim</dt>
-                <dd className="text-[14px] text-ink">{SEMESTRE_VIGENTE.fim ?? "A definir"}</dd>
-              </div>
-            </dl>
-          </section>
-        )}
+        {professor && <SemestreVigente tema={tema} />}
 
         <div className="mt-auto flex flex-col gap-2.5 pt-8">
           <button type="button" onClick={sair} className="btn bg-alt-tint text-alt">
@@ -324,8 +409,17 @@ export default function Perfil() {
         <ModalExcluir
           tema={tema}
           onClose={fechar}
-          onSucesso={() => {
-            clearSession();
+          onSucesso={async () => {
+            await clearSession();
+            navigate("/login", { replace: true });
+          }}
+        />
+      )}
+      {modal === "sair" && (
+        <ModalSair
+          onClose={fechar}
+          onSucesso={async () => {
+            await clearSession();
             navigate("/login", { replace: true });
           }}
         />

@@ -1,6 +1,6 @@
 export type Perfil = "aluno" | "professor";
 
-export type ProntuarioStatus = "em_andamento" | "enviado" | "assinado" | "devolvido";
+export type ProntuarioStatus = "em_andamento" | "enviado" | "assinado" | "devolvido" | "transferido";
 
 export const SECAO_IDS = [
   "dados-pessoais",

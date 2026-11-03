@@ -4,8 +4,8 @@ import { Clock } from "lucide-react";
 import { clearSession, getSession, sessionExpiresAt } from "../lib/session";
 import { useSyncStatus } from "../hooks/useSyncStatus";
 
-const AVISO_MS = 10 * 60 * 1000; // primeiro aviso: 10 min antes do fim
-const AVISO_FINAL_MS = 2 * 60 * 1000; // reaparece mesmo se dispensado
+const AVISO_MS = 10 * 60 * 1000;
+const AVISO_FINAL_MS = 2 * 60 * 1000;
 
 function formatar(ms: number): string {
   const total = Math.max(0, Math.ceil(ms / 1000));
@@ -14,7 +14,6 @@ function formatar(ms: number): string {
   return `${m}:${String(s).padStart(2, "0")}`;
 }
 
-/** Avisa que a sessão (5 h) está acabando e leva ao login quando termina. */
 export default function SessaoAviso() {
   const navigate = useNavigate();
   const { pendentes } = useSyncStatus();
@@ -22,32 +21,38 @@ export default function SessaoAviso() {
   const [dispensado, setDispensado] = useState(false);
 
   useEffect(() => {
-    const verificar = () => {
+    let ativo = true;
+    const verificar = async () => {
       const sessao = getSession();
       const fim = sessao ? sessionExpiresAt(sessao) : null;
+      if (!ativo) return;
       if (!sessao || fim === null) {
         setRestante(null);
         return;
       }
       const falta = fim - Date.now();
       if (falta <= 0) {
-        clearSession();
+        await clearSession();
+        if (!ativo) return;
         setRestante(null);
         navigate("/login", { replace: true, state: { sessaoExpirada: true } });
         return;
       }
       setRestante(falta);
     };
-    verificar();
-    const t = window.setInterval(verificar, 1000);
-    return () => window.clearInterval(t);
+    void verificar();
+    const t = window.setInterval(() => void verificar(), 1000);
+    return () => {
+      ativo = false;
+      window.clearInterval(t);
+    };
   }, [navigate]);
 
   if (restante === null || restante > AVISO_MS) return null;
   if (dispensado && restante > AVISO_FINAL_MS) return null;
 
-  function sair() {
-    clearSession();
+  async function sair() {
+    await clearSession();
     navigate("/login", { replace: true });
   }
 
@@ -61,7 +66,7 @@ export default function SessaoAviso() {
         </p>
       </div>
       <div className="flex gap-2 pl-6">
-        <button type="button" onClick={sair} className="font-semibold underline">
+        <button type="button" onClick={() => void sair()} className="font-semibold underline">
           Sair e entrar novamente
         </button>
         {restante > AVISO_FINAL_MS && (

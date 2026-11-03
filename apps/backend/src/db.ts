@@ -2,7 +2,6 @@ import path from "node:path";
 import { DatabaseSync } from "node:sqlite";
 import { env } from "./env";
 
-// SQLite não tem enum nem Json: ambos são TEXT. Datas em ISO 8601.
 const AGORA = `strftime('%Y-%m-%dT%H:%M:%fZ','now')`;
 
 const SCHEMA = `
@@ -11,7 +10,7 @@ CREATE TABLE IF NOT EXISTS Usuario (
   nome       TEXT NOT NULL,
   email      TEXT NOT NULL UNIQUE,
   senhaHash  TEXT NOT NULL,
-  perfil     TEXT NOT NULL,            -- 'ALUNO' | 'PROFESSOR'
+  perfil     TEXT NOT NULL,
   matricula  TEXT UNIQUE,
   criadoEm   TEXT NOT NULL DEFAULT (${AGORA}),
   ativo      INTEGER NOT NULL DEFAULT 1
@@ -29,17 +28,22 @@ CREATE TABLE IF NOT EXISTS Prontuario (
   assinadoEm             TEXT,
   assinaturaInvalidada   INTEGER NOT NULL DEFAULT 0,
   acessoExpiraEm         TEXT,
-  acessoRevogadoEm       TEXT
+  acessoRevogadoEm       TEXT,
+  acessoRecusadoEm       TEXT,
+  acessoSolicitadoEm     TEXT
 );
 CREATE INDEX IF NOT EXISTS idx_pront_aluno ON Prontuario(alunoTitularId);
 CREATE INDEX IF NOT EXISTS idx_pront_prof ON Prontuario(professorSupervisorId);
 CREATE INDEX IF NOT EXISTS idx_pront_paciente ON Prontuario(pacienteNome, pacienteDataNascimento);
+CREATE INDEX IF NOT EXISTS idx_pront_solicitado
+  ON Prontuario(acessoSolicitadoEm)
+  WHERE acessoSolicitadoEm IS NOT NULL;
 
 CREATE TABLE IF NOT EXISTS Secao (
   id           TEXT PRIMARY KEY,
   prontuarioId TEXT NOT NULL REFERENCES Prontuario(id) ON DELETE CASCADE,
-  secaoId      TEXT NOT NULL,          -- 'dados-pessoais', 'historia-medica', etc
-  conteudo     TEXT NOT NULL,          -- JSON serializado
+  secaoId      TEXT NOT NULL,
+  conteudo     TEXT NOT NULL,
   atualizadoEm TEXT NOT NULL DEFAULT (${AGORA}),
   UNIQUE (prontuarioId, secaoId)
 );
@@ -69,6 +73,35 @@ CREATE TABLE IF NOT EXISTS PasswordResetToken (
 );
 CREATE INDEX IF NOT EXISTS idx_reset_userId ON PasswordResetToken(userId);
 CREATE INDEX IF NOT EXISTS idx_reset_expiraEm ON PasswordResetToken(expiraEm);
+
+CREATE TABLE IF NOT EXISTS AuditLog (
+  id           TEXT PRIMARY KEY,
+  usuarioId    TEXT REFERENCES Usuario(id) ON DELETE SET NULL,
+  prontuarioId TEXT REFERENCES Prontuario(id) ON DELETE SET NULL,
+  acao         TEXT NOT NULL,
+  detalhe      TEXT,
+  criadoEm     TEXT NOT NULL DEFAULT (${AGORA})
+);
+CREATE INDEX IF NOT EXISTS idx_audit_pront ON AuditLog(prontuarioId);
+CREATE INDEX IF NOT EXISTS idx_audit_usuario ON AuditLog(usuarioId);
+CREATE INDEX IF NOT EXISTS idx_audit_acao ON AuditLog(acao);
+
+CREATE TABLE IF NOT EXISTS Notificacao (
+  id           TEXT PRIMARY KEY,
+  usuarioId    TEXT NOT NULL REFERENCES Usuario(id) ON DELETE CASCADE,
+  prontuarioId TEXT REFERENCES Prontuario(id) ON DELETE SET NULL,
+  tipo         TEXT NOT NULL,
+  mensagem     TEXT NOT NULL,
+  criadoEm     TEXT NOT NULL DEFAULT (${AGORA}),
+  lidaEm       TEXT
+);
+CREATE INDEX IF NOT EXISTS idx_notif_usuario ON Notificacao(usuarioId, lidaEm);
+
+CREATE TABLE IF NOT EXISTS Configuracao (
+  chave        TEXT PRIMARY KEY,
+  valor        TEXT NOT NULL,
+  atualizadoEm TEXT NOT NULL DEFAULT (${AGORA})
+);
 `;
 
 function migrarColunaAtivo(db: DatabaseSync): void {
@@ -85,6 +118,47 @@ function migrarColunaSinalizadoDuplicidade(db: DatabaseSync): void {
   }
 }
 
+function migrarColunasTransferencia(db: DatabaseSync): void {
+  const colunas = db.prepare("PRAGMA table_info(Prontuario)").all() as unknown as { name: string }[];
+  const existentes = new Set(colunas.map((c) => c.name));
+  for (const nome of ["transferidoDe", "transferidoPara"]) {
+    if (!existentes.has(nome)) db.exec(`ALTER TABLE Prontuario ADD COLUMN ${nome} TEXT`);
+  }
+}
+
+const COLUNAS_REVISAO: ReadonlyArray<readonly [string, string]> = [
+  ["assinadoEm", "TEXT"],
+  ["assinadoPorId", "TEXT REFERENCES Usuario(id)"],
+  ["assinadoPorNome", "TEXT"],
+  ["devolvidoEm", "TEXT"],
+  ["devolvidoPorId", "TEXT REFERENCES Usuario(id)"],
+  ["devolvidoPorNome", "TEXT"],
+  ["motivoDevolucao", "TEXT"],
+  ["comentarioDevolucao", "TEXT"],
+];
+
+function migrarColunasRevisao(db: DatabaseSync): void {
+  const colunas = db.prepare("PRAGMA table_info(Prontuario)").all() as unknown as { name: string }[];
+  const existentes = new Set(colunas.map((c) => c.name));
+  for (const [nome, definicao] of COLUNAS_REVISAO) {
+    if (!existentes.has(nome)) db.exec(`ALTER TABLE Prontuario ADD COLUMN ${nome} ${definicao}`);
+  }
+}
+
+const COLUNAS_ACESSO: ReadonlyArray<string> = [
+  "acessoSolicitadoEm",
+  "acessoExpiraEm",
+  "acessoRevogadoEm",
+  "acessoRecusadoEm",
+];
+function migrarColunasAcesso(db: DatabaseSync): void {
+  const colunas = db.prepare("PRAGMA table_info(Prontuario)").all() as unknown as { name: string }[];
+  const existentes = new Set(colunas.map((c) => c.name));
+  for (const nome of COLUNAS_ACESSO) {
+    if (!existentes.has(nome)) db.exec(`ALTER TABLE Prontuario ADD COLUMN ${nome} TEXT`);
+  }
+}
+
 export function abrirBanco(): DatabaseSync {
   const arquivo = path.resolve(process.cwd(), env.DATABASE_URL.replace(/^file:/, ""));
   const db = new DatabaseSync(arquivo);
@@ -92,6 +166,9 @@ export function abrirBanco(): DatabaseSync {
   db.exec(SCHEMA);
   migrarColunaAtivo(db);
   migrarColunaSinalizadoDuplicidade(db);
+  migrarColunasRevisao(db);
+  migrarColunasAcesso(db);
+  migrarColunasTransferencia(db);
   return db;
 }
 

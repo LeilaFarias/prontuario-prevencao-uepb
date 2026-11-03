@@ -1,9 +1,11 @@
-import { useCallback, useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useReducer, useRef, useState } from "react";
 import { useForm, type DefaultValues, type FieldValues, type UseFormReturn } from "react-hook-form";
 import type { z } from "zod";
 import type { SecaoId } from "@prontuario/shared";
 import { db, type LocalProntuario } from "../db/dexie";
-import { salvarSecaoLocal, type CabecalhoPaciente } from "../sync/queue";
+import { acessoVigente } from "../lib/acesso";
+import { confirmarInvalidacaoAssinatura } from "../lib/invalidacaoAssinatura";
+import { AcessoExpiradoError, salvarSecaoLocal, type CabecalhoPaciente } from "../sync/queue";
 
 const DEBOUNCE_MS = 800;
 
@@ -50,7 +52,22 @@ export function useSecao<T extends SchemaSecao>(
   const form = useForm<V>({ defaultValues: inicial as unknown as DefaultValues<V> });
   const { watch, getValues, reset } = form;
 
-  const somenteLeitura = prontuario.status === "assinado" || prontuario.status === "enviado";
+  const somenteLeitura =
+    prontuario.status === "enviado" ||
+    prontuario.status === "transferido" ||
+    (prontuario.status !== "em_andamento" && !acessoVigente(prontuario));
+  const assinadoRef = useRef(false);
+  assinadoRef.current = prontuario.status === "assinado";
+
+  const [, renderizar] = useReducer((n: number) => n + 1, 0);
+  const expiraEm = prontuario.acessoExpiraEm;
+  useEffect(() => {
+    if (!expiraEm) return;
+    const restante = new Date(expiraEm).getTime() - Date.now();
+    if (restante <= 0) return;
+    const t = window.setTimeout(renderizar, Math.min(restante, 2 ** 31 - 1) + 50);
+    return () => window.clearTimeout(t);
+  }, [expiraEm]);
 
   const [salvando, setSalvando] = useState(false);
   const [salvoEm, setSalvoEm] = useState<number | null>(null);
@@ -74,7 +91,15 @@ export function useSecao<T extends SchemaSecao>(
     const anterior = ultimoSalvo.current;
     ultimoSalvo.current = json;
     emAndamento.current += 1;
+    const restaurar = () => {
+      ultimoSalvo.current = anterior;
+      if (montado.current) reset(JSON.parse(anterior) as unknown as DefaultValues<V>);
+    };
     try {
+      if (assinadoRef.current && !(await confirmarInvalidacaoAssinatura())) {
+        restaurar();
+        return;
+      }
       await salvarSecaoLocal(
         prontuario.id,
         secaoId,
@@ -83,18 +108,20 @@ export function useSecao<T extends SchemaSecao>(
       );
       if (montado.current) setSalvoEm(Date.now());
     } catch (err) {
-      console.error("[useSecao] falha ao salvar seção:", err);
-      ultimoSalvo.current = anterior; // permite nova tentativa na próxima edição
+      if (err instanceof AcessoExpiradoError) restaurar();
+      else {
+        console.error("[useSecao] falha ao salvar seção:", err);
+        ultimoSalvo.current = anterior;
+      }
     } finally {
       emAndamento.current -= 1;
       if (montado.current && timer.current === undefined && emAndamento.current === 0) setSalvando(false);
     }
-  }, [getValues, prontuario.id, secaoId]);
+  }, [getValues, reset, prontuario.id, secaoId]);
 
   const salvarRef = useRef(salvar);
   salvarRef.current = salvar;
 
-  // Autosave: qualquer mudança (digitação ou setValue) agenda a gravação
   useEffect(() => {
     if (somenteLeitura) return;
     const sub = watch(() => {

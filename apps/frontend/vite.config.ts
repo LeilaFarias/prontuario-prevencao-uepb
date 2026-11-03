@@ -7,12 +7,19 @@ export default defineConfig({
     react(),
     VitePWA({
       registerType: "autoUpdate",
-      manifest: false, // manifest fica em public/manifest.webmanifest
+      manifest: false,
       includeAssets: ["favicon.svg", "icons/*.png"],
       workbox: {
         globPatterns: ["**/*.{js,css,html,svg,png,ico,webmanifest}"],
         navigateFallback: "index.html",
         runtimeCaching: [
+          {
+            urlPattern: ({ url }) =>
+              url.pathname === "/api/prontuarios" ||
+              url.pathname.startsWith("/api/prontuarios/") ||
+              url.pathname === "/api/acessos",
+            handler: "NetworkOnly",
+          },
           {
             urlPattern: ({ url }) => url.pathname.startsWith("/api"),
             handler: "NetworkFirst",

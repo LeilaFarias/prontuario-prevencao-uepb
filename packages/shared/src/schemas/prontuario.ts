@@ -201,7 +201,6 @@ export type Conclusao = z.infer<typeof conclusaoSchema>;
 export const vazioConclusao = (): Conclusao => conclusaoSchema.parse({});
 
 export const sessaoPlanoSchema = z.object({
-  /** UUID da sessão. Fica com default "" só para ler dados antigos (sem id); o formulário gera o id ao carregar. */
   id: z.string().default(""),
   numero: z.number(),
   descricao: z.string().default(""),
@@ -216,7 +215,19 @@ export const planoSchema = z.object({
 
 export type Plano = z.infer<typeof planoSchema>;
 
-/** `crypto` não existe nos tipos deste pacote (lib ES2022 sem DOM), por isso o acesso via globalThis. */
+export const planoProfessorSchema = z.object({
+  sessoes: z
+    .array(
+      z.object({
+        numero: z.number(),
+        descricao: z.string().default(""),
+      }),
+    )
+    .default([]),
+});
+
+export type PlanoProfessor = z.infer<typeof planoProfessorSchema>;
+
 const gerarIdPadrao = (): string => {
   const c = (globalThis as { crypto?: { randomUUID?: () => string } }).crypto;
   if (c?.randomUUID) return c.randomUUID();

@@ -3,7 +3,6 @@ interface Props {
   value: string;
   onAlterar: () => void;
   isPassword?: boolean;
-  /** Classe de cor do botão (verde do aluno ou índigo do professor). */
   corClasse?: string;
 }
 

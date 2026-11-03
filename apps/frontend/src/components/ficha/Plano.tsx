@@ -24,10 +24,6 @@ function IndicadorSalvamento({ salvando, jaSalvou }: { salvando: boolean; jaSalv
   );
 }
 
-/**
- * Prontuário novo (sem sessões salvas) começa com as 3 sessões padrão do design.
- * Dados antigos, sem `id`, ganham um; os números são sempre 1, 2, 3… sem buracos.
- */
 function garantirSessoes(plano: PlanoDados): PlanoDados {
   if (plano.sessoes.length === 0) return vazioPlano(uuid);
   return {

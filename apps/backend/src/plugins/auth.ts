@@ -30,7 +30,6 @@ const SESSAO_EXPIRADA = {
 export default fp(async (app) => {
   await app.register(jwt, { secret: env.JWT_SECRET });
 
-  // preHandler: exige access token válido de uma conta ativa. O usuário fica em req.user.sub.
   app.decorate("autenticar", async (req: FastifyRequest, reply: FastifyReply) => {
     try {
       await req.jwtVerify();

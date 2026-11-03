@@ -272,10 +272,6 @@ function FormularioDadosPessoais({ prontuario }: { prontuario: LocalProntuario }
   );
 }
 
-/**
- * Seção "Dados pessoais". Lê o prontuário direto do Dexie (live), de modo que reabrir a seção
- * após navegar pelos chips sempre mostra o que foi salvo, e o que chega do sync down aparece sozinho.
- */
 export default function DadosPessoais({ prontuarioId }: { prontuarioId: string }) {
   const prontuario = useLiveQuery(() => db.prontuarios.get(prontuarioId), [prontuarioId]);
   if (!prontuario) return null;

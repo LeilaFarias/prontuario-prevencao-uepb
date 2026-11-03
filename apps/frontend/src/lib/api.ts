@@ -3,7 +3,11 @@ import { clearSession, getSession } from "./session";
 export const API_URL = import.meta.env.VITE_API_URL ?? "http://localhost:3333";
 
 export class ApiError extends Error {
-  constructor(message: string, public status: number) {
+  constructor(
+    message: string,
+    public status: number,
+    public codigo?: string,
+  ) {
     super(message);
   }
 }
@@ -32,7 +36,9 @@ async function request<T>(method: string, path: string, body?: unknown): Promise
     window.location.assign("/login?sessao=expirada");
   }
 
-  if (!res.ok) throw new ApiError((data?.message ?? data?.error) ?? "Algo deu errado. Tente novamente.", res.status);
+  if (!res.ok) {
+    throw new ApiError((data?.message ?? data?.error) ?? "Algo deu errado. Tente novamente.", res.status, data?.codigo);
+  }
   return data as T;
 }
 

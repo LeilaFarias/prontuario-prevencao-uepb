@@ -2,7 +2,7 @@ import { z } from "zod";
 
 export const syncOperationSchema = z.object({
   prontuarioId: z.string().min(1),
-  op: z.enum(["create", "update", "delete", "enviar"]),
+  op: z.enum(["create", "update", "delete", "enviar", "reabrir", "liberacao-manual"]),
   entity: z.enum(["prontuario", "secao", "procedimento", "anexo"]),
   entityId: z.string().min(1),
   payload: z.record(z.string(), z.unknown()),
@@ -37,4 +37,5 @@ export interface SyncResponse {
   descartadas: number;
   serverTime: number;
   envios?: EnvioSincronizado[];
+  acessoExpirado?: string[];
 }

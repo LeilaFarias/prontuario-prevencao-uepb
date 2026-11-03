@@ -6,6 +6,7 @@ import { Eye, EyeOff } from "lucide-react";
 import { loginSchema, type LoginInput, type LoginResponse } from "@prontuario/shared";
 import { api } from "../lib/api";
 import { saveSession } from "../lib/session";
+import { rotaInicial } from "../lib/rotas";
 
 function Dente() {
   return (
@@ -36,7 +37,7 @@ export default function Login() {
     try {
       const sessao = await api.post<LoginResponse>("/auth/login", dados);
       saveSession(sessao);
-      navigate("/prontuarios", { replace: true });
+      navigate(rotaInicial(sessao.user.perfil), { replace: true });
     } catch (e) {
       setErro(e instanceof Error ? e.message : "Não foi possível entrar.");
     }

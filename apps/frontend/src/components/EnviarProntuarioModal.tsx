@@ -46,6 +46,7 @@ const ROTULO_STATUS: Record<LocalStatus, string> = {
   enviado: "Aguardando revisão",
   assinado: "Assinado",
   devolvido: "Devolvido",
+  transferido: "Transferido",
 };
 
 function rotuloStatus(status: string | null | undefined): string {
@@ -96,7 +97,6 @@ export default function EnviarProntuarioModal({
   const paciente = prontuario.pacienteNome.trim();
 
   const duplicadoId = fase.tipo === "duplicidade" ? fase.resultado.prontuarioDuplicadoId : null;
-  // O prontuário existente pode ser de outra dupla (o servidor não o libera para este aluno)
   const duplicadoNoAparelho = useLiveQuery(
     async () => (duplicadoId ? Boolean(await db.prontuarios.get(duplicadoId)) : false),
     [duplicadoId],

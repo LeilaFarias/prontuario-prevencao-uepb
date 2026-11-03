@@ -1,10 +1,12 @@
+import type { HistoricoProntuario } from "@prontuario/shared";
 import { db, type LocalProntuario, type LocalStatus } from "../db/dexie";
 import { api } from "../lib/api";
+import { avisoJaVisto, marcadorDeAviso } from "../lib/avisosVistos";
+import { getSession } from "../lib/session";
 import { notifyChanged } from "./queue";
 
 export const ULTIMO_SYNC_DOWN_KEY = "prontuario:ultimoSyncDown";
 
-/** Resposta de GET /prontuarios (sem seções). */
 export interface ProntuarioRemotoResumo {
   id: string;
   pacienteNome: string;
@@ -15,11 +17,27 @@ export interface ProntuarioRemotoResumo {
   alunoTitularId: string;
   professorSupervisorId: string | null;
   alunoNome: string;
+  professorSupervisorNome: string | null;
+  sinalizadoDuplicidade: number;
+  duplicidadeEmAnalise?: number;
+  transferidoDe: string | null;
+  transferidoPara: string | null;
+  transferidoParaNome: string | null;
 }
 
-/** Resposta de GET /prontuarios/:id (com seções já decodificadas). */
 export interface ProntuarioRemoto extends ProntuarioRemotoResumo {
   secoes: Record<string, unknown>;
+  assinadoEm: string | null;
+  assinadoPorNome: string | null;
+  acessoSolicitadoEm: string | null;
+  acessoExpiraEm: string | null;
+  acessoRevogadoEm: string | null;
+  acessoRecusadoEm: string | null;
+  devolvidoEm: string | null;
+  devolvidoPorNome: string | null;
+  motivoDevolucao: string | null;
+  comentarioDevolucao: string | null;
+  historico?: HistoricoProntuario | null;
 }
 
 const STATUS_VALIDOS: ReadonlySet<string> = new Set<LocalStatus>([
@@ -27,12 +45,38 @@ const STATUS_VALIDOS: ReadonlySet<string> = new Set<LocalStatus>([
   "enviado",
   "assinado",
   "devolvido",
+  "transferido",
 ]);
 
-/** Backend usa MAIÚSCULAS (EM_ANDAMENTO); o Dexie usa minúsculas (em_andamento). */
 export function normalizarStatus(s: string): LocalProntuario["status"] {
   const v = s.trim().toLowerCase();
   return STATUS_VALIDOS.has(v) ? (v as LocalStatus) : "em_andamento";
+}
+
+function camposDeRevisao(remoto: ProntuarioRemoto) {
+  return {
+    assinadoEm: remoto.assinadoEm ?? undefined,
+    assinadoPorNome: remoto.assinadoPorNome ?? undefined,
+    professorSupervisorNome: remoto.professorSupervisorNome ?? undefined,
+    acessoSolicitadoEm: remoto.acessoSolicitadoEm ?? undefined,
+    acessoExpiraEm: remoto.acessoExpiraEm ?? undefined,
+    acessoRevogadoEm: remoto.acessoRevogadoEm ?? undefined,
+    devolvidoEm: remoto.devolvidoEm ?? undefined,
+    devolvidoPorNome: remoto.devolvidoPorNome ?? undefined,
+    motivoDevolucao: remoto.motivoDevolucao ?? undefined,
+    comentarioDevolucao: remoto.comentarioDevolucao ?? undefined,
+    sinalizadoDuplicidade: remoto.sinalizadoDuplicidade === 1,
+    duplicidadeEmAnalise: remoto.duplicidadeEmAnalise === 1,
+  };
+}
+
+function camposDeTransferencia(remoto: ProntuarioRemoto, local?: LocalProntuario) {
+  return {
+    transferidoDe: remoto.transferidoDe ?? undefined,
+    transferidoPara: remoto.transferidoPara ?? undefined,
+    transferidoParaNome: remoto.transferidoParaNome ?? undefined,
+    historico: remoto.historico === undefined ? local?.historico : (remoto.historico ?? undefined),
+  };
 }
 
 function paraTimestamp(iso: string): number {
@@ -52,14 +96,6 @@ export function buscarDetalhe(id: string): Promise<ProntuarioRemoto> {
   return api.get<ProntuarioRemoto>(`/prontuarios/${encodeURIComponent(id)}`);
 }
 
-/**
- * Grava no Dexie o prontuário vindo do servidor, respeitando as edições locais.
- *
- * A checagem da fila e a escrita acontecem na MESMA transação: assim uma edição que
- * entre na fila durante o sync down não é sobrescrita (regra crítica de merge).
- *
- * @returns true se o Dexie foi alterado.
- */
 export async function aplicarRemoto(remoto: ProntuarioRemoto): Promise<boolean> {
   const remotoEm = paraTimestamp(remoto.atualizadoEm);
 
@@ -67,57 +103,115 @@ export async function aplicarRemoto(remoto: ProntuarioRemoto): Promise<boolean> 
     const local = await db.prontuarios.get(remoto.id);
 
     if (!local) {
+      const status = normalizarStatus(remoto.status);
+      const visto = avisoJaVisto(
+        getSession()?.user.id,
+        remoto.id,
+        marcadorDeAviso(status, remoto.assinadoEm ?? undefined, remoto.devolvidoEm ?? undefined),
+      );
       await db.prontuarios.add({
         id: remoto.id,
         pacienteNome: remoto.pacienteNome,
         pacienteDataNascimento: remoto.pacienteDataNascimento ?? undefined,
-        status: normalizarStatus(remoto.status),
+        status,
+        ...camposDeRevisao(remoto),
+        ...camposDeTransferencia(remoto),
+        acessoRecusadoEm: remoto.acessoRecusadoEm ?? undefined,
+        vistoPeloAluno: visto,
         secoes: remoto.secoes ?? {},
         criadoEm: paraTimestamp(remoto.criadoEm),
         atualizadoEm: remotoEm,
-        sincronizado: true, // já veio do servidor
+        sincronizado: true,
         alunoTitularId: remoto.alunoTitularId,
+        professorSupervisorId: remoto.professorSupervisorId ?? undefined,
+        professorSupervisorNome: remoto.professorSupervisorNome ?? undefined,
       });
       return true;
     }
 
-    // Edições pendentes: o local vence e será enviado pela fila.
-    const pendentes = await db.syncQueue.where("prontuarioId").equals(local.id).count();
-    if (pendentes > 0) return false;
+    const novoStatus = normalizarStatus(remoto.status);
 
-    // Local igual ou mais recente: mantém.
-    if (remotoEm <= local.atualizadoEm) return false;
+    const acessoMudou =
+      remoto.acessoSolicitadoEm !== (local.acessoSolicitadoEm ?? null) ||
+      remoto.acessoExpiraEm !== (local.acessoExpiraEm ?? null) ||
+      remoto.acessoRevogadoEm !== (local.acessoRevogadoEm ?? null) ||
+      remoto.acessoRecusadoEm !== (local.acessoRecusadoEm ?? null) ||
+      novoStatus !== local.status ||
+      (remoto.sinalizadoDuplicidade === 1) !== Boolean(local.sinalizadoDuplicidade) ||
+      (remoto.duplicidadeEmAnalise === 1) !== Boolean(local.duplicidadeEmAnalise) ||
+      (remoto.transferidoDe ?? null) !== (local.transferidoDe ?? null) ||
+      (remoto.transferidoPara ?? null) !== (local.transferidoPara ?? null);
+
+    const pendentes = await db.syncQueue.where("prontuarioId").equals(local.id).count();
+
+    if (pendentes > 0) {
+      if (!acessoMudou) return false;
+      const liberacaoPendente = await db.syncQueue
+        .where("prontuarioId")
+        .equals(local.id)
+        .filter((o) => o.op === "liberacao-manual")
+        .count();
+      if (liberacaoPendente > 0) return false;
+
+      await db.prontuarios.put({
+        ...local,
+        status: novoStatus,
+        acessoSolicitadoEm: remoto.acessoSolicitadoEm ?? undefined,
+        acessoExpiraEm: remoto.acessoExpiraEm ?? undefined,
+        acessoRevogadoEm: remoto.acessoRevogadoEm ?? undefined,
+        acessoRecusadoEm: remoto.acessoRecusadoEm ?? undefined,
+        professorSupervisorId: remoto.professorSupervisorId ?? undefined,
+        professorSupervisorNome: remoto.professorSupervisorNome ?? undefined,
+        sinalizadoDuplicidade: remoto.sinalizadoDuplicidade === 1,
+        duplicidadeEmAnalise: remoto.duplicidadeEmAnalise === 1,
+        ...camposDeTransferencia(remoto, local),
+        vistoPeloAluno: novoStatus === local.status ? local.vistoPeloAluno : false,
+      });
+      return true;
+    }
+
+    if (remotoEm <= local.atualizadoEm && !acessoMudou) return false;
 
     await db.prontuarios.put({
       ...local,
       pacienteNome: remoto.pacienteNome,
       pacienteDataNascimento: remoto.pacienteDataNascimento ?? local.pacienteDataNascimento,
-      status: normalizarStatus(remoto.status),
-      // Sem pendências, tudo o que existe localmente já foi enviado; o servidor tem prioridade por seção.
+      status: novoStatus,
+      ...camposDeRevisao(remoto),
+      ...camposDeTransferencia(remoto, local),
+      acessoRecusadoEm: remoto.acessoRecusadoEm ?? undefined,
+      vistoPeloAluno: novoStatus === local.status ? local.vistoPeloAluno : false,
       secoes: { ...local.secoes, ...(remoto.secoes ?? {}) },
       atualizadoEm: remotoEm,
       sincronizado: true,
       alunoTitularId: remoto.alunoTitularId,
+      professorSupervisorId: remoto.professorSupervisorId ?? undefined,
+      professorSupervisorNome: remoto.professorSupervisorNome ?? undefined,
     });
     return true;
   });
 }
 
-/** Decide, só pelo resumo, se vale buscar o detalhe (novo ou mais recente que o local). */
 async function precisaAtualizar(resumo: ProntuarioRemotoResumo): Promise<boolean> {
   const local = await db.prontuarios.get(resumo.id);
   if (!local) return true;
-  if (paraTimestamp(resumo.atualizadoEm) <= local.atualizadoEm) return false;
-  const pendentes = await db.syncQueue.where("prontuarioId").equals(local.id).count();
-  return pendentes === 0;
+  return paraTimestamp(resumo.atualizadoEm) > local.atualizadoEm;
 }
 
 const SIMULTANEOS = 4;
 
-/**
- * Sync down completo: lista no servidor e traz (com seções) apenas o que é novo ou mais recente.
- * Lança erro se a LISTA falhar; falhas no detalhe de um prontuário só pulam aquele item.
- */
+async function removerTransferidos(resumos: ProntuarioRemotoResumo[]): Promise<boolean> {
+  if (getSession()?.user.perfil !== "aluno") return false;
+  const idsRemotos = new Set(resumos.map((r) => r.id));
+  const pendentes = new Set((await db.syncQueue.toArray()).map((o) => o.prontuarioId));
+  const obsoletos = (await db.prontuarios.toArray()).filter(
+    (p) => p.sincronizado && !idsRemotos.has(p.id) && !pendentes.has(p.id),
+  );
+  if (obsoletos.length === 0) return false;
+  await db.prontuarios.bulkDelete(obsoletos.map((p) => p.id));
+  return true;
+}
+
 export async function sincronizarParaBaixo(): Promise<void> {
   const resumos = await buscarResumos();
   const alvos: ProntuarioRemotoResumo[] = [];
@@ -125,7 +219,7 @@ export async function sincronizarParaBaixo(): Promise<void> {
     if (await precisaAtualizar(r)) alvos.push(r);
   }
 
-  let alterou = false;
+  let alterou = await removerTransferidos(resumos);
   for (let i = 0; i < alvos.length; i += SIMULTANEOS) {
     const lote = alvos.slice(i, i + SIMULTANEOS);
     const resultados = await Promise.allSettled(
@@ -140,7 +234,6 @@ export async function sincronizarParaBaixo(): Promise<void> {
   try {
     localStorage.setItem(ULTIMO_SYNC_DOWN_KEY, String(Date.now()));
   } catch {
-    // armazenamento indisponível: apenas não registra a hora
   }
   if (alterou) notifyChanged();
 }

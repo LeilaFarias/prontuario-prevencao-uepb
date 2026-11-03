@@ -24,7 +24,6 @@ function gravarCache(lista: Professor[]): void {
   try {
     localStorage.setItem(CACHE_KEY, JSON.stringify(lista));
   } catch {
-    // armazenamento indisponível: apenas não guarda para uso offline
   }
 }
 
