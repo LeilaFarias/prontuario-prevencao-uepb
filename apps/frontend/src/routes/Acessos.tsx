@@ -1,6 +1,5 @@
 import { useState, type ReactNode } from "react";
-import { useNavigate } from "react-router-dom";
-import { Check, Clock, UserRound } from "lucide-react";
+import { Check, Clock } from "lucide-react";
 import { ACESSO_TEMPORARIO_HORAS, type AcessoPendente, type AcessoVigente } from "@prontuario/shared";
 import TabBarProfessor from "../components/TabBarProfessor";
 import TimerAcesso from "../components/TimerAcesso";
@@ -47,7 +46,6 @@ function Secao({
 }
 
 export default function Acessos() {
-  const navigate = useNavigate();
   const { estado, recarregar } = useAcessos();
   const [ocupado, setOcupado] = useState<string | null>(null);
   const [erro, setErro] = useState<string | null>(null);
@@ -82,23 +80,11 @@ export default function Acessos() {
   return (
     <div className="flex flex-1 flex-col">
       <header className="px-5 pb-2 pt-5">
-        <div className="flex items-start justify-between gap-3">
-          <div className="min-w-0 flex-1">
-            <p className="mb-2.5 text-[11px] font-bold uppercase tracking-[0.07em] text-prof">
-              Clínica de Prevenção em Saúde Bucal · UEPB
-            </p>
-            <h1 className="font-display text-[26px] font-semibold leading-[1.15] text-ink">Acessos</h1>
-            {subtitulo && <p className="mt-0.5 truncate text-[12.5px] text-ink-soft">{subtitulo}</p>}
-          </div>
-          <button
-            type="button"
-            onClick={() => navigate("/perfil")}
-            aria-label="Perfil"
-            className="flex h-10 w-10 shrink-0 items-center justify-center rounded-full border border-line bg-raised text-ink-soft"
-          >
-            <UserRound size={18} />
-          </button>
-        </div>
+        <p className="mb-2.5 text-[11px] font-bold uppercase tracking-[0.07em] text-prof">
+          Clínica de Prevenção em Saúde Bucal · UEPB
+        </p>
+        <h1 className="font-display text-[26px] font-semibold leading-[1.15] text-ink">Acessos</h1>
+        {subtitulo && <p className="mt-0.5 text-[12.5px] text-ink-soft">{subtitulo}</p>}
       </header>
 
       <main className="flex flex-1 flex-col gap-6 px-5 pb-4 pt-4">

@@ -89,6 +89,7 @@ export interface ItemFilaRevisao {
   atualizadoEm: string;
   sinalizadoDuplicidade: boolean;
   professorSupervisorId: string | null;
+  professorSupervisorNome: string | null;
   alunoNome: string;
   alunoOperador: string;
   alunoAuxiliar: string;

@@ -23,6 +23,13 @@ export const configuracoesRoutes: FastifyPluginAsync = async (app) => {
      WHERE status IN ('ENVIADO', 'ASSINADO', 'DEVOLVIDO', 'TRANSFERIDO')
        AND substr(criadoEm, 1, 10) BETWEEN ? AND ?`,
   );
+  const contarPacientesDoProfessor = db.prepare(
+    `SELECT COUNT(DISTINCT pacienteNome || '|' || COALESCE(pacienteDataNascimento, '')) AS total
+     FROM Prontuario
+     WHERE status IN ('ENVIADO', 'ASSINADO', 'DEVOLVIDO', 'TRANSFERIDO')
+       AND substr(criadoEm, 1, 10) BETWEEN ? AND ?
+       AND professorSupervisorId = ?`,
+  );
 
   const somenteProfessor = async (req: FastifyRequest, reply: FastifyReply) => {
     if (req.user.perfil.toLowerCase() !== "professor") {
@@ -53,11 +60,15 @@ export const configuracoesRoutes: FastifyPluginAsync = async (app) => {
     return { ok: true as const };
   });
 
-  app.get("/indicador-pacientes", protegida, async (): Promise<IndicadorPacientes> => {
+  app.get<{ Querystring: { filtro?: string } }>("/indicador-pacientes", protegida, async (req): Promise<IndicadorPacientes> => {
     const { inicio, fim } = lerSemestre();
     if (!inicio || !fim) return { total: 0, periodo: null };
 
-    const { total } = contarPacientes.get(inicio, fim) as unknown as { total: number };
+    const { total } = (
+      req.query.filtro === "todos"
+        ? contarPacientes.get(inicio, fim)
+        : contarPacientesDoProfessor.get(inicio, fim, req.user.sub)
+    ) as unknown as { total: number };
     return { total, periodo: { inicio, fim } };
   });
 };

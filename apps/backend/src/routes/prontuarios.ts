@@ -145,9 +145,11 @@ export const prontuariosRoutes: FastifyPluginAsync = async (app) => {
   );
   const listarEnviados = db.prepare(
     `SELECT p.id, p.pacienteNome, p.pacienteDataNascimento, p.sinalizadoDuplicidade, p.professorSupervisorId,
-            p.alunoTitularId, ${ATUALIZADO_EM_EFETIVO} AS atualizadoEm, u.nome AS alunoNome
+            p.alunoTitularId, ${ATUALIZADO_EM_EFETIVO} AS atualizadoEm, u.nome AS alunoNome,
+            pr.nome AS professorSupervisorNome
      FROM Prontuario p
      JOIN Usuario u ON u.id = p.alunoTitularId
+     LEFT JOIN Usuario pr ON pr.id = p.professorSupervisorId
      WHERE p.status = 'ENVIADO'
      ORDER BY atualizadoEm DESC`,
   );
@@ -347,6 +349,7 @@ export const prontuariosRoutes: FastifyPluginAsync = async (app) => {
       alunoTitularId: string;
       atualizadoEm: string;
       alunoNome: string;
+      professorSupervisorNome: string | null;
     }>;
 
     const meus = enviados.filter((r) => r.professorSupervisorId === req.user.sub);
@@ -362,6 +365,7 @@ export const prontuariosRoutes: FastifyPluginAsync = async (app) => {
         atualizadoEm: r.atualizadoEm,
         sinalizadoDuplicidade: sinalizado,
         professorSupervisorId: r.professorSupervisorId,
+        professorSupervisorNome: r.professorSupervisorNome,
         alunoNome: r.alunoNome,
         ...lerDupla(r.id),
         duplaAnteriorNome: duplicado ? nomeDuplaDestino(duplicado.id) : null,

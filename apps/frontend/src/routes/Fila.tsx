@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useState, type KeyboardEvent } from "react";
 import { useNavigate } from "react-router-dom";
-import { AlertCircle, AlertTriangle, Clock, UserRound } from "lucide-react";
+import { AlertCircle, AlertTriangle, Clock } from "lucide-react";
 import type { FilaRevisaoResponse, FiltroFila, ItemFilaRevisao } from "@prontuario/shared";
 import { ApiError, api } from "../lib/api";
 import { getSession } from "../lib/session";
@@ -15,14 +15,27 @@ type Estado =
   | { situacao: "erro"; mensagem: string }
   | { situacao: "ok"; itens: ItemFilaRevisao[] };
 
+function LinhaDupla({ rotulo, nome, destaque = false }: { rotulo: string; nome: string; destaque?: boolean }) {
+  return (
+    <>
+      <dt className="pt-px text-[10.5px] font-bold uppercase tracking-wider text-ink-faint">{rotulo}</dt>
+      <dd className={`min-w-0 break-words text-[12.5px] font-medium leading-snug ${destaque ? "text-prof" : "text-ink"}`}>
+        {nome}
+      </dd>
+    </>
+  );
+}
+
 function CardFila({
   item,
   meu,
+  mostrarProfessor,
   onAbrir,
   onAvaliarTransferencia,
 }: {
   item: ItemFilaRevisao;
   meu: boolean;
+  mostrarProfessor: boolean;
   onAbrir: () => void;
   onAvaliarTransferencia: () => void;
 }) {
@@ -31,7 +44,6 @@ function CardFila({
   const idade = calcularIdade(item.pacienteDataNascimento ?? undefined);
   const tempo = tempoRelativo(new Date(item.atualizadoEm).getTime());
   const inicial = item.pacienteNome.trim().charAt(0).toUpperCase() || "?";
-  const dupla = [item.alunoOperador, item.alunoAuxiliar].filter(Boolean).join(" · ") || item.alunoNome;
 
   function aoClicar() {
     if (!duplicado) return onAbrir();
@@ -55,15 +67,13 @@ function CardFila({
         acaoBloqueada ? "cursor-not-allowed" : ""
       }`}
     >
-      <div className="flex items-center gap-3">
+      <div className="flex items-start gap-3">
         <div className="flex h-11 w-11 shrink-0 items-center justify-center rounded-full bg-prof-tint font-display text-[16px] font-semibold text-prof">
           {inicial}
         </div>
         <div className="min-w-0 flex-1">
-          <div className="truncate text-[14.5px] font-semibold text-ink">{item.pacienteNome}</div>
-          <div className="mt-0.5 truncate text-[12px] text-ink-soft">
-            {[idade !== null ? `${idade} anos` : null, `Dupla: ${dupla}`].filter(Boolean).join(" · ")}
-          </div>
+          <div className="break-words text-[14.5px] font-semibold leading-snug text-ink">{item.pacienteNome}</div>
+          {idade !== null && <div className="mt-0.5 text-[12px] text-ink-soft">{idade} anos</div>}
         </div>
         {duplicado ? (
           <span className="inline-flex shrink-0 items-center gap-1 rounded-pill bg-alt-tint px-2.5 py-1 text-[11px] font-semibold text-alt">
@@ -77,6 +87,20 @@ function CardFila({
           </span>
         )}
       </div>
+
+      <dl className="mt-3 grid grid-cols-[4.5rem_minmax(0,1fr)] items-baseline gap-x-3 gap-y-1.5 rounded-field bg-paper px-3 py-2.5">
+        {item.alunoOperador || item.alunoAuxiliar ? (
+          <>
+            {item.alunoOperador && <LinhaDupla rotulo="Operador" nome={item.alunoOperador} />}
+            {item.alunoAuxiliar && <LinhaDupla rotulo="Auxiliar" nome={item.alunoAuxiliar} />}
+          </>
+        ) : (
+          <LinhaDupla rotulo="Aluno" nome={item.alunoNome} />
+        )}
+        {mostrarProfessor && (
+          <LinhaDupla rotulo="Professor" nome={item.professorSupervisorNome ?? "Não definido"} destaque={meu} />
+        )}
+      </dl>
 
       {duplicado && (
         <div className="mt-3 flex items-start gap-2.5 rounded-field bg-alt-tint p-3">
@@ -92,7 +116,6 @@ function CardFila({
       <div className="mt-3 flex items-center justify-between gap-2.5 border-t border-line-soft pt-2.5">
         <span className="text-[11.5px] text-ink-faint">
           Enviado {tempo}
-          {meu && <span className="ml-2 font-semibold text-prof">· Sob sua supervisão</span>}
         </span>
         <span
           className={`shrink-0 text-[12.5px] font-semibold ${duplicado ? "text-alt" : "text-prof"} ${
@@ -122,7 +145,7 @@ function Chip({
       type="button"
       aria-pressed={ativo}
       onClick={onClick}
-      className={`inline-flex shrink-0 items-center gap-1 whitespace-nowrap rounded-pill px-4 py-2 text-[12.5px] ${
+      className={`inline-flex shrink-0 items-center whitespace-nowrap rounded-pill px-4 py-2 text-[12.5px] ${
         ativo ? "bg-prof font-semibold text-white" : "border border-line bg-raised font-medium text-ink-soft"
       }`}
     >
@@ -143,8 +166,8 @@ function Chip({
 export default function Fila() {
   const navigate = useNavigate();
   const usuario = getSession()?.user;
-  const { data: indicador } = useIndicadorPacientes();
   const [filtro, setFiltro] = useState<FiltroFila>("meus");
+  const { data: indicador } = useIndicadorPacientes(filtro);
   const [contadores, setContadores] = useState<FilaRevisaoResponse["contadores"] | null>(null);
   const [estado, setEstado] = useState<Estado>({ situacao: "carregando" });
   const [transferindo, setTransferindo] = useState<ItemFilaRevisao | null>(null);
@@ -177,26 +200,14 @@ export default function Fila() {
   return (
     <div className="flex flex-1 flex-col">
       <header className="px-5 pb-2 pt-5">
-        <div className="flex items-start justify-between gap-3">
-          <div className="min-w-0 flex-1">
-            <p className="mb-2.5 text-[11px] font-bold uppercase tracking-[0.07em] text-prof">
-              Clínica de Prevenção em Saúde Bucal · UEPB
-            </p>
-            <h1 className="font-display text-[26px] font-semibold leading-[1.15] text-ink">Fila de revisão</h1>
-            <p className="mt-0.5 truncate text-[12.5px] text-ink-soft">{subtitulo}</p>
-          </div>
-          <button
-            type="button"
-            onClick={() => navigate("/perfil")}
-            aria-label="Perfil"
-            className="flex h-10 w-10 shrink-0 items-center justify-center rounded-full border border-line bg-raised text-ink-soft"
-          >
-            <UserRound size={18} />
-          </button>
-        </div>
+        <p className="mb-2.5 text-[11px] font-bold uppercase tracking-[0.07em] text-prof">
+          Clínica de Prevenção em Saúde Bucal · UEPB
+        </p>
+        <h1 className="font-display text-[26px] font-semibold leading-[1.15] text-ink">Fila de revisão</h1>
+        <p className="mt-0.5 text-[12.5px] text-ink-soft">{subtitulo}</p>
       </header>
 
-      <div className="flex gap-2 overflow-x-auto px-5 py-3 scrollbar-hide" role="group" aria-label="Filtrar fila">
+      <div className="flex gap-2 px-5 py-3" role="group" aria-label="Filtrar fila">
         <Chip ativo={filtro === "meus"} rotulo="Meus alunos" total={contadores?.meus ?? null} onClick={() => setFiltro("meus")} />
         <Chip ativo={filtro === "todos"} rotulo="Todos" total={contadores?.todos ?? null} onClick={() => setFiltro("todos")} />
       </div>
@@ -253,6 +264,7 @@ export default function Fila() {
                 <CardFila
                   item={item}
                   meu={item.professorSupervisorId === usuario?.id}
+                  mostrarProfessor={filtro === "todos"}
                   onAbrir={() => navigate(`/fila/${item.id}`)}
                   onAvaliarTransferencia={() => setTransferindo(item)}
                 />
