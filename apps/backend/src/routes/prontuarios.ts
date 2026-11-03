@@ -7,6 +7,8 @@ import {
   transferirTitularidadeSchema,
   type DuplicidadeResponse,
   type Encaminhamento,
+  type FilaRevisaoResponse,
+  type ItemFilaRevisao,
   type HistoricoProntuario,
   type PartesDuplicidade,
   type AssinarResponse,
@@ -140,6 +142,14 @@ export const prontuariosRoutes: FastifyPluginAsync = async (app) => {
      JOIN Usuario u ON u.id = p.alunoTitularId
      WHERE p.professorSupervisorId = ? AND p.status = 'ASSINADO'
      ORDER BY p.atualizadoEm DESC`,
+  );
+  const listarEnviados = db.prepare(
+    `SELECT p.id, p.pacienteNome, p.pacienteDataNascimento, p.sinalizadoDuplicidade, p.professorSupervisorId,
+            p.alunoTitularId, ${ATUALIZADO_EM_EFETIVO} AS atualizadoEm, u.nome AS alunoNome
+     FROM Prontuario p
+     JOIN Usuario u ON u.id = p.alunoTitularId
+     WHERE p.status = 'ENVIADO'
+     ORDER BY atualizadoEm DESC`,
   );
   const buscarSecoes = db.prepare("SELECT secaoId, conteudo FROM Secao WHERE prontuarioId = ?");
   const buscarSecaoProcedimentos = db.prepare(
@@ -321,6 +331,48 @@ export const prontuariosRoutes: FastifyPluginAsync = async (app) => {
     const userId = req.user.sub;
     const linhas = (ehAluno(req.user.perfil) ? listarDoAluno.all(userId) : listarTodos.all()) as unknown as ProntuarioListaRow[];
     return linhas.map(comDestino);
+  });
+
+  app.get<{ Querystring: { filtro?: string } }>("/fila-revisao", protegida, async (req, reply) => {
+    if (ehAluno(req.user.perfil)) {
+      return reply.status(403).send({ message: "Apenas professores podem consultar a fila de revisão." });
+    }
+
+    const enviados = listarEnviados.all() as unknown as Array<{
+      id: string;
+      pacienteNome: string;
+      pacienteDataNascimento: string | null;
+      sinalizadoDuplicidade: number;
+      professorSupervisorId: string | null;
+      alunoTitularId: string;
+      atualizadoEm: string;
+      alunoNome: string;
+    }>;
+
+    const meus = enviados.filter((r) => r.professorSupervisorId === req.user.sub);
+    const visiveis = req.query.filtro === "todos" ? enviados : meus;
+
+    const prontuarios: ItemFilaRevisao[] = visiveis.map((r) => {
+      const sinalizado = r.sinalizadoDuplicidade === 1;
+      const duplicado = sinalizado ? buscarDuplicado(db, r, r.alunoTitularId) : undefined;
+      return {
+        id: r.id,
+        pacienteNome: r.pacienteNome,
+        pacienteDataNascimento: r.pacienteDataNascimento?.slice(0, 10) ?? null,
+        atualizadoEm: r.atualizadoEm,
+        sinalizadoDuplicidade: sinalizado,
+        professorSupervisorId: r.professorSupervisorId,
+        alunoNome: r.alunoNome,
+        ...lerDupla(r.id),
+        duplaAnteriorNome: duplicado ? nomeDuplaDestino(duplicado.id) : null,
+      };
+    });
+
+    const resposta: FilaRevisaoResponse = {
+      contadores: { meus: meus.length, todos: enviados.length },
+      prontuarios,
+    };
+    return resposta;
   });
 
   app.get("/encaminhamentos", protegida, async (req, reply) => {

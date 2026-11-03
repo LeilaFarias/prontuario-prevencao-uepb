@@ -80,6 +80,26 @@ export interface HistoricoProntuario {
   secoes: Record<string, unknown>;
 }
 
+export type FiltroFila = "meus" | "todos";
+
+export interface ItemFilaRevisao {
+  id: string;
+  pacienteNome: string;
+  pacienteDataNascimento: string | null;
+  atualizadoEm: string;
+  sinalizadoDuplicidade: boolean;
+  professorSupervisorId: string | null;
+  alunoNome: string;
+  alunoOperador: string;
+  alunoAuxiliar: string;
+  duplaAnteriorNome: string | null;
+}
+
+export interface FilaRevisaoResponse {
+  contadores: { meus: number; todos: number };
+  prontuarios: ItemFilaRevisao[];
+}
+
 export interface Encaminhamento {
   prontuarioId: string;
   pacienteNome: string;
