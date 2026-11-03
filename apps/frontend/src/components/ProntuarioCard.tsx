@@ -54,6 +54,7 @@ export default function ProntuarioCard({ prontuario: p, onAbrir, onSolicitarAces
   const pendente = pedidoPendente(p);
   const emDuplicidade = p.status === "enviado" && Boolean(p.sinalizadoDuplicidade);
   const transferido = p.status === "transferido";
+  const outraDuplaEmAnalise = !emDuplicidade && !transferido && Boolean(p.duplicidadeEmAnalise);
 
   const badge: Badge = transferido
     ? BADGES.transferido
@@ -116,7 +117,7 @@ export default function ProntuarioCard({ prontuario: p, onAbrir, onSolicitarAces
         ? pendente
           ? "Aguardando aprovação do professor"
           : "Toque para solicitar acesso"
-        : acaoEnviado;
+        : (acaoEnviado ?? (outraDuplaEmAnalise ? "O professor está avaliando a duplicidade" : null));
 
   const mostrarCadeado = !transferido && (bloqueado || recusado || enviadoExpirado);
 
@@ -173,6 +174,14 @@ export default function ProntuarioCard({ prontuario: p, onAbrir, onSolicitarAces
           <Icone size={12} aria-hidden="true" />
           {badge.label}
         </span>
+        {outraDuplaEmAnalise && (
+          <span
+            className={`inline-flex items-center gap-1.5 rounded-pill px-2.5 py-1 text-[11px] font-semibold ${BADGES.duplicidade.classes}`}
+          >
+            <AlertTriangle size={12} aria-hidden="true" />
+            {BADGES.duplicidade.label}
+          </span>
+        )}
         {!p.sincronizado && (
           <span className="inline-flex items-center gap-1.5 rounded-pill bg-sync-tint px-2.5 py-1 text-[11px] font-semibold text-sync">
             <RefreshCw size={12} aria-hidden="true" />

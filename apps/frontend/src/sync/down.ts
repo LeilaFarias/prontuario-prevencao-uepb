@@ -19,6 +19,7 @@ export interface ProntuarioRemotoResumo {
   alunoNome: string;
   professorSupervisorNome: string | null;
   sinalizadoDuplicidade: number;
+  duplicidadeEmAnalise?: number;
   transferidoDe: string | null;
   transferidoPara: string | null;
   transferidoParaNome: string | null;
@@ -65,6 +66,7 @@ function camposDeRevisao(remoto: ProntuarioRemoto) {
     motivoDevolucao: remoto.motivoDevolucao ?? undefined,
     comentarioDevolucao: remoto.comentarioDevolucao ?? undefined,
     sinalizadoDuplicidade: remoto.sinalizadoDuplicidade === 1,
+    duplicidadeEmAnalise: remoto.duplicidadeEmAnalise === 1,
   };
 }
 
@@ -136,6 +138,7 @@ export async function aplicarRemoto(remoto: ProntuarioRemoto): Promise<boolean> 
       remoto.acessoRecusadoEm !== (local.acessoRecusadoEm ?? null) ||
       novoStatus !== local.status ||
       (remoto.sinalizadoDuplicidade === 1) !== Boolean(local.sinalizadoDuplicidade) ||
+      (remoto.duplicidadeEmAnalise === 1) !== Boolean(local.duplicidadeEmAnalise) ||
       (remoto.transferidoDe ?? null) !== (local.transferidoDe ?? null) ||
       (remoto.transferidoPara ?? null) !== (local.transferidoPara ?? null);
 
@@ -160,6 +163,7 @@ export async function aplicarRemoto(remoto: ProntuarioRemoto): Promise<boolean> 
         professorSupervisorId: remoto.professorSupervisorId ?? undefined,
         professorSupervisorNome: remoto.professorSupervisorNome ?? undefined,
         sinalizadoDuplicidade: remoto.sinalizadoDuplicidade === 1,
+        duplicidadeEmAnalise: remoto.duplicidadeEmAnalise === 1,
         ...camposDeTransferencia(remoto, local),
         vistoPeloAluno: novoStatus === local.status ? local.vistoPeloAluno : false,
       });

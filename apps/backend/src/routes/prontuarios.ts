@@ -33,6 +33,7 @@ interface ProntuarioListaRow {
   alunoNome: string;
   professorSupervisorNome: string | null;
   sinalizadoDuplicidade: number;
+  duplicidadeEmAnalise: number;
   transferidoDe: string | null;
   transferidoPara: string | null;
 }
@@ -104,6 +105,19 @@ const COLUNAS = `
   p.alunoTitularId,
   p.professorSupervisorId,
   p.sinalizadoDuplicidade,
+  CASE
+    WHEN p.sinalizadoDuplicidade = 0
+      AND p.status NOT IN ('EM_ANDAMENTO', 'TRANSFERIDO')
+      AND EXISTS (
+        SELECT 1 FROM Prontuario o
+        WHERE o.id != p.id
+          AND o.pacienteNome = p.pacienteNome
+          AND o.pacienteDataNascimento = p.pacienteDataNascimento
+          AND o.alunoTitularId != p.alunoTitularId
+          AND o.status = 'ENVIADO'
+          AND o.sinalizadoDuplicidade = 1
+      ) THEN 1 ELSE 0
+  END AS duplicidadeEmAnalise,
   p.transferidoDe,
   p.transferidoPara,
   u.nome AS alunoNome,
@@ -180,6 +194,7 @@ export const prontuariosRoutes: FastifyPluginAsync = async (app) => {
   const gravarManutencao = db.prepare(
     `UPDATE Prontuario SET professorSupervisorId = ?, sinalizadoDuplicidade = 0, atualizadoEm = ? WHERE id = ?`,
   );
+  const atualizarCarimbo = db.prepare("UPDATE Prontuario SET atualizadoEm = ? WHERE id = ?");
   const gravarTransferenciaArquivado = db.prepare(
     `UPDATE Prontuario
      SET status = 'TRANSFERIDO', transferidoPara = ?, sinalizadoDuplicidade = 0, atualizadoEm = ?
@@ -445,6 +460,7 @@ export const prontuariosRoutes: FastifyPluginAsync = async (app) => {
         professorSupervisorId: linha.professorSupervisorId,
         professorSupervisorNome,
         sinalizadoDuplicidade: linha.sinalizadoDuplicidade,
+        duplicidadeEmAnalise: linha.duplicidadeEmAnalise,
         transferidoDe: linha.transferidoDe,
         transferidoPara: linha.transferidoPara,
         transferidoParaNome: nomeDuplaDestino(linha.transferidoPara),
@@ -708,7 +724,9 @@ export const prontuariosRoutes: FastifyPluginAsync = async (app) => {
           return PROFESSOR_INVALIDO;
         }
 
-        gravarManutencao.run(professorSupervisorId, new Date().toISOString(), id);
+        const agora = new Date().toISOString();
+        gravarManutencao.run(professorSupervisorId, agora, id);
+        if (r.resposta.existente) atualizarCarimbo.run(agora, r.resposta.existente.prontuarioId);
         registrarAuditoria.run(
           randomUUID(),
           req.user.sub,

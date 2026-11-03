@@ -66,12 +66,15 @@ export function enviarProntuario(db: DatabaseSync, prontuarioId: string, alunoId
   if (!professor) return { ok: false, erro: "professor_nao_encontrado" };
 
   const duplicado = buscarDuplicado(db, pront, alunoId);
+  const agora = new Date().toISOString();
 
   db.prepare(
     `UPDATE Prontuario
      SET status = 'ENVIADO', professorSupervisorId = ?, sinalizadoDuplicidade = ?, atualizadoEm = ?
      WHERE id = ?`,
-  ).run(professor.id, duplicado ? 1 : 0, new Date().toISOString(), pront.id);
+  ).run(professor.id, duplicado ? 1 : 0, agora, pront.id);
+
+  if (duplicado) db.prepare("UPDATE Prontuario SET atualizadoEm = ? WHERE id = ?").run(agora, duplicado.id);
 
   return {
     ok: true,

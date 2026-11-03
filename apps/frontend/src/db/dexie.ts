@@ -28,6 +28,7 @@ export interface LocalProntuario {
   comentarioDevolucao?: string;
   vistoPeloAluno?: boolean;
   sinalizadoDuplicidade?: boolean;
+  duplicidadeEmAnalise?: boolean;
   transferidoDe?: string;
   transferidoPara?: string;
   transferidoParaNome?: string;
