@@ -32,6 +32,13 @@ const liberacaoManualPayload = z.object({
 interface ProntRow extends AcessoRow {
   id: string;
   status: string;
+  alunoTitularId: string;
+  professorSupervisorId: string | null;
+}
+
+interface UsuarioSync {
+  id: string;
+  perfil: "aluno" | "professor";
 }
 
 const editaFicha = (op: SyncOperation): boolean =>
@@ -41,7 +48,8 @@ export const syncRoutes: FastifyPluginAsync = async (app) => {
   const { db } = app;
 
   const buscarPront = db.prepare(
-    `SELECT id, status, acessoSolicitadoEm, acessoExpiraEm, acessoRevogadoEm, acessoRecusadoEm
+    `SELECT id, status, alunoTitularId, professorSupervisorId,
+            acessoSolicitadoEm, acessoExpiraEm, acessoRevogadoEm, acessoRecusadoEm
       FROM Prontuario WHERE id = ?`,
   );
   const invalidarAssinatura = db.prepare(
@@ -111,11 +119,12 @@ export const syncRoutes: FastifyPluginAsync = async (app) => {
     return true;
   }
 
-  function aplicar(op: SyncOperation, existe: boolean): void {
+  function aplicar(op: SyncOperation, existe: boolean, usuario: UsuarioSync): void {
     const agora = new Date().toISOString();
 
     if (op.entity === "prontuario") {
       if (op.op === "delete") {
+        if (usuario.perfil !== "aluno") throw new Error("Apenas o aluno titular pode excluir o prontuário");
         apagarPront.run(op.entityId);
         return;
       }
@@ -130,6 +139,9 @@ export const syncRoutes: FastifyPluginAsync = async (app) => {
 
       if (!existe) {
         if (!p.alunoTitularId || p.pacienteNome === undefined) throw new Error("Payload incompleto para criar prontuário");
+        if (usuario.perfil !== "aluno" || p.alunoTitularId !== usuario.id) {
+          throw new Error("Prontuário não pode ser criado em nome de outro usuário");
+        }
         const acessoExpiraEm = new Date(op.ts + ACESSO_DURACAO_MS).toISOString();
         inserirPront.run(op.entityId, p.pacienteNome, nascimento, p.alunoTitularId, status, acessoExpiraEm);
       } else {
@@ -158,6 +170,12 @@ export const syncRoutes: FastifyPluginAsync = async (app) => {
     let descartadas = 0;
     const envios: EnvioSincronizado[] = [];
     const acessoExpirado = new Set<string>();
+    const usuario: UsuarioSync = { id: req.user.sub, perfil: req.user.perfil };
+
+    const temPermissao = (pront: ProntRow): boolean =>
+      usuario.perfil === "aluno"
+        ? pront.alunoTitularId === usuario.id
+        : pront.professorSupervisorId === usuario.id;
 
     // sort é estável: operações com o mesmo ts mantêm a ordem de chegada
     for (const op of [...operations].sort((a, b) => a.ts - b.ts)) {
@@ -168,9 +186,16 @@ export const syncRoutes: FastifyPluginAsync = async (app) => {
         const assinado = status === "ASSINADO";
         const enviado = status === "ENVIADO";
         const transferido = status === "TRANSFERIDO";
-        let descartar = false;
+        const negado = !!pront && !temPermissao(pront);
+        let descartar = negado;
+        if (negado) {
+          req.log.warn(
+            { usuarioId: usuario.id, prontuarioId: op.prontuarioId, op: op.op, entity: op.entity },
+            "sync: operação em prontuário sem permissão descartada",
+          );
+        }
 
-        if (pront && editaFicha(op)) {
+        if (pront && !negado && editaFicha(op)) {
           if (transferido) {
             descartar = true;
           } else if (assinado) {
@@ -211,7 +236,7 @@ export const syncRoutes: FastifyPluginAsync = async (app) => {
             } else if (op.entity === "prontuario" && op.op === "reabrir") {
               if (reabrirProntuario(db, op.prontuarioId, req.user.sub) !== "ok") descartar = true;
             } else {
-              aplicar(op, !!pront);
+              aplicar(op, !!pront, usuario);
             }
           } catch (err) {
             req.log.warn({ err, entityId: op.entityId }, "operação de sync descartada");

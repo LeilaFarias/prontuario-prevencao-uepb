@@ -12,6 +12,7 @@ interface UsuarioRow {
   perfil: string;
   matricula: string | null;
   ativo: number;
+  tokenVersion: number;
 }
 
 export const authRoutes: FastifyPluginAsync = async (app) => {
@@ -68,32 +69,37 @@ app.post("/auth/signup", async (req, reply) => {
   return reply.status(201).send({ id });
 });
 
-  app.post("/auth/login", async (req, reply) => {
-    const dados = loginSchema.parse(req.body);
-    const usuario = db.prepare("SELECT * FROM Usuario WHERE email = ?").get(dados.email) as
-      | UsuarioRow
-      | undefined;
-    const ok = usuario ? await verificarSenha(dados.senha, usuario.senhaHash) : false;
-    if (!usuario || !ok) {
-      return reply.status(401).send({ message: "E-mail ou senha incorretos." });
-    }
+  app.post(
+    "/auth/login",
+    { config: { rateLimit: { max: 5, timeWindow: "15 minutes" } } },
+    async (req, reply) => {
+      const dados = loginSchema.parse(req.body);
+      const usuario = db.prepare("SELECT * FROM Usuario WHERE email = ?").get(dados.email) as
+        | UsuarioRow
+        | undefined;
+      const ok = usuario ? await verificarSenha(dados.senha, usuario.senhaHash) : false;
+      if (!usuario || !ok) {
+        return reply.status(401).send({ message: "E-mail ou senha incorretos." });
+      }
 
-    if (!usuario.ativo) {
-      return reply.status(401).send({ message: "Conta desativada." });
-    }
+      if (!usuario.ativo) {
+        return reply.status(401).send({ message: "Conta desativada." });
+      }
 
-    const perfil = usuario.perfil.toLowerCase() as "aluno" | "professor";
-    const accessToken = app.jwt.sign({ sub: usuario.id, perfil }, { expiresIn: env.JWT_ACCESS_TTL });
-    const refreshToken = app.jwt.sign(
-      { sub: usuario.id, perfil, tipo: "refresh" },
-      { expiresIn: env.JWT_REFRESH_TTL },
-    );
+      const perfil = usuario.perfil.toLowerCase() as "aluno" | "professor";
+      const { tokenVersion } = usuario;
+      const accessToken = app.jwt.sign({ sub: usuario.id, perfil, tokenVersion }, { expiresIn: env.JWT_ACCESS_TTL });
+      const refreshToken = app.jwt.sign(
+        { sub: usuario.id, perfil, tokenVersion, tipo: "refresh" },
+        { expiresIn: env.JWT_REFRESH_TTL },
+      );
 
-    const resposta: LoginResponse = {
-      accessToken,
-      refreshToken,
-      user: { id: usuario.id, nome: usuario.nome, email: usuario.email, perfil, matricula: usuario.matricula },
-    };
-    return resposta;
-  });
+      const resposta: LoginResponse = {
+        accessToken,
+        refreshToken,
+        user: { id: usuario.id, nome: usuario.nome, email: usuario.email, perfil, matricula: usuario.matricula },
+      };
+      return resposta;
+    },
+  );
 };

@@ -1,5 +1,7 @@
 import Fastify from "fastify";
 import cors from "@fastify/cors";
+import helmet from "@fastify/helmet";
+import rateLimit from "@fastify/rate-limit";
 import { ZodError } from "zod";
 import { env } from "./env";
 import dbPlugin from "./plugins/db";
@@ -22,12 +24,25 @@ await app.register(cors, {
   origin: env.CORS_ORIGIN.split(",").map((o) => o.trim()),
   methods: ["GET", "HEAD", "POST", "PUT", "DELETE", "OPTIONS"],
 });
+await app.register(helmet);
+await app.register(rateLimit, {
+  global: true,
+  max: 100,
+  timeWindow: "1 minute",
+  errorResponseBuilder: (_req, context) => ({
+    statusCode: 429,
+    message: `Muitas requisições. Tente novamente em ${context.after}.`,
+  }),
+});
 await app.register(dbPlugin);
 await app.register(authPlugin);
 
 app.setErrorHandler((err, _req, reply) => {
   if (err instanceof ZodError) {
     return reply.status(400).send({ message: err.issues[0]?.message ?? "Dados inválidos" });
+  }
+  if (err.statusCode === 429) {
+    return reply.status(429).send({ message: err.message });
   }
   app.log.error(err);
   return reply.status(err.statusCode ?? 500).send({ message: "Erro interno do servidor." });

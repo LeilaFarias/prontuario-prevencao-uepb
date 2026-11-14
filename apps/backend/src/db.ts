@@ -111,6 +111,13 @@ function migrarColunaAtivo(db: DatabaseSync): void {
   }
 }
 
+function migrarColunaTokenVersion(db: DatabaseSync): void {
+  const colunas = db.prepare("PRAGMA table_info(Usuario)").all() as unknown as { name: string }[];
+  if (!colunas.some((c) => c.name === "tokenVersion")) {
+    db.exec("ALTER TABLE Usuario ADD COLUMN tokenVersion INTEGER NOT NULL DEFAULT 0");
+  }
+}
+
 function migrarColunaSinalizadoDuplicidade(db: DatabaseSync): void {
   const colunas = db.prepare("PRAGMA table_info(Prontuario)").all() as unknown as { name: string }[];
   if (!colunas.some((c) => c.name === "sinalizadoDuplicidade")) {
@@ -165,6 +172,7 @@ export function abrirBanco(): DatabaseSync {
   db.exec("PRAGMA journal_mode = WAL; PRAGMA foreign_keys = ON;");
   db.exec(SCHEMA);
   migrarColunaAtivo(db);
+  migrarColunaTokenVersion(db);
   migrarColunaSinalizadoDuplicidade(db);
   migrarColunasRevisao(db);
   migrarColunasAcesso(db);

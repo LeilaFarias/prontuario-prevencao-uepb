@@ -84,7 +84,10 @@ export const userRoutes: FastifyPluginAsync = async (app) => {
       return reply.status(401).send({ message: "Senha atual incorreta." });
     }
 
-    db.prepare("UPDATE Usuario SET senhaHash = ? WHERE id = ?").run(await hashSenha(dados.novaSenha), id);
+    db.prepare("UPDATE Usuario SET senhaHash = ?, tokenVersion = tokenVersion + 1 WHERE id = ?").run(
+      await hashSenha(dados.novaSenha),
+      id,
+    );
     return { ok: true };
   });
 

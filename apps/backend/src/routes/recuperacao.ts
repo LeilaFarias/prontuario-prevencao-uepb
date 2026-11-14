@@ -59,7 +59,7 @@ export const recuperacaoRoutes: FastifyPluginAsync = async (app) => {
   const tokenValido = (t: TokenRow | undefined): t is TokenRow =>
     !!t && t.usadoEm === null && t.expiraEm >= new Date().toISOString();
 
-  app.post("/auth/forgot-password", async (req) => {
+  app.post("/auth/forgot-password", { config: { rateLimit: { max: 5, timeWindow: "15 minutes" } } }, async (req) => {
     const { email } = forgotPasswordSchema.parse(req.body);
     const resposta = { ok: true, message: MENSAGEM_FORGOT_PASSWORD };
 
@@ -93,7 +93,7 @@ export const recuperacaoRoutes: FastifyPluginAsync = async (app) => {
     return { valido: tokenValido(buscarToken(token)) };
   });
 
-  app.post("/auth/reset-password", async (req, reply) => {
+  app.post("/auth/reset-password", { config: { rateLimit: { max: 5, timeWindow: "15 minutes" } } }, async (req, reply) => {
     const { token, novaSenha } = resetPasswordBodySchema.parse(req.body);
 
     const registro = buscarToken(token);
@@ -108,7 +108,10 @@ export const recuperacaoRoutes: FastifyPluginAsync = async (app) => {
         .prepare("UPDATE PasswordResetToken SET usadoEm = ? WHERE id = ? AND usadoEm IS NULL")
         .run(agora, registro.id);
       if (Number(marcado.changes) === 0) return false;
-      db.prepare("UPDATE Usuario SET senhaHash = ? WHERE id = ?").run(novoHash, registro.userId);
+      db.prepare("UPDATE Usuario SET senhaHash = ?, tokenVersion = tokenVersion + 1 WHERE id = ?").run(
+        novoHash,
+        registro.userId,
+      );
       db.prepare("UPDATE PasswordResetToken SET usadoEm = ? WHERE userId = ? AND usadoEm IS NULL").run(
         agora,
         registro.userId,

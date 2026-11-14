@@ -6,6 +6,7 @@ import { env } from "../env";
 interface TokenPayload {
   sub: string;
   perfil: "aluno" | "professor";
+  tokenVersion: number;
   tipo?: "refresh";
 }
 
@@ -38,7 +39,10 @@ export default fp(async (app) => {
     }
     if (req.user.tipo === "refresh") return reply.status(401).send(SESSAO_EXPIRADA);
 
-    const ativo = app.db.prepare("SELECT 1 FROM Usuario WHERE id = ? AND ativo = 1").get(req.user.sub);
-    if (!ativo) return reply.status(401).send(SESSAO_EXPIRADA);
+    const usuario = app.db
+      .prepare("SELECT tokenVersion FROM Usuario WHERE id = ? AND ativo = 1")
+      .get(req.user.sub) as unknown as { tokenVersion: number } | undefined;
+    if (!usuario) return reply.status(401).send(SESSAO_EXPIRADA);
+    if (usuario.tokenVersion !== (req.user.tokenVersion ?? 0)) return reply.status(401).send(SESSAO_EXPIRADA);
   });
 });
