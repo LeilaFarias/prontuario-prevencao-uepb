@@ -1,5 +1,5 @@
-import type { DatabaseSync } from "node:sqlite";
 import type { ResultadoEnvio } from "@prontuario/shared";
+import { executar, uma, type Executor } from "../db";
 
 interface ProntuarioEnvioRow {
   id: string;
@@ -21,34 +21,37 @@ interface DuplicadoRow {
 }
 
 export function buscarDuplicado(
-  db: DatabaseSync,
+  db: Executor,
   pront: Pick<ProntuarioEnvioRow, "id" | "pacienteNome" | "pacienteDataNascimento">,
   alunoId: string,
-): DuplicadoRow | undefined {
-  if (!pront.pacienteDataNascimento) return undefined;
-  return db
-    .prepare(
-      `SELECT id, alunoTitularId, criadoEm, status FROM Prontuario
-       WHERE pacienteNome = ? AND pacienteDataNascimento = ?
-         AND id != ? AND alunoTitularId != ? AND status NOT IN ('EM_ANDAMENTO', 'TRANSFERIDO')
-       ORDER BY criadoEm ASC LIMIT 1`,
-    )
-    .get(pront.pacienteNome, pront.pacienteDataNascimento, pront.id, alunoId) as unknown as DuplicadoRow | undefined;
+): Promise<DuplicadoRow | undefined> {
+  if (!pront.pacienteDataNascimento) return Promise.resolve(undefined);
+  return uma<DuplicadoRow>(
+    db,
+    `SELECT "id", "alunoTitularId", "criadoEm", "status" FROM "Prontuario"
+     WHERE "pacienteNome" = $1 AND "pacienteDataNascimento" = $2
+       AND "id" != $3 AND "alunoTitularId" != $4 AND "status" NOT IN ('EM_ANDAMENTO', 'TRANSFERIDO')
+     ORDER BY "criadoEm" ASC LIMIT 1`,
+    [pront.pacienteNome, pront.pacienteDataNascimento, pront.id, alunoId],
+  );
 }
 
-export function enviarProntuario(db: DatabaseSync, prontuarioId: string, alunoId: string): ResultadoEnvio {
-  const pront = db
-    .prepare(
-      `SELECT id, status, pacienteNome, pacienteDataNascimento
-       FROM Prontuario WHERE id = ? AND alunoTitularId = ? AND descartadoEm IS NULL`,
-    )
-    .get(prontuarioId, alunoId) as unknown as ProntuarioEnvioRow | undefined;
+export async function enviarProntuario(db: Executor, prontuarioId: string, alunoId: string): Promise<ResultadoEnvio> {
+  const pront = await uma<ProntuarioEnvioRow>(
+    db,
+    `SELECT "id", "status", "pacienteNome", "pacienteDataNascimento"
+     FROM "Prontuario" WHERE "id" = $1 AND "alunoTitularId" = $2 AND "descartadoEm" IS NULL
+     FOR UPDATE`,
+    [prontuarioId, alunoId],
+  );
   if (!pront) return { ok: false, erro: "nao_encontrado" };
   if (pront.status !== "EM_ANDAMENTO" && pront.status !== "DEVOLVIDO") return { ok: false, erro: "ja_enviado" };
 
-  const secao = db
-    .prepare("SELECT conteudo FROM Secao WHERE prontuarioId = ? AND secaoId = 'consentimento'")
-    .get(prontuarioId) as unknown as { conteudo: string } | undefined;
+  const secao = await uma<{ conteudo: string }>(
+    db,
+    `SELECT "conteudo" FROM "Secao" WHERE "prontuarioId" = $1 AND "secaoId" = 'consentimento'`,
+    [prontuarioId],
+  );
 
   let nomeProfessor = "";
   if (secao) {
@@ -60,21 +63,25 @@ export function enviarProntuario(db: DatabaseSync, prontuarioId: string, alunoId
   }
   if (!nomeProfessor) return { ok: false, erro: "professor_nao_encontrado" };
 
-  const professor = db
-    .prepare("SELECT id, nome FROM Usuario WHERE nome = ? AND UPPER(perfil) = 'PROFESSOR' AND ativo = 1 LIMIT 1")
-    .get(nomeProfessor) as unknown as ProfessorRow | undefined;
+  const professor = await uma<ProfessorRow>(
+    db,
+    `SELECT "id", "nome" FROM "Usuario" WHERE "nome" = $1 AND UPPER("perfil") = 'PROFESSOR' AND "ativo" LIMIT 1`,
+    [nomeProfessor],
+  );
   if (!professor) return { ok: false, erro: "professor_nao_encontrado" };
 
-  const duplicado = buscarDuplicado(db, pront, alunoId);
+  const duplicado = await buscarDuplicado(db, pront, alunoId);
   const agora = new Date().toISOString();
 
-  db.prepare(
-    `UPDATE Prontuario
-     SET status = 'ENVIADO', professorSupervisorId = ?, sinalizadoDuplicidade = ?, atualizadoEm = ?
-     WHERE id = ?`,
-  ).run(professor.id, duplicado ? 1 : 0, agora, pront.id);
+  await executar(
+    db,
+    `UPDATE "Prontuario"
+     SET "status" = 'ENVIADO', "professorSupervisorId" = $1, "sinalizadoDuplicidade" = $2, "atualizadoEm" = $3
+     WHERE "id" = $4`,
+    [professor.id, Boolean(duplicado), agora, pront.id],
+  );
 
-  if (duplicado) db.prepare("UPDATE Prontuario SET atualizadoEm = ? WHERE id = ?").run(agora, duplicado.id);
+  if (duplicado) await executar(db, `UPDATE "Prontuario" SET "atualizadoEm" = $1 WHERE "id" = $2`, [agora, duplicado.id]);
 
   return {
     ok: true,

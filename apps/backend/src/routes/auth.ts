@@ -1,6 +1,7 @@
 import { randomUUID } from "node:crypto";
 import type { FastifyPluginAsync } from "fastify";
 import { loginSchema, signupSchema, type LoginResponse } from "@prontuario/shared";
+import { executar, uma } from "../db";
 import { env } from "../env";
 import { hashSenha, verificarSenha } from "../lib/senha";
 
@@ -11,7 +12,7 @@ interface UsuarioRow {
   senhaHash: string;
   perfil: string;
   matricula: string | null;
-  ativo: number;
+  ativo: boolean;
   tokenVersion: number;
 }
 
@@ -21,18 +22,22 @@ app.post("/auth/signup", async (req, reply) => {
   const dados = signupSchema.parse(req.body);
   const matricula = dados.perfil === "professor" ? dados.matricula || null : null;
 
-  const existente = db.prepare(
-    "SELECT id, ativo FROM Usuario WHERE email = ?"
-  ).get(dados.email) as { id: string; ativo: number } | undefined;
+  const existente = await uma<{ id: string; ativo: boolean }>(
+    db,
+    `SELECT "id", "ativo" FROM "Usuario" WHERE "email" = $1`,
+    [dados.email],
+  );
 
-  if (existente && existente.ativo === 1) {
+  if (existente && existente.ativo) {
     return reply.status(409).send({ message: "Já existe uma conta com este e-mail." });
   }
 
   if (matricula) {
-    const matriculaExistente = db.prepare(
-      "SELECT id FROM Usuario WHERE matricula = ?"
-    ).get(matricula) as { id: string } | undefined;
+    const matriculaExistente = await uma<{ id: string }>(
+      db,
+      `SELECT "id" FROM "Usuario" WHERE "matricula" = $1`,
+      [matricula],
+    );
 
     if (matriculaExistente && matriculaExistente.id !== existente?.id) {
       return reply.status(409).send({ message: "Esta matrícula já está cadastrada." });
@@ -42,29 +47,27 @@ app.post("/auth/signup", async (req, reply) => {
   const senhaHash = await hashSenha(dados.senha);
 
   if (existente) {
-    db.prepare(`
-      UPDATE Usuario
-      SET ativo = 1,
-          nome = ?,
-          senhaHash = ?,
-          perfil = ?,
-          matricula = ?
-      WHERE id = ?
-    `).run(
-      dados.nome,
-      senhaHash,
-      dados.perfil.toUpperCase(),
-      matricula,
-      existente.id
+    await executar(
+      db,
+      `UPDATE "Usuario"
+       SET "ativo" = TRUE,
+           "nome" = $1,
+           "senhaHash" = $2,
+           "perfil" = $3,
+           "matricula" = $4
+       WHERE "id" = $5`,
+      [dados.nome, senhaHash, dados.perfil.toUpperCase(), matricula, existente.id],
     );
 
     return reply.status(200).send({ id: existente.id, reativada: true });
   }
 
   const id = randomUUID();
-  db.prepare(
-    "INSERT INTO Usuario (id, nome, email, senhaHash, perfil, matricula) VALUES (?, ?, ?, ?, ?, ?)"
-  ).run(id, dados.nome, dados.email, senhaHash, dados.perfil.toUpperCase(), matricula);
+  await executar(
+    db,
+    `INSERT INTO "Usuario" ("id", "nome", "email", "senhaHash", "perfil", "matricula") VALUES ($1, $2, $3, $4, $5, $6)`,
+    [id, dados.nome, dados.email, senhaHash, dados.perfil.toUpperCase(), matricula],
+  );
 
   return reply.status(201).send({ id });
 });
@@ -74,9 +77,7 @@ app.post("/auth/signup", async (req, reply) => {
     { config: { rateLimit: { max: 5, timeWindow: "15 minutes" } } },
     async (req, reply) => {
       const dados = loginSchema.parse(req.body);
-      const usuario = db.prepare("SELECT * FROM Usuario WHERE email = ?").get(dados.email) as
-        | UsuarioRow
-        | undefined;
+      const usuario = await uma<UsuarioRow>(db, `SELECT * FROM "Usuario" WHERE "email" = $1`, [dados.email]);
       const ok = usuario ? await verificarSenha(dados.senha, usuario.senhaHash) : false;
       if (!usuario || !ok) {
         return reply.status(401).send({ message: "E-mail ou senha incorretos." });

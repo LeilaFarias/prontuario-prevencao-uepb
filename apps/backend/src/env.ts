@@ -5,8 +5,18 @@ try {
 } catch {
 }
 
+const booleano = z
+  .enum(["true", "false"])
+  .default("true")
+  .transform((v) => v === "true");
+
 const envSchema = z.object({
-  DATABASE_URL: z.string().min(1).default("file:./dev.db"),
+  DATABASE_URL: z
+    .string()
+    .min(1)
+    .refine((v) => /^postgres(ql)?:\/\//.test(v), "DATABASE_URL deve ser uma URL postgresql://"),
+  DATABASE_POOL_MAX: z.coerce.number().int().min(1).default(10),
+  DATABASE_SSL: booleano,
   JWT_SECRET: z.string().min(16, "JWT_SECRET precisa ter 16+ caracteres"),
   JWT_ACCESS_TTL: z.string().default("5h"),
   JWT_REFRESH_TTL: z.string().default("5h"), 

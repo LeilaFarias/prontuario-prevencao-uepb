@@ -1,5 +1,9 @@
-import { abrirBanco } from "./db";
+import { criarPool, migrar } from "./db";
 
-const db = abrirBanco();
-db.close();
-console.log("Banco pronto.");
+const db = criarPool();
+try {
+  await migrar(db);
+  console.log("Banco pronto.");
+} finally {
+  await db.end();
+}

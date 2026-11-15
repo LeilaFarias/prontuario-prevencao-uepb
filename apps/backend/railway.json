@@ -5,7 +5,7 @@
     "buildCommand": "pnpm --filter @prontuario/backend build"
   },
   "deploy": {
-    "startCommand": "sh -c 'mkdir -p /data && chmod 777 /data && pnpm --filter @prontuario/backend start'",
+    "startCommand": "pnpm --filter @prontuario/backend start",
     "restartPolicyType": "ON_FAILURE",
     "restartPolicyMaxRetries": 10
   }

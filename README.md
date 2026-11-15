@@ -57,9 +57,9 @@ prontuários criados em um dispositivo apareçam em outro.
 - lucide-react
 
 **Backend**
-- Node.js 22.13+ (usa `node:sqlite` e `process.loadEnvFile`)
+- Node.js 22.13+ (usa `process.loadEnvFile`)
 - Fastify
-- SQL nativo do Node (sem ORM)
+- PostgreSQL (Supabase) com `pg` e SQL puro (sem ORM)
 - `scrypt` (`node:crypto`) para hash de senha
 - JWT (`@fastify/jwt`)
 - Zod para validação
@@ -70,12 +70,11 @@ prontuários criados em um dispositivo apareçam em outro.
 
 ## Requisitos
 
-- **Node.js 22.13 ou superior** — o backend usa `node:sqlite` e 
-  `process.loadEnvFile`, ambos nativos.
+- **Node.js 22.13 ou superior** — o backend usa `process.loadEnvFile`, nativo.
 - **pnpm 9+**
+- **Um banco PostgreSQL** — projeto no Supabase (recomendado) ou Postgres local.
 
-Não há dependências nativas, Prisma, Docker ou banco externo. O banco é 
-um arquivo SQLite no disco.
+Não há dependências nativas, Prisma ou Docker.
 
 ## Como rodar
 
@@ -86,27 +85,43 @@ pnpm install
 # 2. Configurar variáveis de ambiente
 cp apps/backend/.env.example apps/backend/.env
 # edite o arquivo e defina:
+#   DATABASE_URL         (pooler de sessão do Supabase, veja "Deploy")
 #   JWT_SECRET           (16+ caracteres)
 #   RESET_TOKEN_SECRET   (32+ caracteres)
+#   BACKUP_KEY           (32+ caracteres)
 
-# 3. Criar o banco
+# 3. Criar as tabelas
 pnpm db:migrate
 
 # 4. Subir tudo
 pnpm dev
 ```
 
+## Deploy
+
+O banco é um PostgreSQL no **Supabase**. O backend se conecta pelo **pooler de sessão**:
+
+1. No painel do Supabase, abra **Connect** e copie a string do **Session pooler** (porta `5432`).
+2. Defina `DATABASE_URL` no formato `postgresql://postgres.<project-ref>:<senha>@aws-0-<regiao>.pooler.supabase.com:5432/postgres`.
+3. Não use a conexão direta (`db.<project-ref>.supabase.co`, apenas IPv6) nem o modo transação (porta `6543`): o backend usa transações explícitas e `SAVEPOINT`, que dependem de uma sessão estável.
+4. Codifique na URL caracteres especiais da senha (`@` vira `%40`) e não inclua `?sslmode=`: o SSL é controlado por `DATABASE_SSL` (padrão `true`; use `false` só em Postgres local sem SSL).
+5. `DATABASE_POOL_MAX` (padrão 10) limita as conexões do backend. Mantenha-o abaixo do limite de conexões do pooler do seu plano, somando todas as instâncias.
+
+As tabelas são criadas automaticamente na subida do servidor, e também por `pnpm db:migrate`. A migração é idempotente e ativa o Row Level Security em todas as tabelas, sem políticas, de modo que a API REST pública do Supabase (chaves `anon` e `authenticated`) não enxerga os dados. O backend se conecta como o dono do banco e não é afetado.
+
+No Railway, o volume em `/data` deixou de ser necessário: o backend não grava mais nada em disco. Defina as variáveis de ambiente do serviço, incluindo `DATABASE_URL`, `JWT_SECRET`, `RESET_TOKEN_SECRET` e `BACKUP_KEY`.
+
 ## Política de Retenção de Dados
 
 - Os prontuários são retidos por tempo indeterminado (RN-18).
-- A exclusão de conta é *soft delete*: o usuário é marcado como inativo (`ativo = 0`) e o motivo, quando informado, fica em `Usuario.motivoExclusao`. Os dados permanecem para fins de auditoria e histórico clínico, e a ação é registrada no `AuditLog` como `conta-desativada`.
+- A exclusão de conta é *soft delete*: o usuário é marcado como inativo (`ativo = false`) e o motivo, quando informado, fica em `Usuario.motivoExclusao`. Os dados permanecem para fins de auditoria e histórico clínico, e a ação é registrada no `AuditLog` como `conta-desativada`.
 - A exclusão definitiva de dados só pode ser solicitada formalmente e é decisão do professor responsável.
 - Backups são criptografados e retidos pelo mesmo período do banco principal.
 - Base legal: Art. 16 da LGPD (retenção para cumprimento de obrigação legal ou regulatória e para estudos por órgão de pesquisa).
 
 ## Backup e Restauração
 
-O backup é do arquivo SQLite inteiro (`.db`), criptografado com **AES-256-GCM** (chave de 32 bytes derivada de `BACKUP_KEY` via scrypt). O formato do arquivo `.db.enc` é `[IV: 12 bytes][AUTH_TAG: 16 bytes][dados cifrados]`.
+O backup é uma exportação lógica de todas as tabelas (JSON gerado por consultas, em uma transação de leitura consistente), criptografada com **AES-256-GCM** (chave de 32 bytes derivada de `BACKUP_KEY` via scrypt). O formato do arquivo `.json.enc` é `[IV: 12 bytes][AUTH_TAG: 16 bytes][dados cifrados]`. Não depende do `pg_dump` nem de acesso direto ao servidor do banco.
 
 ### Configurar a chave
 
@@ -129,33 +144,33 @@ TOKEN=$(curl -s -X POST "$API_URL/auth/login" \
   | node -pe "JSON.parse(require('fs').readFileSync(0,'utf8')).accessToken")
 
 curl -f -H "Authorization: Bearer $TOKEN" \
-  -o "backup-$(date +%Y-%m-%d-%H-%M-%S).db.enc" \
+  -o "backup-$(date +%Y-%m-%d-%H-%M-%S).json.enc" \
   "$API_URL/admin/backup"
 ```
 
 Cada download é registrado no `AuditLog` como `backup-baixado`. Alunos recebem `403`.
 
-Também é possível copiar diretamente o arquivo `.db` do servidor (com o servidor parado, ou incluindo os arquivos `-wal` e `-shm`). Essa cópia **não é criptografada** e deve ser armazenada com o mesmo cuidado do banco.
+O Supabase também mantém backups automáticos do banco conforme o plano contratado. Eles complementam, mas não substituem, o backup criptografado acima.
 
 ### Restaurar
 
 Com o servidor parado:
 
 ```bash
-pnpm --filter @prontuario/backend restore ./backup-2026-01-01-03-00-00.db.enc
+pnpm --filter @prontuario/backend restore ./backup-2026-01-01-03-00-00.json.enc
 ```
 
 O script:
 
-1. Guarda uma cópia do banco atual em `<banco>.bak-<timestamp>`.
-2. Descriptografa o backup sobre o banco atual. Com `BACKUP_KEY` errada ou arquivo corrompido, falha com "Backup corrompido ou chave incorreta" e o banco atual não é alterado.
-3. Confirma que a tabela `Usuario` existe e tem ao menos 1 registro. Se a verificação falhar, o banco anterior é restaurado automaticamente.
+1. Descriptografa o backup. Com `BACKUP_KEY` errada ou arquivo corrompido, falha com "Backup corrompido ou chave incorreta" e o banco não é alterado.
+2. Garante que as tabelas existem e confirma que o backup contém ao menos 1 registro em `Usuario`.
+3. Em uma única transação, esvazia todas as tabelas e reinsere os dados do backup. Qualquer falha desfaz a transação e mantém o banco atual intacto.
 4. Exibe a contagem de registros de cada tabela.
 
-Para testar um backup sem tocar no banco real (teste de restauração periódico), aponte para um banco temporário:
+A restauração **substitui todos os dados** do banco apontado por `DATABASE_URL`. Para testar um backup sem tocar nos dados reais (teste de restauração periódico), aponte `DATABASE_URL` para outro banco ou projeto Supabase:
 
 ```bash
-DATABASE_URL="file:./teste-restore.db" pnpm --filter @prontuario/backend restore ./backup.db.enc
+DATABASE_URL="postgresql://..." pnpm --filter @prontuario/backend restore ./backup.json.enc
 ```
 
 ### Frequência recomendada

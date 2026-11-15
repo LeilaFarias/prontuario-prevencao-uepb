@@ -8,7 +8,7 @@ import {
   excluirContaSchema,
   type UsuarioMe,
 } from "@prontuario/shared";
-import { transacao } from "../db";
+import { executar, todas, transacao, uma } from "../db";
 import { hashSenha, verificarSenha } from "../lib/senha";
 
 const excluirContaComMotivoSchema = excluirContaSchema.extend({
@@ -33,27 +33,25 @@ export const userRoutes: FastifyPluginAsync = async (app) => {
   const { db } = app;
   const protegida = { preHandler: app.autenticar };
 
-  const buscarMe = (id: string): UsuarioMe => {
-    const u = db
-      .prepare("SELECT id, nome, email, perfil, matricula, criadoEm FROM Usuario WHERE id = ?")
-      .get(id) as unknown as UsuarioRow;
+  const buscarMe = async (id: string): Promise<UsuarioMe> => {
+    const u = (await uma<UsuarioRow>(
+      db,
+      `SELECT "id", "nome", "email", "perfil", "matricula", "criadoEm" FROM "Usuario" WHERE "id" = $1`,
+      [id],
+    )) as UsuarioRow;
     return { ...u, perfil: u.perfil.toLowerCase() as UsuarioMe["perfil"] };
   };
 
-  const buscarHash = (id: string): string | undefined =>
-    (db.prepare("SELECT senhaHash FROM Usuario WHERE id = ?").get(id) as unknown as
-      | { senhaHash: string }
-      | undefined)?.senhaHash;
+  const buscarHash = async (id: string): Promise<string | undefined> =>
+    (await uma<{ senhaHash: string }>(db, `SELECT "senhaHash" FROM "Usuario" WHERE "id" = $1`, [id]))?.senhaHash;
 
-  const listarAlunos = db.prepare(
-    "SELECT id, nome FROM Usuario WHERE UPPER(perfil) = 'ALUNO' AND ativo = 1 ORDER BY nome",
-  );
+  const listarAlunos = `SELECT "id", "nome" FROM "Usuario" WHERE UPPER("perfil") = 'ALUNO' AND "ativo" ORDER BY "nome"`;
 
   app.get("/alunos", protegida, async (req, reply) => {
     if (req.user.perfil.toLowerCase() !== "professor") {
       return reply.status(403).send({ message: "Apenas professores podem listar alunos." });
     }
-    return listarAlunos.all() as unknown as AlunoRow[];
+    return todas<AlunoRow>(db, listarAlunos);
   });
 
   app.get("/users/me", protegida, async (req) => buscarMe(req.user.sub));
@@ -62,22 +60,22 @@ export const userRoutes: FastifyPluginAsync = async (app) => {
     const id = req.user.sub;
     const dados = atualizarPerfilSchema.parse(req.body);
 
-    if (dados.email && db.prepare("SELECT id FROM Usuario WHERE email = ? AND id != ?").get(dados.email, id)) {
+    if (dados.email && (await uma(db, `SELECT "id" FROM "Usuario" WHERE "email" = $1 AND "id" != $2`, [dados.email, id]))) {
       return reply.status(409).send({ message: "Este e-mail já está em uso." });
     }
 
     const campos: string[] = [];
     const valores: string[] = [];
     if (dados.nome) {
-      campos.push("nome = ?");
       valores.push(dados.nome);
+      campos.push(`"nome" = $${valores.length}`);
     }
     if (dados.email) {
-      campos.push("email = ?");
       valores.push(dados.email);
+      campos.push(`"email" = $${valores.length}`);
     }
     if (campos.length > 0) {
-      db.prepare(`UPDATE Usuario SET ${campos.join(", ")} WHERE id = ?`).run(...valores, id);
+      await executar(db, `UPDATE "Usuario" SET ${campos.join(", ")} WHERE "id" = $${valores.length + 1}`, [...valores, id]);
     }
     return buscarMe(id);
   });
@@ -86,31 +84,31 @@ export const userRoutes: FastifyPluginAsync = async (app) => {
     const id = req.user.sub;
     const dados = alterarSenhaSchema.parse(req.body);
 
-    const hashAtual = buscarHash(id);
+    const hashAtual = await buscarHash(id);
     if (!hashAtual || !(await verificarSenha(dados.senhaAtual, hashAtual))) {
       return reply.status(401).send({ message: "Senha atual incorreta." });
     }
 
-    db.prepare("UPDATE Usuario SET senhaHash = ?, tokenVersion = tokenVersion + 1 WHERE id = ?").run(
+    await executar(db, `UPDATE "Usuario" SET "senhaHash" = $1, "tokenVersion" = "tokenVersion" + 1 WHERE "id" = $2`, [
       await hashSenha(dados.novaSenha),
       id,
-    );
+    ]);
     return { ok: true };
   });
 
   app.put("/users/me/matricula", protegida, async (req, reply) => {
     const id = req.user.sub;
-    const atual = buscarMe(id);
+    const atual = await buscarMe(id);
     if (atual.perfil !== "professor") {
       return reply.status(403).send({ message: "Apenas professores possuem matrícula." });
     }
 
     const { matricula } = alterarMatriculaSchema.parse(req.body);
-    if (db.prepare("SELECT id FROM Usuario WHERE matricula = ? AND id != ?").get(matricula, id)) {
+    if (await uma(db, `SELECT "id" FROM "Usuario" WHERE "matricula" = $1 AND "id" != $2`, [matricula, id])) {
       return reply.status(409).send({ message: "Esta matrícula já está cadastrada." });
     }
 
-    db.prepare("UPDATE Usuario SET matricula = ? WHERE id = ?").run(matricula, id);
+    await executar(db, `UPDATE "Usuario" SET "matricula" = $1 WHERE "id" = $2`, [matricula, id]);
     return buscarMe(id);
   });
 
@@ -118,20 +116,20 @@ export const userRoutes: FastifyPluginAsync = async (app) => {
     const id = req.user.sub;
     const { senha, motivo } = excluirContaComMotivoSchema.parse(req.body);
 
-    const hash = buscarHash(id);
+    const hash = await buscarHash(id);
     if (!hash || !(await verificarSenha(senha, hash))) {
       return reply.status(401).send({ message: "Senha incorreta." });
     }
 
     const motivoExclusao = motivo || null;
-    transacao(db, () => {
-      db.prepare("UPDATE Usuario SET ativo = 0, motivoExclusao = ? WHERE id = ?").run(motivoExclusao, id);
-      db.prepare("INSERT INTO AuditLog (id, usuarioId, acao, detalhe) VALUES (?, ?, ?, ?)").run(
+    await transacao(db, async (tx) => {
+      await executar(tx, `UPDATE "Usuario" SET "ativo" = FALSE, "motivoExclusao" = $1 WHERE "id" = $2`, [motivoExclusao, id]);
+      await executar(tx, `INSERT INTO "AuditLog" ("id", "usuarioId", "acao", "detalhe") VALUES ($1, $2, $3, $4)`, [
         randomUUID(),
         id,
         "conta-desativada",
         JSON.stringify({ usuarioId: id, motivo: motivoExclusao }),
-      );
+      ]);
     });
     return { ok: true };
   });

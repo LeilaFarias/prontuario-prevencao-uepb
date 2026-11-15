@@ -1,15 +1,17 @@
 import fp from "fastify-plugin";
-import type { DatabaseSync } from "node:sqlite";
-import { abrirBanco } from "../db";
+import { criarPool, migrar, type Db } from "../db";
 
 declare module "fastify" {
   interface FastifyInstance {
-    db: DatabaseSync;
+    db: Db;
   }
 }
 
 export default fp(async (app) => {
-  const db = abrirBanco();
+  const db = criarPool();
+  await migrar(db);
   app.decorate("db", db);
-  app.addHook("onClose", async () => db.close());
+  app.addHook("onClose", async () => {
+    await db.end();
+  });
 });

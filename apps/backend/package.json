@@ -8,7 +8,8 @@
     "start": "tsx src/server.ts",
     "db:migrate": "tsx src/migrate.ts",
     "restore": "tsx src/restore.ts",
-    "typecheck": "tsc --noEmit"
+    "typecheck": "tsc --noEmit",
+    "build": "tsc --noEmit"
   },
   "dependencies": {
     "@fastify/cors": "^9.0.1",
@@ -18,10 +19,12 @@
     "@prontuario/shared": "workspace:*",
     "fastify": "^4.28.1",
     "fastify-plugin": "^4.5.1",
+    "pg": "^8.13.1",
     "zod": "^3.23.8"
   },
   "devDependencies": {
     "@types/node": "^22.20.5",
+    "@types/pg": "^8.11.10",
     "tsx": "^4.19.1",
     "typescript": "^5.6.3"
   }

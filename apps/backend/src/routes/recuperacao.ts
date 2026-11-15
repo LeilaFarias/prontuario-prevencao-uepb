@@ -5,7 +5,7 @@ import {
   forgotPasswordSchema,
   resetPasswordBodySchema,
 } from "@prontuario/shared";
-import { transacao } from "../db";
+import { executar, transacao, uma } from "../db";
 import { env } from "../env";
 import { enviarEmailRedefinicao } from "../lib/mail";
 import { hashSenha } from "../lib/senha";
@@ -51,10 +51,12 @@ export const recuperacaoRoutes: FastifyPluginAsync = async (app) => {
   limpeza.unref();
   app.addHook("onClose", async () => clearInterval(limpeza));
 
-  const buscarToken = (token: string): TokenRow | undefined =>
-    db
-      .prepare("SELECT id, userId, expiraEm, usadoEm FROM PasswordResetToken WHERE tokenHash = ?")
-      .get(hashToken(token)) as unknown as TokenRow | undefined;
+  const buscarToken = (token: string): Promise<TokenRow | undefined> =>
+    uma<TokenRow>(
+      db,
+      `SELECT "id", "userId", "expiraEm", "usadoEm" FROM "PasswordResetToken" WHERE "tokenHash" = $1`,
+      [hashToken(token)],
+    );
 
   const tokenValido = (t: TokenRow | undefined): t is TokenRow =>
     !!t && t.usadoEm === null && t.expiraEm >= new Date().toISOString();
@@ -63,23 +65,27 @@ export const recuperacaoRoutes: FastifyPluginAsync = async (app) => {
     const { email } = forgotPasswordSchema.parse(req.body);
     const resposta = { ok: true, message: MENSAGEM_FORGOT_PASSWORD };
 
-    const usuario = db.prepare("SELECT id, nome, email FROM Usuario WHERE email = ? AND ativo = 1").get(email) as unknown as
-      | { id: string; nome: string; email: string }
-      | undefined;
+    const usuario = await uma<{ id: string; nome: string; email: string }>(
+      db,
+      `SELECT "id", "nome", "email" FROM "Usuario" WHERE "email" = $1 AND "ativo"`,
+      [email],
+    );
     if (!usuario) return resposta;
 
     if (excedeuLimite(email)) return resposta;
 
     const token = gerarToken();
     const agora = new Date().toISOString();
-    transacao(db, () => {
-      db.prepare("UPDATE PasswordResetToken SET usadoEm = ? WHERE userId = ? AND usadoEm IS NULL").run(
+    await transacao(db, async (tx) => {
+      await executar(tx, `UPDATE "PasswordResetToken" SET "usadoEm" = $1 WHERE "userId" = $2 AND "usadoEm" IS NULL`, [
         agora,
         usuario.id,
+      ]);
+      await executar(
+        tx,
+        `INSERT INTO "PasswordResetToken" ("id", "userId", "tokenHash", "expiraEm", "criadoEm") VALUES ($1, $2, $3, $4, $5)`,
+        [randomUUID(), usuario.id, hashToken(token), new Date(Date.now() + EXPIRA_EM_MS).toISOString(), agora],
       );
-      db.prepare(
-        "INSERT INTO PasswordResetToken (id, userId, tokenHash, expiraEm, criadoEm) VALUES (?, ?, ?, ?, ?)",
-      ).run(randomUUID(), usuario.id, hashToken(token), new Date(Date.now() + EXPIRA_EM_MS).toISOString(), agora);
     });
 
     const link = `${env.APP_URL}/redefinir-senha?token=${token}`;
@@ -90,32 +96,34 @@ export const recuperacaoRoutes: FastifyPluginAsync = async (app) => {
   app.get("/auth/verify-reset-token", async (req) => {
     const { token } = req.query as { token?: string };
     if (!token) return { valido: false };
-    return { valido: tokenValido(buscarToken(token)) };
+    return { valido: tokenValido(await buscarToken(token)) };
   });
 
   app.post("/auth/reset-password", { config: { rateLimit: { max: 5, timeWindow: "15 minutes" } } }, async (req, reply) => {
     const { token, novaSenha } = resetPasswordBodySchema.parse(req.body);
 
-    const registro = buscarToken(token);
+    const registro = await buscarToken(token);
     if (!tokenValido(registro)) return reply.status(400).send(LINK_INVALIDO);
 
     const novoHash = await hashSenha(novaSenha);
     const agora = new Date().toISOString();
 
-    const aplicado = transacao(db, () => {
+    const aplicado = await transacao(db, async (tx) => {
       // Reconfirma dentro da transação: impede uso duplo do mesmo token
-      const marcado = db
-        .prepare("UPDATE PasswordResetToken SET usadoEm = ? WHERE id = ? AND usadoEm IS NULL")
-        .run(agora, registro.id);
-      if (Number(marcado.changes) === 0) return false;
-      db.prepare("UPDATE Usuario SET senhaHash = ?, tokenVersion = tokenVersion + 1 WHERE id = ?").run(
+      const marcados = await executar(
+        tx,
+        `UPDATE "PasswordResetToken" SET "usadoEm" = $1 WHERE "id" = $2 AND "usadoEm" IS NULL`,
+        [agora, registro.id],
+      );
+      if (marcados === 0) return false;
+      await executar(tx, `UPDATE "Usuario" SET "senhaHash" = $1, "tokenVersion" = "tokenVersion" + 1 WHERE "id" = $2`, [
         novoHash,
         registro.userId,
-      );
-      db.prepare("UPDATE PasswordResetToken SET usadoEm = ? WHERE userId = ? AND usadoEm IS NULL").run(
+      ]);
+      await executar(tx, `UPDATE "PasswordResetToken" SET "usadoEm" = $1 WHERE "userId" = $2 AND "usadoEm" IS NULL`, [
         agora,
         registro.userId,
-      );
+      ]);
       return true;
     });
 
