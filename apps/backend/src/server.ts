@@ -16,7 +16,7 @@ import { configuracoesRoutes } from "./routes/configuracoes";
 import { userRoutes } from "./routes/users";
 import { professoresRoutes } from "./routes/professores";
 import { notificacoesRoutes } from "./routes/notificacoes";
-import debugRoute from "./routes/debug.js";
+import { backupRoutes } from "./routes/backup";
 
 const app = Fastify({ logger: true, bodyLimit: 10 * 1024 * 1024 });
 
@@ -58,6 +58,6 @@ await app.register(configuracoesRoutes);
 await app.register(userRoutes);
 await app.register(professoresRoutes);
 await app.register(notificacoesRoutes);
-await app.register(debugRoute);
+await app.register(backupRoutes);
 
 await app.listen({ port: env.PORT, host: "0.0.0.0" });

@@ -111,6 +111,13 @@ function migrarColunaAtivo(db: DatabaseSync): void {
   }
 }
 
+function migrarColunaMotivoExclusao(db: DatabaseSync): void {
+  const colunas = db.prepare("PRAGMA table_info(Usuario)").all() as unknown as { name: string }[];
+  if (!colunas.some((c) => c.name === "motivoExclusao")) {
+    db.exec("ALTER TABLE Usuario ADD COLUMN motivoExclusao TEXT");
+  }
+}
+
 function migrarColunaTokenVersion(db: DatabaseSync): void {
   const colunas = db.prepare("PRAGMA table_info(Usuario)").all() as unknown as { name: string }[];
   if (!colunas.some((c) => c.name === "tokenVersion")) {
@@ -173,6 +180,7 @@ export function abrirBanco(): DatabaseSync {
   db.exec(SCHEMA);
   migrarColunaAtivo(db);
   migrarColunaTokenVersion(db);
+  migrarColunaMotivoExclusao(db);
   migrarColunaSinalizadoDuplicidade(db);
   migrarColunasRevisao(db);
   migrarColunasAcesso(db);

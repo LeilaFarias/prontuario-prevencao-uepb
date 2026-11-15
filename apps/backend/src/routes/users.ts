@@ -1,4 +1,6 @@
+import { randomUUID } from "node:crypto";
 import type { FastifyPluginAsync } from "fastify";
+import { z } from "zod";
 import {
   alterarMatriculaSchema,
   alterarSenhaSchema,
@@ -6,7 +8,12 @@ import {
   excluirContaSchema,
   type UsuarioMe,
 } from "@prontuario/shared";
+import { transacao } from "../db";
 import { hashSenha, verificarSenha } from "../lib/senha";
+
+const excluirContaComMotivoSchema = excluirContaSchema.extend({
+  motivo: z.string().trim().max(500).optional(),
+});
 
 interface UsuarioRow {
   id: string;
@@ -109,14 +116,23 @@ export const userRoutes: FastifyPluginAsync = async (app) => {
 
   app.delete("/users/me", protegida, async (req, reply) => {
     const id = req.user.sub;
-    const { senha } = excluirContaSchema.parse(req.body);
+    const { senha, motivo } = excluirContaComMotivoSchema.parse(req.body);
 
     const hash = buscarHash(id);
     if (!hash || !(await verificarSenha(senha, hash))) {
       return reply.status(401).send({ message: "Senha incorreta." });
     }
 
-    db.prepare("UPDATE Usuario SET ativo = 0 WHERE id = ?").run(id);
+    const motivoExclusao = motivo || null;
+    transacao(db, () => {
+      db.prepare("UPDATE Usuario SET ativo = 0, motivoExclusao = ? WHERE id = ?").run(motivoExclusao, id);
+      db.prepare("INSERT INTO AuditLog (id, usuarioId, acao, detalhe) VALUES (?, ?, ?, ?)").run(
+        randomUUID(),
+        id,
+        "conta-desativada",
+        JSON.stringify({ usuarioId: id, motivo: motivoExclusao }),
+      );
+    });
     return { ok: true };
   });
 };

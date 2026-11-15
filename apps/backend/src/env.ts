@@ -16,6 +16,7 @@ const envSchema = z.object({
   MAIL_FROM_EMAIL: z.string().email().optional(),
   MAIL_FROM_NAME: z.string().default("Prontuário Digital"),
   RESET_TOKEN_SECRET: z.string().min(32, "RESET_TOKEN_SECRET precisa ter 32+ caracteres"),
+  BACKUP_KEY: z.string().min(32, "BACKUP_KEY deve ter 32+ caracteres"),
   APP_URL: z.string().default("http://localhost:5173"),
 
   CORS_ORIGIN: z.string().default("http://localhost:5173"),

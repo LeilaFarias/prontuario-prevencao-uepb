@@ -22,6 +22,9 @@ permitindo que alunos registrem atendimentos e professores revisem e assinem.
 - [Testar o modo offline](#testar-o-modo-offline)
 - [O que ainda não está implementado](#o-que-ainda-não-está-implementado)
 - [Notas de desenvolvimento](#notas-de-desenvolvimento)
+- [Política de Retenção de Dados](#política-de-retenção-de-dados)
+- [Backup e Restauração](#backup-e-restauração)
+- [Conformidade com a LGPD](#conformidade-com-a-lgpd)
 
 ## Visão geral
 
@@ -91,3 +94,99 @@ pnpm db:migrate
 
 # 4. Subir tudo
 pnpm dev
+```
+
+## Política de Retenção de Dados
+
+- Os prontuários são retidos por tempo indeterminado (RN-18).
+- A exclusão de conta é *soft delete*: o usuário é marcado como inativo (`ativo = 0`) e o motivo, quando informado, fica em `Usuario.motivoExclusao`. Os dados permanecem para fins de auditoria e histórico clínico, e a ação é registrada no `AuditLog` como `conta-desativada`.
+- A exclusão definitiva de dados só pode ser solicitada formalmente e é decisão do professor responsável.
+- Backups são criptografados e retidos pelo mesmo período do banco principal.
+- Base legal: Art. 16 da LGPD (retenção para cumprimento de obrigação legal ou regulatória e para estudos por órgão de pesquisa).
+
+## Backup e Restauração
+
+O backup é do arquivo SQLite inteiro (`.db`), criptografado com **AES-256-GCM** (chave de 32 bytes derivada de `BACKUP_KEY` via scrypt). O formato do arquivo `.db.enc` é `[IV: 12 bytes][AUTH_TAG: 16 bytes][dados cifrados]`.
+
+### Configurar a chave
+
+Gere a `BACKUP_KEY` e defina-a no `.env` (e nas variáveis do servidor de produção):
+
+```bash
+node -e "console.log(require('crypto').randomBytes(32).toString('hex'))"
+```
+
+Guarde a `BACKUP_KEY` em um cofre de senhas **separado do servidor**. Sem ela, nenhum backup pode ser restaurado. Trocar a chave torna os backups antigos ilegíveis.
+
+### Fazer backup
+
+Pelo endpoint administrativo, disponível apenas para professores:
+
+```bash
+TOKEN=$(curl -s -X POST "$API_URL/auth/login" \
+  -H "Content-Type: application/json" \
+  -d '{"email":"professor@uepb.edu.br","senha":"SUA_SENHA"}' \
+  | node -pe "JSON.parse(require('fs').readFileSync(0,'utf8')).accessToken")
+
+curl -f -H "Authorization: Bearer $TOKEN" \
+  -o "backup-$(date +%Y-%m-%d-%H-%M-%S).db.enc" \
+  "$API_URL/admin/backup"
+```
+
+Cada download é registrado no `AuditLog` como `backup-baixado`. Alunos recebem `403`.
+
+Também é possível copiar diretamente o arquivo `.db` do servidor (com o servidor parado, ou incluindo os arquivos `-wal` e `-shm`). Essa cópia **não é criptografada** e deve ser armazenada com o mesmo cuidado do banco.
+
+### Restaurar
+
+Com o servidor parado:
+
+```bash
+pnpm --filter @prontuario/backend restore ./backup-2026-01-01-03-00-00.db.enc
+```
+
+O script:
+
+1. Guarda uma cópia do banco atual em `<banco>.bak-<timestamp>`.
+2. Descriptografa o backup sobre o banco atual. Com `BACKUP_KEY` errada ou arquivo corrompido, falha com "Backup corrompido ou chave incorreta" e o banco atual não é alterado.
+3. Confirma que a tabela `Usuario` existe e tem ao menos 1 registro. Se a verificação falhar, o banco anterior é restaurado automaticamente.
+4. Exibe a contagem de registros de cada tabela.
+
+Para testar um backup sem tocar no banco real (teste de restauração periódico), aponte para um banco temporário:
+
+```bash
+DATABASE_URL="file:./teste-restore.db" pnpm --filter @prontuario/backend restore ./backup.db.enc
+```
+
+### Frequência recomendada
+
+- Backup manual antes de cada deploy em produção.
+- Backup automático diário. O agendamento não faz parte do código; configure no servidor ou em um serviço externo (Railway Cron, GitHub Actions). Exemplo de crontab, rodando todo dia às 03:00 um script que executa os comandos de login e download acima:
+
+```cron
+0 3 * * * /usr/local/bin/backup-prontuario.sh >> /var/log/backup-prontuario.log 2>&1
+```
+
+O login tem limite de 5 tentativas a cada 15 minutos por IP, o que comporta uma rotina diária.
+
+Faça periodicamente um teste de restauração, como descrito acima.
+
+## Conformidade com a LGPD
+
+**Dados tratados:** identificação, saúde e imagens. Dados de saúde são dados pessoais sensíveis (Art. 5º, II).
+
+**Base legal:** consentimento (Termo de Consentimento) e obrigação legal (prontuário médico).
+
+**Direitos do titular:** acesso, correção, exclusão (*soft delete*) e portabilidade.
+
+**Medidas de segurança:**
+- Criptografia em trânsito (HTTPS)
+- Criptografia do backup (AES-256-GCM)
+- Hash de senha (scrypt)
+- JWT com invalidação após troca de senha
+- Rate limiting
+- Log de auditoria
+
+**Responsável pelo tratamento:** coordenação da clínica.
+
+**Contato para exercer direitos:** e-mail institucional da coordenação da clínica.
