@@ -1,5 +1,6 @@
 export * from "./types";
 export * from "./acesso";
+export * from "./descarte";
 export * from "./schemas/auth";
 export * from "./schemas/prontuario";
 export * from "./schemas/revisao";

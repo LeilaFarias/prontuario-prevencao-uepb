@@ -132,6 +132,7 @@ export const prontuariosRoutes: FastifyPluginAsync = async (app) => {
      FROM Prontuario p
      JOIN Usuario u ON u.id = p.alunoTitularId
      LEFT JOIN Usuario pr ON pr.id = p.professorSupervisorId
+     WHERE p.descartadoEm IS NULL
      ORDER BY atualizadoEm DESC`,
   );
   const listarDoAluno = db.prepare(
@@ -139,7 +140,7 @@ export const prontuariosRoutes: FastifyPluginAsync = async (app) => {
      FROM Prontuario p
      JOIN Usuario u ON u.id = p.alunoTitularId
      LEFT JOIN Usuario pr ON pr.id = p.professorSupervisorId
-     WHERE p.alunoTitularId = ?
+     WHERE p.alunoTitularId = ? AND p.descartadoEm IS NULL
      ORDER BY atualizadoEm DESC`,
   );
   const buscarUm = db.prepare(
@@ -147,14 +148,14 @@ export const prontuariosRoutes: FastifyPluginAsync = async (app) => {
      FROM Prontuario p
      JOIN Usuario u ON u.id = p.alunoTitularId
      LEFT JOIN Usuario pr ON pr.id = p.professorSupervisorId
-     WHERE p.id = ?`,
+     WHERE p.id = ? AND p.descartadoEm IS NULL`,
   );
   const listarConclusoesDoProfessor = db.prepare(
     `SELECT p.id, p.pacienteNome, u.nome AS alunoNome, s.conteudo
      FROM Prontuario p
      JOIN Secao s ON s.prontuarioId = p.id AND s.secaoId = 'conclusao'
      JOIN Usuario u ON u.id = p.alunoTitularId
-     WHERE p.professorSupervisorId = ? AND p.status = 'ASSINADO'
+     WHERE p.professorSupervisorId = ? AND p.status = 'ASSINADO' AND p.descartadoEm IS NULL
      ORDER BY p.atualizadoEm DESC`,
   );
   const listarEnviados = db.prepare(
@@ -164,7 +165,7 @@ export const prontuariosRoutes: FastifyPluginAsync = async (app) => {
      FROM Prontuario p
      JOIN Usuario u ON u.id = p.alunoTitularId
      LEFT JOIN Usuario pr ON pr.id = p.professorSupervisorId
-     WHERE p.status = 'ENVIADO'
+     WHERE p.status = 'ENVIADO' AND p.descartadoEm IS NULL
      ORDER BY atualizadoEm DESC`,
   );
   const buscarSecoes = db.prepare("SELECT secaoId, conteudo FROM Secao WHERE prontuarioId = ?");

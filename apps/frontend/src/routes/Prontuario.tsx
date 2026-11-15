@@ -84,7 +84,7 @@ export default function Prontuario() {
     if (!id) return;
     void db.prontuarios.get(id).then((p) => {
       if (!ativo) return;
-      if (!p) return setEstado("nao-encontrado");
+      if (!p || p.descartadoEm) return setEstado("nao-encontrado");
       setPront(p);
       const doBanco = Object.fromEntries(
         Object.entries(p.secoes).map(([secao, c]) => [secao, String(c?.texto ?? "")]),

@@ -24,6 +24,7 @@ export const acessosRoutes: FastifyPluginAsync = async (app) => {
      FROM Prontuario p
      JOIN Usuario u ON u.id = p.alunoTitularId
      WHERE p.professorSupervisorId = ?
+       AND p.descartadoEm IS NULL
        AND p.acessoSolicitadoEm IS NOT NULL
        AND p.acessoExpiraEm IS NULL
        AND p.acessoRevogadoEm IS NULL
@@ -34,6 +35,7 @@ export const acessosRoutes: FastifyPluginAsync = async (app) => {
      FROM Prontuario p
      JOIN Usuario u ON u.id = p.alunoTitularId
      WHERE p.professorSupervisorId = ?
+       AND p.descartadoEm IS NULL
        AND p.acessoExpiraEm IS NOT NULL
        AND p.acessoExpiraEm > ?
        AND p.acessoRevogadoEm IS NULL

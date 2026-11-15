@@ -2,6 +2,7 @@ import { randomUUID } from "node:crypto";
 import type { FastifyPluginAsync } from "fastify";
 import { z } from "zod";
 import {
+  secoesVazias,
   syncBatchSchema,
   type EnvioSincronizado,
   type SyncOperation,
@@ -34,6 +35,15 @@ interface ProntRow extends AcessoRow {
   status: string;
   alunoTitularId: string;
   professorSupervisorId: string | null;
+  descartadoEm: string | null;
+}
+
+interface RascunhoRow {
+  id: string;
+  status: string;
+  alunoTitularId: string;
+  pacienteNome: string;
+  pacienteDataNascimento: string | null;
 }
 
 interface UsuarioSync {
@@ -48,7 +58,7 @@ export const syncRoutes: FastifyPluginAsync = async (app) => {
   const { db } = app;
 
   const buscarPront = db.prepare(
-    `SELECT id, status, alunoTitularId, professorSupervisorId,
+    `SELECT id, status, alunoTitularId, professorSupervisorId, descartadoEm,
             acessoSolicitadoEm, acessoExpiraEm, acessoRevogadoEm, acessoRecusadoEm
       FROM Prontuario WHERE id = ?`,
   );
@@ -73,7 +83,13 @@ export const syncRoutes: FastifyPluginAsync = async (app) => {
        atualizadoEm = ?
      WHERE id = ?`,
   );
-  const apagarPront = db.prepare("DELETE FROM Prontuario WHERE id = ?");
+  const buscarParaDescarte = db.prepare(
+    "SELECT id, status, alunoTitularId, pacienteNome, pacienteDataNascimento FROM Prontuario WHERE id = ?",
+  );
+  const buscarSecoesParaDescarte = db.prepare("SELECT conteudo FROM Secao WHERE prontuarioId = ?");
+  const gravarDescarte = db.prepare(
+    "UPDATE Prontuario SET descartadoEm = ?, descartadoPorId = ?, atualizadoEm = ? WHERE id = ?",
+  );
   const buscarProfessorPorMatricula = db.prepare(
     "SELECT id FROM Usuario WHERE matricula = ? AND UPPER(perfil) = 'PROFESSOR' AND ativo = 1",
   );
@@ -119,15 +135,44 @@ export const syncRoutes: FastifyPluginAsync = async (app) => {
     return true;
   }
 
+  function secoesSemConteudo(prontuarioId: string): boolean {
+    const linhas = buscarSecoesParaDescarte.all(prontuarioId) as unknown as { conteudo: string }[];
+    const conteudos: unknown[] = [];
+    for (const linha of linhas) {
+      try {
+        conteudos.push(JSON.parse(linha.conteudo));
+      } catch {
+        return false;
+      }
+    }
+    return secoesVazias(conteudos);
+  }
+
+  function descartarRascunho(op: SyncOperation, usuario: UsuarioSync): boolean {
+    const pront = buscarParaDescarte.get(op.prontuarioId) as unknown as RascunhoRow | undefined;
+    if (!pront) return false;
+    if (pront.alunoTitularId !== usuario.id) return false;
+    if (pront.status.toUpperCase() !== "EM_ANDAMENTO") return false;
+    if (pront.pacienteNome.trim() !== "" || pront.pacienteDataNascimento) return false;
+    if (!secoesSemConteudo(pront.id)) return false;
+
+    const agora = new Date().toISOString();
+    gravarDescarte.run(agora, usuario.id, agora, pront.id);
+    registrarAuditoria.run(
+      randomUUID(),
+      usuario.id,
+      pront.id,
+      "rascunho-descartado",
+      JSON.stringify({ motivo: "aluno descartou rascunho vazio" }),
+    );
+    return true;
+  }
+
   function aplicar(op: SyncOperation, existe: boolean, usuario: UsuarioSync): void {
     const agora = new Date().toISOString();
 
     if (op.entity === "prontuario") {
-      if (op.op === "delete") {
-        if (usuario.perfil !== "aluno") throw new Error("Apenas o aluno titular pode excluir o prontuário");
-        apagarPront.run(op.entityId);
-        return;
-      }
+      if (op.op === "delete") throw new Error("Exclusão de prontuário não é permitida");
       const p = prontuarioPayload.parse(op.payload);
       let nascimento: string | null = null;
       if (p.pacienteDataNascimento) {
@@ -186,7 +231,7 @@ export const syncRoutes: FastifyPluginAsync = async (app) => {
         const assinado = status === "ASSINADO";
         const enviado = status === "ENVIADO";
         const transferido = status === "TRANSFERIDO";
-        const negado = !!pront && !temPermissao(pront);
+        const negado = !!pront && (pront.descartadoEm !== null || !temPermissao(pront));
         let descartar = negado;
         if (negado) {
           req.log.warn(
@@ -227,7 +272,9 @@ export const syncRoutes: FastifyPluginAsync = async (app) => {
 
         if (!descartar) {
           try {
-            if (op.entity === "prontuario" && op.op === "enviar") {
+            if (op.entity === "prontuario" && op.op === "descartar") {
+              if (!descartarRascunho(op, usuario)) descartar = true;
+            } else if (op.entity === "prontuario" && op.op === "enviar") {
               const r = enviarProntuario(db, op.prontuarioId, req.user.sub);
               envios.push({ prontuarioId: op.prontuarioId, ...r });
               if (!r.ok) descartar = true;

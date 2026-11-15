@@ -30,7 +30,9 @@ CREATE TABLE IF NOT EXISTS Prontuario (
   acessoExpiraEm         TEXT,
   acessoRevogadoEm       TEXT,
   acessoRecusadoEm       TEXT,
-  acessoSolicitadoEm     TEXT
+  acessoSolicitadoEm     TEXT,
+  descartadoEm           TEXT,
+  descartadoPorId        TEXT REFERENCES Usuario(id)
 );
 CREATE INDEX IF NOT EXISTS idx_pront_aluno ON Prontuario(alunoTitularId);
 CREATE INDEX IF NOT EXISTS idx_pront_prof ON Prontuario(professorSupervisorId);
@@ -111,6 +113,17 @@ function migrarColunaAtivo(db: DatabaseSync): void {
   }
 }
 
+function migrarColunasDescarte(db: DatabaseSync): void {
+  const colunas = db.prepare("PRAGMA table_info(Prontuario)").all() as unknown as { name: string }[];
+  const existentes = new Set(colunas.map((c) => c.name));
+  if (!existentes.has("descartadoEm")) {
+    db.exec("ALTER TABLE Prontuario ADD COLUMN descartadoEm TEXT");
+  }
+  if (!existentes.has("descartadoPorId")) {
+    db.exec("ALTER TABLE Prontuario ADD COLUMN descartadoPorId TEXT REFERENCES Usuario(id)");
+  }
+}
+
 function migrarColunaMotivoExclusao(db: DatabaseSync): void {
   const colunas = db.prepare("PRAGMA table_info(Usuario)").all() as unknown as { name: string }[];
   if (!colunas.some((c) => c.name === "motivoExclusao")) {
@@ -185,6 +198,7 @@ export function abrirBanco(): DatabaseSync {
   migrarColunasRevisao(db);
   migrarColunasAcesso(db);
   migrarColunasTransferencia(db);
+  migrarColunasDescarte(db);
   return db;
 }
 

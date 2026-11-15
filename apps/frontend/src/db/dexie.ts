@@ -33,6 +33,7 @@ export interface LocalProntuario {
   transferidoPara?: string;
   transferidoParaNome?: string;
   historico?: HistoricoProntuario;
+  descartadoEm?: string;
 }
 
 export interface LocalPlanoProfessor {
@@ -50,7 +51,7 @@ export interface LocalProfessor {
 export interface LocalSyncOp {
   id?: number;
   prontuarioId: string;
-  op: "create" | "update" | "delete" | "enviar" | "reabrir" | "liberacao-manual";
+  op: "create" | "update" | "delete" | "enviar" | "reabrir" | "liberacao-manual" | "descartar";
   entity: "prontuario" | "secao" | "procedimento" | "anexo";
   entityId: string;
   payload: Record<string, unknown>;

@@ -15,6 +15,7 @@ import type { LocalProntuario } from "../db/dexie";
 import { acessoVigente, pedidoPendente, pedidoRecusado, prontuarioBloqueado } from "../lib/acesso";
 import { formatarIdade } from "../lib/idade";
 import { tempoRelativo } from "../lib/tempo";
+import { podeDescartarRascunho } from "../sync/queue";
 import TimerRegressivo from "./TimerRegressivo";
 
 interface Badge {
@@ -39,6 +40,7 @@ interface Props {
   onAbrir: () => void;
   onSolicitarAcesso: () => void;
   onCorrigir: () => void;
+  onDescartar?: () => void;
 }
 
 function timestamp(iso: string | undefined, padrao: number): number {
@@ -46,7 +48,7 @@ function timestamp(iso: string | undefined, padrao: number): number {
   return Number.isFinite(ts) ? ts : padrao;
 }
 
-export default function ProntuarioCard({ prontuario: p, onAbrir, onSolicitarAcesso, onCorrigir }: Props) {
+export default function ProntuarioCard({ prontuario: p, onAbrir, onSolicitarAcesso, onCorrigir, onDescartar }: Props) {
   const semNome = p.pacienteNome.trim() === "";
   const vigente = acessoVigente(p);
   const recusado = pedidoRecusado(p);
@@ -138,6 +140,13 @@ export default function ProntuarioCard({ prontuario: p, onAbrir, onSolicitarAces
     onCorrigir();
   }
 
+  function aoDescartar(e: MouseEvent<HTMLButtonElement>) {
+    e.stopPropagation();
+    onDescartar?.();
+  }
+
+  const podeDescartar = Boolean(onDescartar) && podeDescartarRascunho(p);
+
   return (
     <div
       role="button"
@@ -195,6 +204,14 @@ export default function ProntuarioCard({ prontuario: p, onAbrir, onSolicitarAces
           </button>
         )}
       </div>
+
+      {podeDescartar && (
+        <div>
+          <button type="button" onClick={aoDescartar} className="text-[11px] font-medium text-ink-faint hover:text-alt">
+            Descartar rascunho
+          </button>
+        </div>
+      )}
     </div>
   );
 }

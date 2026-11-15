@@ -1,5 +1,6 @@
 import {
   salvarSecaoSchema,
+  secoesVazias,
   type EnvioSincronizado,
   type ResultadoEnvio,
   type SecaoId,
@@ -368,6 +369,52 @@ export async function reabrirParaCorrecao(prontuarioId: string): Promise<void> {
   registrarSalvamento(agora);
   notifyChanged();
   void flush();
+}
+
+export function podeDescartarRascunho(
+  p: Pick<LocalProntuario, "status" | "pacienteNome" | "pacienteDataNascimento" | "secoes" | "descartadoEm">,
+): boolean {
+  return (
+    p.status === "em_andamento" &&
+    !p.descartadoEm &&
+    p.pacienteNome.trim() === "" &&
+    !p.pacienteDataNascimento &&
+    secoesVazias(Object.values(p.secoes))
+  );
+}
+
+export async function descartarRascunhoLocal(prontuarioId: string): Promise<boolean> {
+  const agora = Date.now();
+
+  const descartado = await db.transaction("rw", db.prontuarios, db.syncQueue, async () => {
+    const atual = await db.prontuarios.get(prontuarioId);
+    if (!atual || !podeDescartarRascunho(atual)) return false;
+
+    const naFila = await db.syncQueue.where("prontuarioId").equals(prontuarioId).toArray();
+    const ts = Math.max(agora, ...naFila.map((o) => o.ts + 1));
+
+    await db.prontuarios.update(prontuarioId, {
+      descartadoEm: new Date(ts).toISOString(),
+      atualizadoEm: ts,
+      sincronizado: false,
+    });
+    await db.syncQueue.add({
+      prontuarioId,
+      op: "descartar",
+      entity: "prontuario",
+      entityId: prontuarioId,
+      payload: {},
+      ts,
+    });
+    return true;
+  });
+
+  if (descartado) {
+    registrarSalvamento(agora);
+    notifyChanged();
+    void flush();
+  }
+  return descartado;
 }
 
 export async function liberarAcessoManual(prontuarioId: string, matricula: string): Promise<string> {

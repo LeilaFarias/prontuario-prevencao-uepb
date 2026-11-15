@@ -40,7 +40,7 @@ export function enviarProntuario(db: DatabaseSync, prontuarioId: string, alunoId
   const pront = db
     .prepare(
       `SELECT id, status, pacienteNome, pacienteDataNascimento
-       FROM Prontuario WHERE id = ? AND alunoTitularId = ?`,
+       FROM Prontuario WHERE id = ? AND alunoTitularId = ? AND descartadoEm IS NULL`,
     )
     .get(prontuarioId, alunoId) as unknown as ProntuarioEnvioRow | undefined;
   if (!pront) return { ok: false, erro: "nao_encontrado" };
