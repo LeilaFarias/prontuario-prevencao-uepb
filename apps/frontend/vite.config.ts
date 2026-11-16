@@ -2,7 +2,39 @@ import { defineConfig } from "vite";
 import react from "@vitejs/plugin-react";
 import { VitePWA } from "vite-plugin-pwa";
 
+const API_TARGET = "http://localhost:3333";
+const API_PREFIXES = [
+  "/auth",
+  "/prontuarios",
+  "/sync",
+  "/admin",
+  "/users",
+  "/alunos",
+  "/professores",
+  "/fila-revisao",
+  "/encaminhamentos",
+  "/acessos",
+  "/notificacoes",
+  "/health",
+  "/configuracoes",
+  "/indicador-pacientes",
+];
+
 export default defineConfig({
+  server: {
+    proxy: Object.fromEntries(
+      API_PREFIXES.map((p) => [
+        p,
+        {
+          target: API_TARGET,
+          bypass: (req: { method?: string; headers: { accept?: string; authorization?: string } }) =>
+            req.method === "GET" && req.headers.accept?.includes("text/html") && !req.headers.authorization
+              ? "/index.html"
+              : undefined,
+        },
+      ]),
+    ),
+  },
   plugins: [
     react(),
     VitePWA({

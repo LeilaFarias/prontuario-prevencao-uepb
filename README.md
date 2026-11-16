@@ -97,7 +97,23 @@ pnpm db:migrate
 pnpm dev
 ```
 
+Para rodar cada parte separadamente (em dois terminais):
+
+```bash
+pnpm --filter @prontuario/backend dev
+pnpm --filter @prontuario/frontend dev
+```
+
+O frontend sobe em `http://localhost:5173` e o proxy do Vite encaminha as rotas da API para `http://localhost:3333`. Em dev, mantenha `CORS_ORIGIN=http://localhost:5173` no `apps/backend/.env`.
+
 ## Deploy
+
+O deploy é único, no **Railway**: o Fastify serve o frontend compilado (`apps/frontend/dist`) e a API na mesma origem. A Vercel não é mais usada.
+
+- **Build** (na raiz): `pnpm build` compila o frontend (`tsc` + `vite build`, gerando `apps/frontend/dist`) e faz o typecheck do backend.
+- **Start**: `pnpm --filter @prontuario/backend start`. O `railway.json` na raiz já define build e start.
+- **Mesma origem**: deixe `CORS_ORIGIN` vazio em produção e não defina `VITE_API_URL`, a menos que o build precise apontar para outro host.
+- **SPA fallback**: requisições `GET` com `Accept: text/html` e sem `Authorization` que não casem com uma rota da API recebem o `index.html`. Isso permite que rotas do SPA com o mesmo nome de rotas da API (`/prontuarios`, `/acessos`, `/encaminhamentos`) funcionem ao recarregar a página.
 
 O banco é um PostgreSQL no **Supabase**. O backend se conecta pelo **pooler de sessão**:
 
