@@ -41,7 +41,7 @@ export function useProntuarioSync(id: string | undefined): {
         if (montado.current) setSemConexao(true);
         console.warn("[prontuarioSync] falhou:", err);
       } finally {
-        if (emVoo.current?.promessa === promessa) emVoo.current = null;
+        if (emVoo.current?.id === id) emVoo.current = null;      
       }
     })();
     emVoo.current = { id, promessa };

@@ -38,6 +38,18 @@ interface ProntuarioListaRow {
   transferidoPara: string | null;
 }
 
+interface FilaRow {
+  id: string;
+  pacienteNome: string;
+  pacienteDataNascimento: string | null;
+  sinalizadoDuplicidade: boolean;
+  professorSupervisorId: string | null;
+  alunoTitularId: string;
+  atualizadoEm: string;
+  alunoNome: string;
+  professorSupervisorNome: string | null;
+}
+
 interface SecaoRow {
   secaoId: string;
   conteudo: string;
@@ -150,13 +162,17 @@ export const prontuariosRoutes: FastifyPluginAsync = async (app) => {
      JOIN "Usuario" u ON u."id" = p."alunoTitularId"
      WHERE p."professorSupervisorId" = $1 AND p."status" = 'ASSINADO' AND p."descartadoEm" IS NULL
      ORDER BY p."atualizadoEm" DESC`;
-  const listarEnviados = `SELECT p."id", p."pacienteNome", p."pacienteDataNascimento", p."sinalizadoDuplicidade", p."professorSupervisorId",
+  const selecionarFila = `SELECT p."id", p."pacienteNome", p."pacienteDataNascimento", p."sinalizadoDuplicidade", p."professorSupervisorId",
             p."alunoTitularId", ${ATUALIZADO_EM_EFETIVO} AS "atualizadoEm", u."nome" AS "alunoNome",
             pr."nome" AS "professorSupervisorNome"
      FROM "Prontuario" p
      JOIN "Usuario" u ON u."id" = p."alunoTitularId"
-     LEFT JOIN "Usuario" pr ON pr."id" = p."professorSupervisorId"
+     LEFT JOIN "Usuario" pr ON pr."id" = p."professorSupervisorId"`;
+  const listarEnviados = `${selecionarFila}
      WHERE p."status" = 'ENVIADO' AND p."descartadoEm" IS NULL
+     ORDER BY "atualizadoEm" DESC`;
+  const listarDoProfessorPorStatus = `${selecionarFila}
+     WHERE p."status" = $1 AND p."professorSupervisorId" = $2 AND p."descartadoEm" IS NULL
      ORDER BY "atualizadoEm" DESC`;
   const buscarSecoes = `SELECT "secaoId", "conteudo" FROM "Secao" WHERE "prontuarioId" = $1`;
   const buscarSecaoProcedimentos = `SELECT "conteudo" FROM "Secao" WHERE "prontuarioId" = $1 AND "secaoId" = 'procedimentos'`;
@@ -318,24 +334,20 @@ export const prontuariosRoutes: FastifyPluginAsync = async (app) => {
       return reply.status(403).send({ message: "Apenas professores podem consultar a fila de revisão." });
     }
 
-    const enviados = await todas<{
-      id: string;
-      pacienteNome: string;
-      pacienteDataNascimento: string | null;
-      sinalizadoDuplicidade: boolean;
-      professorSupervisorId: string | null;
-      alunoTitularId: string;
-      atualizadoEm: string;
-      alunoNome: string;
-      professorSupervisorNome: string | null;
-    }>(db, listarEnviados);
+    const { filtro } = req.query;
+    const statusAlvo = filtro === "assinados" ? "ASSINADO" : filtro === "devolvidos" ? "DEVOLVIDO" : null;
 
+    const enviados = await todas<FilaRow>(db, listarEnviados);
     const meus = enviados.filter((r) => r.professorSupervisorId === req.user.sub);
-    const visiveis = req.query.filtro === "todos" ? enviados : meus;
+    const visiveis = statusAlvo
+      ? await todas<FilaRow>(db, listarDoProfessorPorStatus, [statusAlvo, req.user.sub])
+      : filtro === "todos"
+        ? enviados
+        : meus;
 
     const prontuarios: ItemFilaRevisao[] = await Promise.all(
       visiveis.map(async (r): Promise<ItemFilaRevisao> => {
-        const sinalizado = r.sinalizadoDuplicidade;
+        const sinalizado = !statusAlvo && r.sinalizadoDuplicidade;
         const duplicado = sinalizado ? await buscarDuplicado(db, r, r.alunoTitularId) : undefined;
         return {
           id: r.id,
