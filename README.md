@@ -1,4 +1,4 @@
-# Prontuário Digital — UEPB
+# Prontuário Digital - UEPB
 
 Sistema de prontuário digital para a **Clínica de Prevenção em Saúde Bucal** 
 do Departamento de Odontologia da Universidade Estadual da Paraíba. 
@@ -12,16 +12,6 @@ permitindo que alunos registrem atendimentos e professores revisem e assinem.
 - [Requisitos](#requisitos)
 - [Como rodar](#como-rodar)
 - [Deploy](#deploy)
-- [Estrutura do projeto](#estrutura-do-projeto)
-- [Funcionalidades](#funcionalidades)
-- [A ficha do prontuário](#a-ficha-do-prontuário)
-- [API](#api)
-- [Variáveis de ambiente](#variáveis-de-ambiente)
-- [Recuperação de senha](#recuperação-de-senha)
-- [Sincronização offline](#sincronização-offline)
-- [Testar o modo offline](#testar-o-modo-offline)
-- [O que ainda não está implementado](#o-que-ainda-não-está-implementado)
-- [Notas de desenvolvimento](#notas-de-desenvolvimento)
 - [Política de Retenção de Dados](#política-de-retenção-de-dados)
 - [Backup e Restauração](#backup-e-restauração)
 - [Conformidade com a LGPD](#conformidade-com-a-lgpd)
@@ -108,10 +98,11 @@ O frontend sobe em `http://localhost:5173` e o proxy do Vite encaminha as rotas 
 
 ## Deploy
 
-O deploy é único, no **Railway**: o Fastify serve o frontend compilado (`apps/frontend/dist`) e a API na mesma origem.
+O deploy é único, no **Render**: o Fastify serve o frontend compilado (`apps/frontend/dist`) e a API na mesma origem.
 
 - **Build** (na raiz): `pnpm build` compila o frontend (`tsc` + `vite build`, gerando `apps/frontend/dist`) e faz o typecheck do backend.
-- **Start**: `pnpm --filter @prontuario/backend start`. O `railway.json` na raiz já define build e start.
+- **Start**: `pnpm --filter @prontuario/backend start`.
+ A configuração de build e start vive no dashboard do Render (build command: `pnpm install && pnpm build`; start command: `pnpm --filter @prontuario/backend start`). Não há arquivo de configuração de deploy versionado no repositório.
 - **Mesma origem**: deixe `CORS_ORIGIN` vazio em produção e não defina `VITE_API_URL`, a menos que o build precise apontar para outro host.
 - **SPA fallback**: requisições `GET` com `Accept: text/html` e sem `Authorization` que não casem com uma rota da API recebem o `index.html`. Isso permite que rotas do SPA com o mesmo nome de rotas da API (`/prontuarios`, `/acessos`, `/encaminhamentos`) funcionem ao recarregar a página.
 
@@ -125,7 +116,7 @@ O banco é um PostgreSQL no **Supabase**. O backend se conecta pelo **pooler de 
 
 As tabelas são criadas automaticamente na subida do servidor, e também por `pnpm db:migrate`. A migração é idempotente e ativa o Row Level Security em todas as tabelas, sem políticas, de modo que a API REST pública do Supabase (chaves `anon` e `authenticated`) não enxerga os dados. O backend se conecta como o dono do banco e não é afetado.
 
-No Railway, o volume em `/data` deixou de ser necessário: o backend não grava mais nada em disco. Defina as variáveis de ambiente do serviço, incluindo `DATABASE_URL`, `JWT_SECRET`, `RESET_TOKEN_SECRET` e `BACKUP_KEY`.
+O backend não grava arquivos em disco em produção - o filesystem é efêmero no plano gratuito do Render, e o banco vive no Supabase. Defina as variáveis de ambiente do serviço, incluindo `DATABASE_URL`, `JWT_SECRET`, `RESET_TOKEN_SECRET` e `BACKUP_KEY`
 
 ## Política de Retenção de Dados
 
@@ -192,7 +183,7 @@ DATABASE_URL="postgresql://..." pnpm --filter @prontuario/backend restore ./back
 ### Frequência recomendada
 
 - Backup manual antes de cada deploy em produção.
-- Backup automático diário. O agendamento não faz parte do código; configure no servidor ou em um serviço externo (Railway Cron, GitHub Actions). Exemplo de crontab, rodando todo dia às 03:00 um script que executa os comandos de login e download acima:
+- Backup automático diário. O agendamento não faz parte do código; configure em um serviço externo (GitHub Actions com `cron`, ou cron numa máquina administrativa). Exemplo de crontab, rodando todo dia às 03:00 um script que executa os comandos de login e download acima:
 
 ```cron
 0 3 * * * /usr/local/bin/backup-prontuario.sh >> /var/log/backup-prontuario.log 2>&1
