@@ -13,7 +13,6 @@ interface Props {
   onLiberado: (expiraEm: string) => void;
 }
 
-const MIN_DIGITOS = 6;
 
 export default function LiberacaoManualModal({ open, onClose, prontuarioId, pacienteNome, onLiberado }: Props) {
   const [matricula, setMatricula] = useState("");
@@ -44,7 +43,7 @@ export default function LiberacaoManualModal({ open, onClose, prontuarioId, paci
     const valor = matricula.replace(/\D/g, "");
     setProfessor(null);
     setErro(null);
-    if (valor.length < MIN_DIGITOS) return;
+    if (!valor) return;
 
     void buscarProfessorPorMatricula(valor)
       .then((prof) => {
