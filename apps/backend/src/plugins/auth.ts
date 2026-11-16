@@ -1,11 +1,13 @@
 import fp from "fastify-plugin";
 import jwt from "@fastify/jwt";
 import type { FastifyReply, FastifyRequest } from "fastify";
+import { uma } from "../db";
 import { env } from "../env";
 
 interface TokenPayload {
   sub: string;
   perfil: "aluno" | "professor";
+  tokenVersion: number;
   tipo?: "refresh";
 }
 
@@ -38,7 +40,12 @@ export default fp(async (app) => {
     }
     if (req.user.tipo === "refresh") return reply.status(401).send(SESSAO_EXPIRADA);
 
-    const ativo = app.db.prepare("SELECT 1 FROM Usuario WHERE id = ? AND ativo = 1").get(req.user.sub);
-    if (!ativo) return reply.status(401).send(SESSAO_EXPIRADA);
+    const usuario = await uma<{ tokenVersion: number }>(
+      app.db,
+      `SELECT "tokenVersion" FROM "Usuario" WHERE "id" = $1 AND "ativo"`,
+      [req.user.sub],
+    );
+    if (!usuario) return reply.status(401).send(SESSAO_EXPIRADA);
+    if (usuario.tokenVersion !== (req.user.tokenVersion ?? 0)) return reply.status(401).send(SESSAO_EXPIRADA);
   });
 });

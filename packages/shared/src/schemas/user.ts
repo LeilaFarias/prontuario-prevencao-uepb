@@ -16,7 +16,7 @@ export const alterarSenhaSchema = alterarSenhaBaseSchema.refine((d) => d.senhaAt
 });
 
 export const alterarMatriculaSchema = z.object({
-  matricula: z.string().trim().min(6, "A matrícula precisa ter no mínimo 6 caracteres"),
+  matricula: z.string().trim().min(1, "Informe a matrícula"),
 });
 
 export const excluirContaSchema = z.object({

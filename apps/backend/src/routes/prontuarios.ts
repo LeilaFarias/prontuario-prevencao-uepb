@@ -15,7 +15,7 @@ import {
   type CodigoErroRevisao,
   type DevolverResponse,
 } from "@prontuario/shared";
-import { transacao } from "../db";
+import { executar, todas, transacao, uma, type Executor } from "../db";
 import { ACESSO_DURACAO_MS, estadoAcesso, pedidoPendente, type AcessoRow } from "../lib/acesso";
 import { buscarDuplicado, enviarProntuario } from "../lib/envio";
 import { reabrirProntuario } from "../lib/reabertura";
@@ -90,201 +90,155 @@ function contarProcedimentos(conteudo: string | undefined): number {
 }
 
 const ATUALIZADO_EM_EFETIVO = `
-  MAX(
-    p.atualizadoEm,
-    COALESCE((SELECT MAX(s.atualizadoEm) FROM Secao s WHERE s.prontuarioId = p.id), p.atualizadoEm)
+  GREATEST(
+    p."atualizadoEm",
+    COALESCE((SELECT MAX(s."atualizadoEm") FROM "Secao" s WHERE s."prontuarioId" = p."id"), p."atualizadoEm")
   )`;
 
 const COLUNAS = `
-  p.id,
-  p.pacienteNome,
-  substr(p.pacienteDataNascimento, 1, 10) AS pacienteDataNascimento,
-  p.status,
-  p.criadoEm,
-  ${ATUALIZADO_EM_EFETIVO} AS atualizadoEm,
-  p.alunoTitularId,
-  p.professorSupervisorId,
-  p.sinalizadoDuplicidade,
+  p."id",
+  p."pacienteNome",
+  to_char(p."pacienteDataNascimento" AT TIME ZONE 'UTC', 'YYYY-MM-DD') AS "pacienteDataNascimento",
+  p."status",
+  p."criadoEm",
+  ${ATUALIZADO_EM_EFETIVO} AS "atualizadoEm",
+  p."alunoTitularId",
+  p."professorSupervisorId",
+  p."sinalizadoDuplicidade"::int AS "sinalizadoDuplicidade",
   CASE
-    WHEN p.sinalizadoDuplicidade = 0
-      AND p.status NOT IN ('EM_ANDAMENTO', 'TRANSFERIDO')
+    WHEN NOT p."sinalizadoDuplicidade"
+      AND p."status" NOT IN ('EM_ANDAMENTO', 'TRANSFERIDO')
       AND EXISTS (
-        SELECT 1 FROM Prontuario o
-        WHERE o.id != p.id
-          AND o.pacienteNome = p.pacienteNome
-          AND o.pacienteDataNascimento = p.pacienteDataNascimento
-          AND o.alunoTitularId != p.alunoTitularId
-          AND o.status = 'ENVIADO'
-          AND o.sinalizadoDuplicidade = 1
+        SELECT 1 FROM "Prontuario" o
+        WHERE o."id" != p."id"
+          AND o."pacienteNome" = p."pacienteNome"
+          AND o."pacienteDataNascimento" = p."pacienteDataNascimento"
+          AND o."alunoTitularId" != p."alunoTitularId"
+          AND o."status" = 'ENVIADO'
+          AND o."sinalizadoDuplicidade"
       ) THEN 1 ELSE 0
-  END AS duplicidadeEmAnalise,
-  p.transferidoDe,
-  p.transferidoPara,
-  u.nome AS alunoNome,
-  pr.nome AS professorSupervisorNome`;
+  END AS "duplicidadeEmAnalise",
+  p."transferidoDe",
+  p."transferidoPara",
+  u."nome" AS "alunoNome",
+  pr."nome" AS "professorSupervisorNome"`;
 
 export const prontuariosRoutes: FastifyPluginAsync = async (app) => {
   const { db } = app;
   const protegida = { preHandler: app.autenticar };
 
-  const listarTodos = db.prepare(
-    `SELECT ${COLUNAS}
-     FROM Prontuario p
-     JOIN Usuario u ON u.id = p.alunoTitularId
-     LEFT JOIN Usuario pr ON pr.id = p.professorSupervisorId
-     ORDER BY atualizadoEm DESC`,
-  );
-  const listarDoAluno = db.prepare(
-    `SELECT ${COLUNAS}
-     FROM Prontuario p
-     JOIN Usuario u ON u.id = p.alunoTitularId
-     LEFT JOIN Usuario pr ON pr.id = p.professorSupervisorId
-     WHERE p.alunoTitularId = ?
-     ORDER BY atualizadoEm DESC`,
-  );
-  const buscarUm = db.prepare(
-    `SELECT ${COLUNAS}
-     FROM Prontuario p
-     JOIN Usuario u ON u.id = p.alunoTitularId
-     LEFT JOIN Usuario pr ON pr.id = p.professorSupervisorId
-     WHERE p.id = ?`,
-  );
-  const listarConclusoesDoProfessor = db.prepare(
-    `SELECT p.id, p.pacienteNome, u.nome AS alunoNome, s.conteudo
-     FROM Prontuario p
-     JOIN Secao s ON s.prontuarioId = p.id AND s.secaoId = 'conclusao'
-     JOIN Usuario u ON u.id = p.alunoTitularId
-     WHERE p.professorSupervisorId = ? AND p.status = 'ASSINADO'
-     ORDER BY p.atualizadoEm DESC`,
-  );
-  const listarEnviados = db.prepare(
-    `SELECT p.id, p.pacienteNome, p.pacienteDataNascimento, p.sinalizadoDuplicidade, p.professorSupervisorId,
-            p.alunoTitularId, ${ATUALIZADO_EM_EFETIVO} AS atualizadoEm, u.nome AS alunoNome,
-            pr.nome AS professorSupervisorNome
-     FROM Prontuario p
-     JOIN Usuario u ON u.id = p.alunoTitularId
-     LEFT JOIN Usuario pr ON pr.id = p.professorSupervisorId
-     WHERE p.status = 'ENVIADO'
-     ORDER BY atualizadoEm DESC`,
-  );
-  const buscarSecoes = db.prepare("SELECT secaoId, conteudo FROM Secao WHERE prontuarioId = ?");
-  const buscarSecaoProcedimentos = db.prepare(
-    "SELECT conteudo FROM Secao WHERE prontuarioId = ? AND secaoId = 'procedimentos'",
-  );
-  const buscarRevisao = db.prepare(
-    `SELECT assinadoEm, assinadoPorNome, devolvidoEm, devolvidoPorNome, motivoDevolucao, comentarioDevolucao,
-       acessoSolicitadoEm, acessoExpiraEm, acessoRevogadoEm, acessoRecusadoEm
-      FROM Prontuario WHERE id = ?`,
-  );
-  const buscarPartes = db.prepare(
-    `SELECT p.id AS prontuarioId, p.pacienteNome, p.pacienteDataNascimento, p.status, p.criadoEm,
-            p.sinalizadoDuplicidade, p.alunoTitularId AS alunoId, u.nome AS alunoNome,
-            p.professorSupervisorId AS professorId, pr.nome AS professorNome
-     FROM Prontuario p
-     JOIN Usuario u ON u.id = p.alunoTitularId
-     LEFT JOIN Usuario pr ON pr.id = p.professorSupervisorId
-     WHERE p.id = ?`,
-  );
-  const buscarConsentimento = db.prepare(
-    "SELECT conteudo FROM Secao WHERE prontuarioId = ? AND secaoId = 'consentimento'",
-  );
-  const inserirNotificacao = db.prepare(
-    "INSERT INTO Notificacao (id, usuarioId, prontuarioId, tipo, mensagem) VALUES (?, ?, ?, ?, ?)",
-  );
-  const gravarManutencao = db.prepare(
-    `UPDATE Prontuario SET professorSupervisorId = ?, sinalizadoDuplicidade = 0, atualizadoEm = ? WHERE id = ?`,
-  );
-  const atualizarCarimbo = db.prepare("UPDATE Prontuario SET atualizadoEm = ? WHERE id = ?");
-  const gravarTransferenciaArquivado = db.prepare(
-    `UPDATE Prontuario
-     SET status = 'TRANSFERIDO', transferidoPara = ?, sinalizadoDuplicidade = 0, atualizadoEm = ?
-     WHERE id = ?`,
-  );
-  const gravarTransferenciaAtivo = db.prepare(
-    `UPDATE Prontuario
-     SET status = 'EM_ANDAMENTO', transferidoDe = ?, professorSupervisorId = ?,
-         assinaturaInvalidada = CASE WHEN assinadoEm IS NULL THEN assinaturaInvalidada ELSE 1 END,
-         assinadoEm = NULL, assinadoPorId = NULL, assinadoPorNome = NULL,
-         sinalizadoDuplicidade = 0, atualizadoEm = ?
-     WHERE id = ?`,
-  );
-  const registrarAuditoria = db.prepare(
-    "INSERT INTO AuditLog (id, usuarioId, prontuarioId, acao, detalhe) VALUES (?, ?, ?, ?, ?)",
-  );
-  const buscarNomeProfessor = db.prepare("SELECT nome FROM Usuario WHERE id = ?");
-  const buscarAcesso = db.prepare(
-    `SELECT status, alunoTitularId, professorSupervisorId,
-       acessoSolicitadoEm, acessoExpiraEm, acessoRevogadoEm, acessoRecusadoEm
-      FROM Prontuario WHERE id = ?`,
-  );
-  const gravarSolicitacao = db.prepare(
-    `UPDATE Prontuario
-      SET acessoSolicitadoEm = ?,
-          acessoExpiraEm = NULL,
-          acessoRevogadoEm = NULL,
-          acessoRecusadoEm = NULL,
-          professorSupervisorId = COALESCE(?, professorSupervisorId),
-          atualizadoEm = ?
-      WHERE id = ?`,
-  );
-  const gravarAprovacao = db.prepare(
-    `UPDATE Prontuario
-      SET acessoExpiraEm = ?, acessoRevogadoEm = NULL, acessoSolicitadoEm = NULL,
-          acessoRecusadoEm = NULL, atualizadoEm = ?
-      WHERE id = ?`,
-  );
-  const gravarRevogacao = db.prepare(
-    `UPDATE Prontuario
-      SET acessoRevogadoEm = ?, acessoExpiraEm = NULL, acessoRecusadoEm = NULL, atualizadoEm = ?
-      WHERE id = ?`,
-  );
-  const gravarRecusa = db.prepare(
-    `UPDATE Prontuario
-      SET acessoSolicitadoEm = NULL,
-          acessoRecusadoEm = ?,
-          acessoRevogadoEm = ?,
-          atualizadoEm = ?
-      WHERE id = ?`,
-  );
-  const buscarProfessor = db.prepare(
-    "SELECT id, nome, matricula, senhaHash FROM Usuario WHERE id = ? AND UPPER(perfil) = 'PROFESSOR' AND ativo = 1",
-  );
-  const buscarParaAcao = db.prepare(
-    `SELECT status, professorSupervisorId,
-            acessoExpiraEm, acessoRevogadoEm, acessoSolicitadoEm, acessoRecusadoEm
-     FROM Prontuario WHERE id = ?`,
-  );
-  const gravarAssinatura = db.prepare(
-    `UPDATE Prontuario
-     SET status = 'ASSINADO', assinadoEm = ?, assinadoPorId = ?, assinadoPorNome = ?, assinaturaInvalidada = 0,
-         acessoSolicitadoEm = NULL, acessoExpiraEm = NULL, acessoRevogadoEm = NULL, acessoRecusadoEm = NULL,
-         atualizadoEm = ?
-     WHERE id = ?`,
-  );
-  const gravarDevolucao = db.prepare(
-    `UPDATE Prontuario
-     SET status = 'DEVOLVIDO',
-         devolvidoEm = ?, devolvidoPorId = ?, devolvidoPorNome = ?, motivoDevolucao = ?, comentarioDevolucao = ?,
-         assinaturaInvalidada = CASE WHEN assinadoEm IS NULL THEN assinaturaInvalidada ELSE 1 END,
-         assinadoEm = NULL, assinadoPorId = NULL, assinadoPorNome = NULL,
-         acessoExpiraEm = ?, acessoRevogadoEm = NULL, acessoSolicitadoEm = NULL, acessoRecusadoEm = NULL,
-         atualizadoEm = ?
-     WHERE id = ?`,
-  );
-  const buscarEnvio = db.prepare(
-    `SELECT MAX(ts) AS ts FROM SyncOperationLog
-     WHERE prontuarioId = ? AND entity = 'prontuario' AND op = 'enviar' AND descartada = 0`,
-  );
+  const listarTodos = `SELECT ${COLUNAS}
+     FROM "Prontuario" p
+     JOIN "Usuario" u ON u."id" = p."alunoTitularId"
+     LEFT JOIN "Usuario" pr ON pr."id" = p."professorSupervisorId"
+     WHERE p."descartadoEm" IS NULL
+     ORDER BY "atualizadoEm" DESC`;
+  const listarDoAluno = `SELECT ${COLUNAS}
+     FROM "Prontuario" p
+     JOIN "Usuario" u ON u."id" = p."alunoTitularId"
+     LEFT JOIN "Usuario" pr ON pr."id" = p."professorSupervisorId"
+     WHERE p."alunoTitularId" = $1 AND p."descartadoEm" IS NULL
+     ORDER BY "atualizadoEm" DESC`;
+  const buscarUm = `SELECT ${COLUNAS}
+     FROM "Prontuario" p
+     JOIN "Usuario" u ON u."id" = p."alunoTitularId"
+     LEFT JOIN "Usuario" pr ON pr."id" = p."professorSupervisorId"
+     WHERE p."id" = $1 AND p."descartadoEm" IS NULL`;
+  const listarConclusoesDoProfessor = `SELECT p."id", p."pacienteNome", u."nome" AS "alunoNome", s."conteudo"
+     FROM "Prontuario" p
+     JOIN "Secao" s ON s."prontuarioId" = p."id" AND s."secaoId" = 'conclusao'
+     JOIN "Usuario" u ON u."id" = p."alunoTitularId"
+     WHERE p."professorSupervisorId" = $1 AND p."status" = 'ASSINADO' AND p."descartadoEm" IS NULL
+     ORDER BY p."atualizadoEm" DESC`;
+  const listarEnviados = `SELECT p."id", p."pacienteNome", p."pacienteDataNascimento", p."sinalizadoDuplicidade", p."professorSupervisorId",
+            p."alunoTitularId", ${ATUALIZADO_EM_EFETIVO} AS "atualizadoEm", u."nome" AS "alunoNome",
+            pr."nome" AS "professorSupervisorNome"
+     FROM "Prontuario" p
+     JOIN "Usuario" u ON u."id" = p."alunoTitularId"
+     LEFT JOIN "Usuario" pr ON pr."id" = p."professorSupervisorId"
+     WHERE p."status" = 'ENVIADO' AND p."descartadoEm" IS NULL
+     ORDER BY "atualizadoEm" DESC`;
+  const buscarSecoes = `SELECT "secaoId", "conteudo" FROM "Secao" WHERE "prontuarioId" = $1`;
+  const buscarSecaoProcedimentos = `SELECT "conteudo" FROM "Secao" WHERE "prontuarioId" = $1 AND "secaoId" = 'procedimentos'`;
+  const buscarRevisao = `SELECT "assinadoEm", "assinadoPorNome", "devolvidoEm", "devolvidoPorNome", "motivoDevolucao", "comentarioDevolucao",
+       "acessoSolicitadoEm", "acessoExpiraEm", "acessoRevogadoEm", "acessoRecusadoEm"
+      FROM "Prontuario" WHERE "id" = $1`;
+  const buscarPartes = `SELECT p."id" AS "prontuarioId", p."pacienteNome", p."pacienteDataNascimento", p."status", p."criadoEm",
+            p."sinalizadoDuplicidade", p."alunoTitularId" AS "alunoId", u."nome" AS "alunoNome",
+            p."professorSupervisorId" AS "professorId", pr."nome" AS "professorNome"
+     FROM "Prontuario" p
+     JOIN "Usuario" u ON u."id" = p."alunoTitularId"
+     LEFT JOIN "Usuario" pr ON pr."id" = p."professorSupervisorId"
+     WHERE p."id" = $1`;
+  const buscarConsentimento = `SELECT "conteudo" FROM "Secao" WHERE "prontuarioId" = $1 AND "secaoId" = 'consentimento'`;
+  const inserirNotificacao = `INSERT INTO "Notificacao" ("id", "usuarioId", "prontuarioId", "tipo", "mensagem") VALUES ($1, $2, $3, $4, $5)`;
+  const gravarManutencao = `UPDATE "Prontuario" SET "professorSupervisorId" = $1, "sinalizadoDuplicidade" = FALSE, "atualizadoEm" = $2 WHERE "id" = $3`;
+  const atualizarCarimbo = `UPDATE "Prontuario" SET "atualizadoEm" = $1 WHERE "id" = $2`;
+  const gravarTransferenciaArquivado = `UPDATE "Prontuario"
+     SET "status" = 'TRANSFERIDO', "transferidoPara" = $1, "sinalizadoDuplicidade" = FALSE, "atualizadoEm" = $2
+     WHERE "id" = $3`;
+  const gravarTransferenciaAtivo = `UPDATE "Prontuario"
+     SET "status" = 'EM_ANDAMENTO', "transferidoDe" = $1, "professorSupervisorId" = $2,
+         "assinaturaInvalidada" = CASE WHEN "assinadoEm" IS NULL THEN "assinaturaInvalidada" ELSE TRUE END,
+         "assinadoEm" = NULL, "assinadoPorId" = NULL, "assinadoPorNome" = NULL,
+         "sinalizadoDuplicidade" = FALSE, "atualizadoEm" = $3
+     WHERE "id" = $4`;
+  const registrarAuditoria = `INSERT INTO "AuditLog" ("id", "usuarioId", "prontuarioId", "acao", "detalhe") VALUES ($1, $2, $3, $4, $5)`;
+  const buscarNomeProfessor = `SELECT "nome" FROM "Usuario" WHERE "id" = $1`;
+  const buscarAcesso = `SELECT "status", "alunoTitularId", "professorSupervisorId",
+       "acessoSolicitadoEm", "acessoExpiraEm", "acessoRevogadoEm", "acessoRecusadoEm"
+      FROM "Prontuario" WHERE "id" = $1 FOR UPDATE`;
+  const gravarSolicitacao = `UPDATE "Prontuario"
+      SET "acessoSolicitadoEm" = $1,
+          "acessoExpiraEm" = NULL,
+          "acessoRevogadoEm" = NULL,
+          "acessoRecusadoEm" = NULL,
+          "professorSupervisorId" = COALESCE($2::text, "professorSupervisorId"),
+          "atualizadoEm" = $3
+      WHERE "id" = $4`;
+  const gravarAprovacao = `UPDATE "Prontuario"
+      SET "acessoExpiraEm" = $1, "acessoRevogadoEm" = NULL, "acessoSolicitadoEm" = NULL,
+          "acessoRecusadoEm" = NULL, "atualizadoEm" = $2
+      WHERE "id" = $3`;
+  const gravarRevogacao = `UPDATE "Prontuario"
+      SET "acessoRevogadoEm" = $1, "acessoExpiraEm" = NULL, "acessoRecusadoEm" = NULL, "atualizadoEm" = $2
+      WHERE "id" = $3`;
+  const gravarRecusa = `UPDATE "Prontuario"
+      SET "acessoSolicitadoEm" = NULL,
+          "acessoRecusadoEm" = $1,
+          "acessoRevogadoEm" = $2,
+          "atualizadoEm" = $3
+      WHERE "id" = $4`;
+  const buscarProfessor = `SELECT "id", "nome", "matricula", "senhaHash" FROM "Usuario" WHERE "id" = $1 AND UPPER("perfil") = 'PROFESSOR' AND "ativo"`;
+  const buscarParaAcao = `SELECT "status", "professorSupervisorId",
+            "acessoExpiraEm", "acessoRevogadoEm", "acessoSolicitadoEm", "acessoRecusadoEm"
+     FROM "Prontuario" WHERE "id" = $1 FOR UPDATE`;
+  const gravarAssinatura = `UPDATE "Prontuario"
+     SET "status" = 'ASSINADO', "assinadoEm" = $1, "assinadoPorId" = $2, "assinadoPorNome" = $3, "assinaturaInvalidada" = FALSE,
+         "acessoSolicitadoEm" = NULL, "acessoExpiraEm" = NULL, "acessoRevogadoEm" = NULL, "acessoRecusadoEm" = NULL,
+         "atualizadoEm" = $4
+     WHERE "id" = $5`;
+  const gravarDevolucao = `UPDATE "Prontuario"
+     SET "status" = 'DEVOLVIDO',
+         "devolvidoEm" = $1, "devolvidoPorId" = $2, "devolvidoPorNome" = $3, "motivoDevolucao" = $4, "comentarioDevolucao" = $5,
+         "assinaturaInvalidada" = CASE WHEN "assinadoEm" IS NULL THEN "assinaturaInvalidada" ELSE TRUE END,
+         "assinadoEm" = NULL, "assinadoPorId" = NULL, "assinadoPorNome" = NULL,
+         "acessoExpiraEm" = $6, "acessoRevogadoEm" = NULL, "acessoSolicitadoEm" = NULL, "acessoRecusadoEm" = NULL,
+         "atualizadoEm" = $7
+     WHERE "id" = $8`;
+  const buscarEnvio = `SELECT MAX("ts") AS "ts" FROM "SyncOperationLog"
+     WHERE "prontuarioId" = $1 AND "entity" = 'prontuario' AND "op" = 'enviar' AND NOT "descartada"`;
 
-  const registrarLog = db.prepare(
-    `INSERT INTO SyncOperationLog (id, prontuarioId, entity, entityId, op, ts, descartada)
-     VALUES (?, ?, 'prontuario', ?, ?, ?, 0)`,
-  );
+  const registrarLog = `INSERT INTO "SyncOperationLog" ("id", "prontuarioId", "entity", "entityId", "op", "ts", "descartada")
+     VALUES ($1, $2, 'prontuario', $3, $4, $5, FALSE)`;
 
   const ehAluno = (perfil: string): boolean => perfil.toLowerCase() === "aluno";
 
-  const lerDupla = (prontuarioId: string): { alunoOperador: string; alunoAuxiliar: string } => {
-    const secao = buscarConsentimento.get(prontuarioId) as unknown as { conteudo: string } | undefined;
+  const lerDupla = async (
+    ex: Executor,
+    prontuarioId: string,
+  ): Promise<{ alunoOperador: string; alunoAuxiliar: string }> => {
+    const secao = await uma<{ conteudo: string }>(ex, buscarConsentimento, [prontuarioId]);
     try {
       const c = JSON.parse(secao?.conteudo ?? "{}") as { alunoOperador?: unknown; alunoAuxiliar?: unknown };
       return {
@@ -299,20 +253,23 @@ export const prontuariosRoutes: FastifyPluginAsync = async (app) => {
   const textoDupla = (p: PartesDuplicidade): string =>
     [p.alunoOperador, p.alunoAuxiliar].filter(Boolean).join(" e ") || p.alunoNome;
 
-  const nomeDuplaDe = (prontuarioId: string, alunoNome: string): string => {
-    const { alunoOperador, alunoAuxiliar } = lerDupla(prontuarioId);
+  const nomeDuplaDe = async (ex: Executor, prontuarioId: string, alunoNome: string): Promise<string> => {
+    const { alunoOperador, alunoAuxiliar } = await lerDupla(ex, prontuarioId);
     return [alunoOperador, alunoAuxiliar].filter(Boolean).join(" e ") || alunoNome;
   };
 
-  const nomeDuplaDestino = (prontuarioId: string | null): string | null => {
+  const nomeDuplaDestino = async (ex: Executor, prontuarioId: string | null): Promise<string | null> => {
     if (!prontuarioId) return null;
-    const partes = buscarPartes.get(prontuarioId) as unknown as { alunoNome: string } | undefined;
-    return partes ? nomeDuplaDe(prontuarioId, partes.alunoNome) : null;
+    const partes = await uma<{ alunoNome: string }>(ex, buscarPartes, [prontuarioId]);
+    return partes ? nomeDuplaDe(ex, prontuarioId, partes.alunoNome) : null;
   };
 
-  const lerSecoes = (prontuarioId: string, log: { warn: (obj: object, msg: string) => void }): Record<string, unknown> => {
+  const lerSecoes = async (
+    prontuarioId: string,
+    log: { warn: (obj: object, msg: string) => void },
+  ): Promise<Record<string, unknown>> => {
     const secoes: Record<string, unknown> = {};
-    for (const s of buscarSecoes.all(prontuarioId) as unknown as SecaoRow[]) {
+    for (const s of await todas<SecaoRow>(db, buscarSecoes, [prontuarioId])) {
       try {
         secoes[s.secaoId] = JSON.parse(s.conteudo);
       } catch {
@@ -322,32 +279,38 @@ export const prontuariosRoutes: FastifyPluginAsync = async (app) => {
     return secoes;
   };
 
-  const montarHistorico = (
+  const montarHistorico = async (
     origemId: string,
     log: { warn: (obj: object, msg: string) => void },
-  ): HistoricoProntuario | null => {
-    const origem = buscarPartes.get(origemId) as unknown as
-      | { prontuarioId: string; alunoNome: string; professorNome: string | null; criadoEm: string }
-      | undefined;
+  ): Promise<HistoricoProntuario | null> => {
+    const origem = await uma<{ prontuarioId: string; alunoNome: string; professorNome: string | null; criadoEm: string }>(
+      db,
+      buscarPartes,
+      [origemId],
+    );
     if (!origem) return null;
     return {
       prontuarioId: origem.prontuarioId,
-      alunoNome: nomeDuplaDe(origem.prontuarioId, origem.alunoNome),
+      alunoNome: await nomeDuplaDe(db, origem.prontuarioId, origem.alunoNome),
       professorNome: origem.professorNome,
       criadoEm: origem.criadoEm,
-      secoes: lerSecoes(origem.prontuarioId, log),
+      secoes: await lerSecoes(origem.prontuarioId, log),
     };
   };
 
-  const comDestino = <T extends { transferidoPara: string | null }>(linha: T): T & { transferidoParaNome: string | null } => ({
+  const comDestino = async <T extends { transferidoPara: string | null }>(
+    linha: T,
+  ): Promise<T & { transferidoParaNome: string | null }> => ({
     ...linha,
-    transferidoParaNome: nomeDuplaDestino(linha.transferidoPara),
+    transferidoParaNome: await nomeDuplaDestino(db, linha.transferidoPara),
   });
 
   app.get("/prontuarios", protegida, async (req) => {
     const userId = req.user.sub;
-    const linhas = (ehAluno(req.user.perfil) ? listarDoAluno.all(userId) : listarTodos.all()) as unknown as ProntuarioListaRow[];
-    return linhas.map(comDestino);
+    const linhas = ehAluno(req.user.perfil)
+      ? await todas<ProntuarioListaRow>(db, listarDoAluno, [userId])
+      : await todas<ProntuarioListaRow>(db, listarTodos);
+    return Promise.all(linhas.map(comDestino));
   });
 
   app.get<{ Querystring: { filtro?: string } }>("/fila-revisao", protegida, async (req, reply) => {
@@ -355,37 +318,39 @@ export const prontuariosRoutes: FastifyPluginAsync = async (app) => {
       return reply.status(403).send({ message: "Apenas professores podem consultar a fila de revisão." });
     }
 
-    const enviados = listarEnviados.all() as unknown as Array<{
+    const enviados = await todas<{
       id: string;
       pacienteNome: string;
       pacienteDataNascimento: string | null;
-      sinalizadoDuplicidade: number;
+      sinalizadoDuplicidade: boolean;
       professorSupervisorId: string | null;
       alunoTitularId: string;
       atualizadoEm: string;
       alunoNome: string;
       professorSupervisorNome: string | null;
-    }>;
+    }>(db, listarEnviados);
 
     const meus = enviados.filter((r) => r.professorSupervisorId === req.user.sub);
     const visiveis = req.query.filtro === "todos" ? enviados : meus;
 
-    const prontuarios: ItemFilaRevisao[] = visiveis.map((r) => {
-      const sinalizado = r.sinalizadoDuplicidade === 1;
-      const duplicado = sinalizado ? buscarDuplicado(db, r, r.alunoTitularId) : undefined;
-      return {
-        id: r.id,
-        pacienteNome: r.pacienteNome,
-        pacienteDataNascimento: r.pacienteDataNascimento?.slice(0, 10) ?? null,
-        atualizadoEm: r.atualizadoEm,
-        sinalizadoDuplicidade: sinalizado,
-        professorSupervisorId: r.professorSupervisorId,
-        professorSupervisorNome: r.professorSupervisorNome,
-        alunoNome: r.alunoNome,
-        ...lerDupla(r.id),
-        duplaAnteriorNome: duplicado ? nomeDuplaDestino(duplicado.id) : null,
-      };
-    });
+    const prontuarios: ItemFilaRevisao[] = await Promise.all(
+      visiveis.map(async (r): Promise<ItemFilaRevisao> => {
+        const sinalizado = r.sinalizadoDuplicidade;
+        const duplicado = sinalizado ? await buscarDuplicado(db, r, r.alunoTitularId) : undefined;
+        return {
+          id: r.id,
+          pacienteNome: r.pacienteNome,
+          pacienteDataNascimento: r.pacienteDataNascimento?.slice(0, 10) ?? null,
+          atualizadoEm: r.atualizadoEm,
+          sinalizadoDuplicidade: sinalizado,
+          professorSupervisorId: r.professorSupervisorId,
+          professorSupervisorNome: r.professorSupervisorNome,
+          alunoNome: r.alunoNome,
+          ...(await lerDupla(db, r.id)),
+          duplaAnteriorNome: duplicado ? await nomeDuplaDestino(db, duplicado.id) : null,
+        };
+      }),
+    );
 
     const resposta: FilaRevisaoResponse = {
       contadores: { meus: meus.length, todos: enviados.length },
@@ -399,12 +364,12 @@ export const prontuariosRoutes: FastifyPluginAsync = async (app) => {
       return reply.status(403).send({ message: "Apenas professores podem consultar encaminhamentos." });
     }
 
-    const linhas = listarConclusoesDoProfessor.all(req.user.sub) as unknown as Array<{
+    const linhas = await todas<{
       id: string;
       pacienteNome: string;
       alunoNome: string;
       conteudo: string;
-    }>;
+    }>(db, listarConclusoesDoProfessor, [req.user.sub]);
 
     const encaminhamentos: Encaminhamento[] = [];
     for (const linha of linhas) {
@@ -418,7 +383,7 @@ export const prontuariosRoutes: FastifyPluginAsync = async (app) => {
         encaminhamentos.push({
           prontuarioId: linha.id,
           pacienteNome: linha.pacienteNome,
-          duplaNome: nomeDuplaDe(linha.id, linha.alunoNome),
+          duplaNome: await nomeDuplaDe(db, linha.id, linha.alunoNome),
           encaminhamentoEm: typeof c.encaminhamentoEm === "string" ? c.encaminhamentoEm : "",
           encaminhamentoPara: typeof c.encaminhamentoPara === "string" ? c.encaminhamentoPara.trim() : "",
         });
@@ -430,7 +395,7 @@ export const prontuariosRoutes: FastifyPluginAsync = async (app) => {
   });
 
   app.get<{ Params: { id: string } }>("/prontuarios/:id", protegida, async (req, reply) => {
-    const linha = buscarUm.get(req.params.id) as unknown as ProntuarioListaRow | undefined;
+    const linha = await uma<ProntuarioListaRow>(db, buscarUm, [req.params.id]);
     if (!linha) return reply.status(404).send({ message: "Prontuário não encontrado." });
 
     const alunoUser = ehAluno(req.user.perfil);
@@ -438,10 +403,10 @@ export const prontuariosRoutes: FastifyPluginAsync = async (app) => {
       return reply.status(403).send({ message: "Você não tem acesso a este prontuário." });
     }
 
-    const revisao = buscarRevisao.get(linha.id) as unknown as RevisaoDetalheRow;
+    const revisao = (await uma<RevisaoDetalheRow>(db, buscarRevisao, [linha.id])) as RevisaoDetalheRow;
     const estado = estadoAcesso(revisao);
     const professor = linha.professorSupervisorId
-      ? (buscarNomeProfessor.get(linha.professorSupervisorId) as unknown as { nome: string } | undefined)
+      ? await uma<{ nome: string }>(db, buscarNomeProfessor, [linha.professorSupervisorId])
       : undefined;
     const professorSupervisorNome = professor?.nome ?? null;
 
@@ -463,18 +428,18 @@ export const prontuariosRoutes: FastifyPluginAsync = async (app) => {
         duplicidadeEmAnalise: linha.duplicidadeEmAnalise,
         transferidoDe: linha.transferidoDe,
         transferidoPara: linha.transferidoPara,
-        transferidoParaNome: nomeDuplaDestino(linha.transferidoPara),
+        transferidoParaNome: await nomeDuplaDestino(db, linha.transferidoPara),
         secoes: {},
       };
     }
 
-    const secoes = lerSecoes(linha.id, req.log);
-    const historico = linha.transferidoDe ? montarHistorico(linha.transferidoDe, req.log) : null;
+    const secoes = await lerSecoes(linha.id, req.log);
+    const historico = linha.transferidoDe ? await montarHistorico(linha.transferidoDe, req.log) : null;
 
     const ehSupervisor = !alunoUser && linha.professorSupervisorId === req.user.sub;
     const podeAgir = ehSupervisor && linha.status.toUpperCase() === "ENVIADO";
 
-    const envio = buscarEnvio.get(linha.id) as unknown as { ts: number | null } | undefined;
+    const envio = await uma<{ ts: number | null }>(db, buscarEnvio, [linha.id]);
     const enviadoEm = envio?.ts ? new Date(envio.ts).toISOString() : null;
 
     return {
@@ -483,7 +448,7 @@ export const prontuariosRoutes: FastifyPluginAsync = async (app) => {
       ...estado,
       bloqueado: false,
       professorSupervisorNome,
-      transferidoParaNome: nomeDuplaDestino(linha.transferidoPara),
+      transferidoParaNome: await nomeDuplaDestino(db, linha.transferidoPara),
       secoes,
       historico,
       podeAgir,
@@ -498,9 +463,9 @@ export const prontuariosRoutes: FastifyPluginAsync = async (app) => {
     }
 
     const { id } = req.params;
-    const resultado = transacao(db, () => {
-      const r = enviarProntuario(db, id, req.user.sub);
-      if (r.ok) registrarLog.run(randomUUID(), id, id, "enviar", Date.now());
+    const resultado = await transacao(db, async (tx) => {
+      const r = await enviarProntuario(tx, id, req.user.sub);
+      if (r.ok) await executar(tx, registrarLog, [randomUUID(), id, id, "enviar", Date.now()]);
       return r;
     });
 
@@ -524,9 +489,9 @@ export const prontuariosRoutes: FastifyPluginAsync = async (app) => {
     }
 
     const { id } = req.params;
-    const resultado = transacao(db, () => {
-      const r = reabrirProntuario(db, id, req.user.sub);
-      if (r === "ok") registrarLog.run(randomUUID(), id, id, "reabrir", Date.now());
+    const resultado = await transacao(db, async (tx) => {
+      const r = await reabrirProntuario(tx, id, req.user.sub);
+      if (r === "ok") await executar(tx, registrarLog, [randomUUID(), id, id, "reabrir", Date.now()]);
       return r;
     });
 
@@ -565,8 +530,8 @@ export const prontuariosRoutes: FastifyPluginAsync = async (app) => {
       const { id } = req.params;
       const body = (req.body ?? {}) as SolicitarAcessoBody;
 
-      const resultado = transacao(db, () => {
-        const pront = buscarAcesso.get(id) as unknown as ProntuarioAcessoRow | undefined;
+      const resultado = await transacao(db, async (tx) => {
+        const pront = await uma<ProntuarioAcessoRow>(tx, buscarAcesso, [id]);
         if (!pront || pront.alunoTitularId !== req.user.sub) return NAO_ENCONTRADO;
 
         if (!statusPermiteSolicitar(pront.status)) return STATUS_NAO_PERMITE_SOLICITAR;
@@ -578,9 +543,7 @@ export const prontuariosRoutes: FastifyPluginAsync = async (app) => {
         const professorDoBody = body.professorSupervisorId ?? null;
 
         if (professorDoBody) {
-          const prof = buscarProfessor.get(professorDoBody) as unknown as
-            | { id: string; nome: string }
-            | undefined;
+          const prof = await uma<{ id: string; nome: string }>(tx, buscarProfessor, [professorDoBody]);
           if (!prof) return PROFESSOR_INVALIDO;
         }
 
@@ -588,8 +551,8 @@ export const prontuariosRoutes: FastifyPluginAsync = async (app) => {
         if (!professorEfetivo) return { ok: false as const, erro: "professor_obrigatorio" as const };
 
         const agora = new Date().toISOString();
-        gravarSolicitacao.run(agora, professorDoBody, agora, id);
-        registrarLog.run(randomUUID(), id, id, "solicitar-acesso", Date.now());
+        await executar(tx, gravarSolicitacao, [agora, professorDoBody, agora, id]);
+        await executar(tx, registrarLog, [randomUUID(), id, id, "solicitar-acesso", Date.now()]);
         return { ok: true as const };
       });
 
@@ -603,16 +566,16 @@ export const prontuariosRoutes: FastifyPluginAsync = async (app) => {
 
   app.post<{ Params: { id: string } }>("/prontuarios/:id/aprovar-acesso", protegida, async (req, reply) => {
     const { id } = req.params;
-    const resultado = transacao(db, () => {
-      const pront = buscarAcesso.get(id) as unknown as ProntuarioAcessoRow | undefined;
+    const resultado = await transacao(db, async (tx) => {
+      const pront = await uma<ProntuarioAcessoRow>(tx, buscarAcesso, [id]);
       if (!pront) return NAO_ENCONTRADO;
       if (pront.professorSupervisorId !== req.user.sub) return NAO_SUPERVISOR;
       if (!pedidoPendente(pront)) return SEM_PEDIDO;
 
       const agora = Date.now();
       const acessoExpiraEm = new Date(agora + ACESSO_DURACAO_MS).toISOString();
-      gravarAprovacao.run(acessoExpiraEm, new Date(agora).toISOString(), id);
-      registrarLog.run(randomUUID(), id, id, "aprovar-acesso", agora);
+      await executar(tx, gravarAprovacao, [acessoExpiraEm, new Date(agora).toISOString(), id]);
+      await executar(tx, registrarLog, [randomUUID(), id, id, "aprovar-acesso", agora]);
       return { ok: true as const, acessoExpiraEm };
     });
 
@@ -623,8 +586,8 @@ export const prontuariosRoutes: FastifyPluginAsync = async (app) => {
 
   app.post<{ Params: { id: string } }>("/prontuarios/:id/revogar-acesso", protegida, async (req, reply) => {
     const { id } = req.params;
-    const resultado = transacao(db, () => {
-      const pront = buscarAcesso.get(id) as unknown as ProntuarioAcessoRow | undefined;
+    const resultado = await transacao(db, async (tx) => {
+      const pront = await uma<ProntuarioAcessoRow>(tx, buscarAcesso, [id]);
       if (!pront) return NAO_ENCONTRADO;
       if (pront.professorSupervisorId !== req.user.sub) return NAO_SUPERVISOR;
 
@@ -632,8 +595,8 @@ export const prontuariosRoutes: FastifyPluginAsync = async (app) => {
       if (!estado.acessoVigente) return SEM_ACESSO_VIGENTE;
 
       const agora = new Date().toISOString();
-      gravarRevogacao.run(agora, agora, id);
-      registrarLog.run(randomUUID(), id, id, "revogar-acesso", Date.now());
+      await executar(tx, gravarRevogacao, [agora, agora, id]);
+      await executar(tx, registrarLog, [randomUUID(), id, id, "revogar-acesso", Date.now()]);
       return { ok: true as const };
     });
 
@@ -644,15 +607,15 @@ export const prontuariosRoutes: FastifyPluginAsync = async (app) => {
 
   app.post<{ Params: { id: string } }>("/prontuarios/:id/recusar-acesso", protegida, async (req, reply) => {
     const { id } = req.params;
-    const resultado = transacao(db, () => {
-      const pront = buscarAcesso.get(id) as unknown as ProntuarioAcessoRow | undefined;
+    const resultado = await transacao(db, async (tx) => {
+      const pront = await uma<ProntuarioAcessoRow>(tx, buscarAcesso, [id]);
       if (!pront) return NAO_ENCONTRADO;
       if (pront.professorSupervisorId !== req.user.sub) return NAO_SUPERVISOR;
       if (!pedidoPendente(pront)) return SEM_PEDIDO;
 
       const agora = new Date().toISOString();
-      gravarRecusa.run(agora, agora, agora, id);
-      registrarLog.run(randomUUID(), id, id, "recusar-acesso", Date.now());
+      await executar(tx, gravarRecusa, [agora, agora, agora, id]);
+      await executar(tx, registrarLog, [randomUUID(), id, id, "recusar-acesso", Date.now()]);
       return { ok: true as const };
     });
 
@@ -664,41 +627,44 @@ export const prontuariosRoutes: FastifyPluginAsync = async (app) => {
   type PartesRow = PartesDuplicidade & {
     pacienteNome: string;
     pacienteDataNascimento: string | null;
-    sinalizadoDuplicidade: number;
+    sinalizadoDuplicidade: boolean;
   };
 
-  const resumirPartes = (r: PartesRow): PartesDuplicidade => ({
+  const resumirPartes = async (ex: Executor, r: PartesRow): Promise<PartesDuplicidade> => ({
     prontuarioId: r.prontuarioId,
     alunoId: r.alunoId,
     alunoNome: r.alunoNome,
-    ...lerDupla(r.prontuarioId),
+    ...(await lerDupla(ex, r.prontuarioId)),
     professorId: r.professorId,
     professorNome: r.professorNome,
     criadoEm: r.criadoEm,
     status: r.status,
   });
 
-  const notificar = (usuarioId: string, prontuarioId: string, tipo: string, mensagem: string): void => {
-    inserirNotificacao.run(randomUUID(), usuarioId, prontuarioId, tipo, mensagem);
-  };
+  const notificar = (ex: Executor, usuarioId: string, prontuarioId: string, tipo: string, mensagem: string): Promise<number> =>
+    executar(ex, inserirNotificacao, [randomUUID(), usuarioId, prontuarioId, tipo, mensagem]);
 
   const SEM_DUPLICIDADE: FalhaAcesso = { falha: 409, error: "Este prontuário não está sinalizado como duplicado." };
 
-  const montarDuplicidade = (id: string): { falha: FalhaAcesso } | { partes: PartesRow; resposta: DuplicidadeResponse } => {
-    const partes = buscarPartes.get(id) as unknown as PartesRow | undefined;
+  const montarDuplicidade = async (
+    ex: Executor,
+    id: string,
+  ): Promise<{ falha: FalhaAcesso } | { partes: PartesRow; resposta: DuplicidadeResponse }> => {
+    const partes = await uma<PartesRow>(ex, buscarPartes, [id]);
     if (!partes) return { falha: NAO_ENCONTRADO };
-    const duplicado = buscarDuplicado(db, { ...partes, id: partes.prontuarioId }, partes.alunoId);
-    const existente = duplicado
-      ? (buscarPartes.get(duplicado.id) as unknown as PartesRow | undefined)
-      : undefined;
+    const duplicado = await buscarDuplicado(ex, { ...partes, id: partes.prontuarioId }, partes.alunoId);
+    const existente = duplicado ? await uma<PartesRow>(ex, buscarPartes, [duplicado.id]) : undefined;
     return {
       partes,
-      resposta: { atual: resumirPartes(partes), existente: existente ? resumirPartes(existente) : null },
+      resposta: {
+        atual: await resumirPartes(ex, partes),
+        existente: existente ? await resumirPartes(ex, existente) : null,
+      },
     };
   };
 
   app.get<{ Params: { id: string } }>("/prontuarios/:id/duplicidade", protegida, async (req, reply) => {
-    const r = montarDuplicidade(req.params.id);
+    const r = await montarDuplicidade(db, req.params.id);
     if ("falha" in r) return responderFalha(reply, r.falha);
     if (r.partes.professorId !== req.user.sub) return responderFalha(reply, NAO_SUPERVISOR);
     return r.resposta;
@@ -711,8 +677,8 @@ export const prontuariosRoutes: FastifyPluginAsync = async (app) => {
       const { professorSupervisorId } = manterTitularidadeSchema.parse(req.body);
       const { id } = req.params;
 
-      const resultado = transacao(db, () => {
-        const r = montarDuplicidade(id);
+      const resultado = await transacao(db, async (tx) => {
+        const r = await montarDuplicidade(tx, id);
         if ("falha" in r) return r.falha;
         if (r.partes.professorId !== req.user.sub) return NAO_SUPERVISOR;
         if (!r.partes.sinalizadoDuplicidade) return SEM_DUPLICIDADE;
@@ -720,14 +686,14 @@ export const prontuariosRoutes: FastifyPluginAsync = async (app) => {
         const permitidos = new Set(
           [r.resposta.atual.professorId, r.resposta.existente?.professorId].filter((v): v is string => !!v),
         );
-        if (!permitidos.has(professorSupervisorId) || !buscarProfessor.get(professorSupervisorId)) {
+        if (!permitidos.has(professorSupervisorId) || !(await uma(tx, buscarProfessor, [professorSupervisorId]))) {
           return PROFESSOR_INVALIDO;
         }
 
         const agora = new Date().toISOString();
-        gravarManutencao.run(professorSupervisorId, agora, id);
-        if (r.resposta.existente) atualizarCarimbo.run(agora, r.resposta.existente.prontuarioId);
-        registrarAuditoria.run(
+        await executar(tx, gravarManutencao, [professorSupervisorId, agora, id]);
+        if (r.resposta.existente) await executar(tx, atualizarCarimbo, [agora, r.resposta.existente.prontuarioId]);
+        await executar(tx, registrarAuditoria, [
           randomUUID(),
           req.user.sub,
           id,
@@ -737,19 +703,21 @@ export const prontuariosRoutes: FastifyPluginAsync = async (app) => {
             professorAnterior: r.partes.professorId,
             professorNovo: professorSupervisorId,
           }),
-        );
-        registrarLog.run(randomUUID(), id, id, "manter-titularidade", Date.now());
+        ]);
+        await executar(tx, registrarLog, [randomUUID(), id, id, "manter-titularidade", Date.now()]);
 
         const { atual, existente } = r.resposta;
-        const responsavel = (buscarNomeProfessor.get(professorSupervisorId) as unknown as { nome: string }).nome;
-        notificar(
+        const responsavel = (await uma<{ nome: string }>(tx, buscarNomeProfessor, [professorSupervisorId]))!.nome;
+        await notificar(
+          tx,
           atual.alunoId,
           id,
           "duplicidade-mantida",
           `A duplicidade do prontuário de ${r.partes.pacienteNome} foi resolvida: ele permanece com ${textoDupla(atual)}. Professor responsável: ${responsavel}.`,
         );
         if (existente) {
-          notificar(
+          await notificar(
+            tx,
             existente.alunoId,
             existente.prontuarioId,
             "duplicidade-mantida-outra-dupla",
@@ -780,9 +748,9 @@ export const prontuariosRoutes: FastifyPluginAsync = async (app) => {
         return reply.status(400).send({ error: "O prontuário da URL não é o prontuário anterior informado." });
       }
 
-      const resultado = transacao(db, () => {
-        const antigo = buscarPartes.get(prontuarioAntigoId) as unknown as PartesRow | undefined;
-        const novo = buscarPartes.get(prontuarioNovoId) as unknown as PartesRow | undefined;
+      const resultado = await transacao(db, async (tx) => {
+        const antigo = await uma<PartesRow>(tx, buscarPartes, [prontuarioAntigoId]);
+        const novo = await uma<PartesRow>(tx, buscarPartes, [prontuarioNovoId]);
         if (!antigo || !novo) return NAO_ENCONTRADO;
 
         if (antigo.professorId !== req.user.sub && novo.professorId !== req.user.sub) return NAO_SUPERVISOR;
@@ -798,21 +766,19 @@ export const prontuariosRoutes: FastifyPluginAsync = async (app) => {
         }
 
         const professorResponsavelId = professorEscolhidoId ?? req.user.sub;
-        const professorResponsavel = buscarProfessor.get(professorResponsavelId) as unknown as
-          | { nome: string }
-          | undefined;
+        const professorResponsavel = await uma<{ nome: string }>(tx, buscarProfessor, [professorResponsavelId]);
         if (!professorResponsavel) return PROFESSOR_INVALIDO;
 
         const recebe = quemRecebe === "anterior" ? antigo : novo;
         const arquiva = quemRecebe === "anterior" ? novo : antigo;
-        const duplaRecebe = resumirPartes(recebe);
-        const duplaArquiva = resumirPartes(arquiva);
+        const duplaRecebe = await resumirPartes(tx, recebe);
+        const duplaArquiva = await resumirPartes(tx, arquiva);
         const agora = new Date().toISOString();
 
-        gravarTransferenciaArquivado.run(recebe.prontuarioId, agora, arquiva.prontuarioId);
-        gravarTransferenciaAtivo.run(arquiva.prontuarioId, professorResponsavelId, agora, recebe.prontuarioId);
+        await executar(tx, gravarTransferenciaArquivado, [recebe.prontuarioId, agora, arquiva.prontuarioId]);
+        await executar(tx, gravarTransferenciaAtivo, [arquiva.prontuarioId, professorResponsavelId, agora, recebe.prontuarioId]);
 
-        registrarAuditoria.run(
+        await executar(tx, registrarAuditoria, [
           randomUUID(),
           req.user.sub,
           recebe.prontuarioId,
@@ -823,19 +789,21 @@ export const prontuariosRoutes: FastifyPluginAsync = async (app) => {
             quemRecebe,
             professorEscolhidoId: professorResponsavelId,
           }),
-        );
+        ]);
         const agoraMs = Date.now();
-        registrarLog.run(randomUUID(), arquiva.prontuarioId, arquiva.prontuarioId, "transferir-titularidade", agoraMs);
-        registrarLog.run(randomUUID(), recebe.prontuarioId, recebe.prontuarioId, "transferir-titularidade", agoraMs);
+        await executar(tx, registrarLog, [randomUUID(), arquiva.prontuarioId, arquiva.prontuarioId, "transferir-titularidade", agoraMs]);
+        await executar(tx, registrarLog, [randomUUID(), recebe.prontuarioId, recebe.prontuarioId, "transferir-titularidade", agoraMs]);
 
         const sufixoProfessor = ` Professor responsável: ${professorResponsavel.nome}.`;
-        notificar(
+        await notificar(
+          tx,
           arquiva.alunoId,
           arquiva.prontuarioId,
           "titularidade-transferida",
           `O prontuário de ${arquiva.pacienteNome} foi transferido para ${textoDupla(duplaRecebe)}. Ele continua disponível apenas para consulta.${sufixoProfessor}`,
         );
-        notificar(
+        await notificar(
+          tx,
           recebe.alunoId,
           recebe.prontuarioId,
           "titularidade-recebida",
@@ -859,7 +827,7 @@ export const prontuariosRoutes: FastifyPluginAsync = async (app) => {
   app.post<{ Params: { id: string } }>("/prontuarios/:id/assinar", protegida, async (req, reply) => {
     const { matricula, senha } = assinarSchema.parse(req.body);
 
-    const professor = buscarProfessor.get(req.user.sub) as unknown as ProfessorRow | undefined;
+    const professor = await uma<ProfessorRow>(db, buscarProfessor, [req.user.sub]);
     if (!professor) return reply.status(403).send({ message: "Apenas professores podem assinar prontuários." });
 
     if (!professor.matricula || professor.matricula !== matricula) {
@@ -870,17 +838,17 @@ export const prontuariosRoutes: FastifyPluginAsync = async (app) => {
     }
 
     const { id } = req.params;
-    const resultado = transacao(db, () => {
-      const pront = buscarParaAcao.get(id) as unknown as ProntuarioRevisaoRow | undefined;
+    const resultado = await transacao(db, async (tx) => {
+      const pront = await uma<ProntuarioRevisaoRow>(tx, buscarParaAcao, [id]);
       if (!pront) return { erro: 404 as const };
       if (pront.status.toUpperCase() !== "ENVIADO") return { erro: 409 as const };
       if (pront.professorSupervisorId !== professor.id) return { erro: 403 as const };
 
       const agora = new Date().toISOString();
-      gravarAssinatura.run(agora, professor.id, professor.nome, agora, id);
-      registrarLog.run(randomUUID(), id, id, "assinar", Date.now());
+      await executar(tx, gravarAssinatura, [agora, professor.id, professor.nome, agora, id]);
+      await executar(tx, registrarLog, [randomUUID(), id, id, "assinar", Date.now()]);
 
-      const secao = buscarSecaoProcedimentos.get(id) as unknown as { conteudo: string } | undefined;
+      const secao = await uma<{ conteudo: string }>(tx, buscarSecaoProcedimentos, [id]);
       return { agora, procedimentos: contarProcedimentos(secao?.conteudo) };
     });
 
@@ -905,12 +873,12 @@ export const prontuariosRoutes: FastifyPluginAsync = async (app) => {
   app.post<{ Params: { id: string } }>("/prontuarios/:id/devolver", protegida, async (req, reply) => {
     const { motivo, comentario } = devolverSchema.parse(req.body);
 
-    const professor = buscarProfessor.get(req.user.sub) as unknown as ProfessorRow | undefined;
+    const professor = await uma<ProfessorRow>(db, buscarProfessor, [req.user.sub]);
     if (!professor) return reply.status(403).send({ message: "Apenas professores podem devolver prontuários." });
 
     const { id } = req.params;
-    const resultado = transacao(db, () => {
-      const pront = buscarParaAcao.get(id) as unknown as ProntuarioRevisaoRow | undefined;
+    const resultado = await transacao(db, async (tx) => {
+      const pront = await uma<ProntuarioRevisaoRow>(tx, buscarParaAcao, [id]);
       if (!pront) return { erro: 404 as const };
       if (pront.status.toUpperCase() !== "ENVIADO") return { erro: 409 as const };
       if (pront.professorSupervisorId !== professor.id) return { erro: 403 as const };
@@ -927,7 +895,7 @@ export const prontuariosRoutes: FastifyPluginAsync = async (app) => {
         ? (pront.acessoExpiraEm as string)
         : new Date(agoraMs + ACESSO_DURACAO_MS).toISOString();
 
-      gravarDevolucao.run(
+      await executar(tx, gravarDevolucao, [
         agora,
         professor.id,
         professor.nome,
@@ -936,8 +904,8 @@ export const prontuariosRoutes: FastifyPluginAsync = async (app) => {
         novoAcessoExpiraEm,
         agora,
         id,
-      );
-      registrarLog.run(randomUUID(), id, id, "devolver", agoraMs);
+      ]);
+      await executar(tx, registrarLog, [randomUUID(), id, id, "devolver", agoraMs]);
       return { agora, novoAcessoExpiraEm };
     });
 
@@ -957,4 +925,5 @@ export const prontuariosRoutes: FastifyPluginAsync = async (app) => {
     };
     return resposta;
   });
+
 };

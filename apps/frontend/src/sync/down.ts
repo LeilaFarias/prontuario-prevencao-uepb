@@ -101,6 +101,7 @@ export async function aplicarRemoto(remoto: ProntuarioRemoto): Promise<boolean> 
 
   return db.transaction("rw", db.prontuarios, db.syncQueue, async () => {
     const local = await db.prontuarios.get(remoto.id);
+    if (local?.descartadoEm) return false;
 
     if (!local) {
       const status = normalizarStatus(remoto.status);

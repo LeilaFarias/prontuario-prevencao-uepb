@@ -2,6 +2,7 @@ import { useEffect, useReducer, useState, type ReactNode } from "react";
 import { useLiveQuery } from "dexie-react-hooks";
 import { useNavigate } from "react-router-dom";
 import { Bell, Check, Plus, RefreshCw, RotateCcw, WifiOff, X } from "lucide-react";
+import BottomSheet from "../components/BottomSheet";
 import DevolucaoAlunoModal from "../components/DevolucaoAlunoModal";
 import ProntuarioCard from "../components/ProntuarioCard";
 import { db, type LocalProntuario } from "../db/dexie";
@@ -9,7 +10,7 @@ import { useNotificacoes } from "../hooks/useNotificacoes";
 import { useSyncDown } from "../hooks/useSyncDown";
 import { ACESSO_EXPIRADO_EVENT, acessoVigente, prontuarioBloqueado } from "../lib/acesso";
 import { getSession } from "../lib/session";
-import { criarProntuarioLocal, marcarComoVisto, reabrirParaCorrecao } from "../sync/queue";
+import { criarProntuarioLocal, descartarRascunhoLocal, marcarComoVisto, reabrirParaCorrecao } from "../sync/queue";
 
 function Aviso({
   tom,
@@ -84,6 +85,8 @@ export default function ListaProntuarios() {
   const { notificacoes, dispensar: dispensarNotificacao } = useNotificacoes();
 
   const [devolvidoId, setDevolvidoId] = useState<string | null>(null);
+  const [descartandoId, setDescartandoId] = useState<string | null>(null);
+  const [descartando, setDescartando] = useState(false);
   const [filtro, setFiltro] = useState<Filtro>("todos");
   const [online, setOnline] = useState(() => navigator.onLine);
   const [, renderizar] = useReducer((n: number) => n + 1, 0);
@@ -112,7 +115,7 @@ export default function ListaProntuarios() {
   const prontuarios = useLiveQuery(
     async () => {
       const todos = await db.prontuarios.orderBy("atualizadoEm").reverse().toArray();
-      return todos.filter((p) => !p.alunoTitularId || p.alunoTitularId === usuario?.id);
+      return todos.filter((p) => (!p.alunoTitularId || p.alunoTitularId === usuario?.id) && !p.descartadoEm);
     },
     [usuario?.id],
   );
@@ -151,6 +154,17 @@ export default function ListaProntuarios() {
   function solicitarAcesso(p: LocalProntuario) {
     void marcarComoVisto(p.id);
     navigate(`/prontuario/${p.id}?solicitar=1`);
+  }
+
+  async function confirmarDescarte() {
+    if (!descartandoId || descartando) return;
+    setDescartando(true);
+    try {
+      await descartarRascunhoLocal(descartandoId);
+    } finally {
+      setDescartando(false);
+      setDescartandoId(null);
+    }
   }
 
   async function novo() {
@@ -292,6 +306,7 @@ export default function ListaProntuarios() {
                       onAbrir={() => abrirProntuario(p)}
                       onSolicitarAcesso={() => solicitarAcesso(p)}
                       onCorrigir={() => void corrigir(p)}
+                      onDescartar={() => setDescartandoId(p.id)}
                     />
                   </li>
                 ))}
@@ -308,6 +323,23 @@ export default function ListaProntuarios() {
           </button>
         </footer>
       )}
+
+      <BottomSheet
+        open={descartandoId !== null}
+        onClose={() => setDescartandoId(null)}
+        title="Descartar rascunho"
+        subtitle="Este prontuário está vazio e será arquivado. Ele não aparecerá mais na sua lista."
+        bloqueado={descartando}
+      >
+        <div className="flex flex-col gap-2">
+          <button type="button" className="btn-primary" disabled={descartando} onClick={() => void confirmarDescarte()}>
+            Sim, descartar
+          </button>
+          <button type="button" className="btn-ghost" disabled={descartando} onClick={() => setDescartandoId(null)}>
+            Cancelar
+          </button>
+        </div>
+      </BottomSheet>
 
       {devolvido && (
         <DevolucaoAlunoModal

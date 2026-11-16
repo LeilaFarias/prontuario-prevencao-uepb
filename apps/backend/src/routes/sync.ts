@@ -2,12 +2,13 @@ import { randomUUID } from "node:crypto";
 import type { FastifyPluginAsync } from "fastify";
 import { z } from "zod";
 import {
+  secoesVazias,
   syncBatchSchema,
   type EnvioSincronizado,
   type SyncOperation,
   type SyncResponse,
 } from "@prontuario/shared";
-import { transacao } from "../db";
+import { comSavepoint, executar, todas, transacao, uma, type Executor } from "../db";
 import { ACESSO_DURACAO_MS, acessoCobreOperacao, type AcessoRow } from "../lib/acesso";
 import { enviarProntuario } from "../lib/envio";
 import { reabrirProntuario } from "../lib/reabertura";
@@ -32,6 +33,22 @@ const liberacaoManualPayload = z.object({
 interface ProntRow extends AcessoRow {
   id: string;
   status: string;
+  alunoTitularId: string;
+  professorSupervisorId: string | null;
+  descartadoEm: string | null;
+}
+
+interface RascunhoRow {
+  id: string;
+  status: string;
+  alunoTitularId: string;
+  pacienteNome: string;
+  pacienteDataNascimento: string | null;
+}
+
+interface UsuarioSync {
+  id: string;
+  perfil: "aluno" | "professor";
 }
 
 const editaFicha = (op: SyncOperation): boolean =>
@@ -40,85 +57,100 @@ const editaFicha = (op: SyncOperation): boolean =>
 export const syncRoutes: FastifyPluginAsync = async (app) => {
   const { db } = app;
 
-  const buscarPront = db.prepare(
-    `SELECT id, status, acessoSolicitadoEm, acessoExpiraEm, acessoRevogadoEm, acessoRecusadoEm
-      FROM Prontuario WHERE id = ?`,
-  );
-  const invalidarAssinatura = db.prepare(
-    `UPDATE Prontuario
-     SET status = 'EM_ANDAMENTO',
-         assinadoEm = NULL, assinadoPorId = NULL, assinadoPorNome = NULL,
-         assinaturaInvalidada = 1,
-         acessoSolicitadoEm = NULL, acessoExpiraEm = NULL, acessoRevogadoEm = NULL,
-         atualizadoEm = ?
-     WHERE id = ?`,
-  );
-  const inserirPront = db.prepare(
-    `INSERT INTO Prontuario (id, pacienteNome, pacienteDataNascimento, alunoTitularId, status, acessoExpiraEm)
-     VALUES (?, ?, ?, ?, COALESCE(?, 'EM_ANDAMENTO'), ?)`,
-  );
-  const atualizarPront = db.prepare(
-    `UPDATE Prontuario SET
-       pacienteNome = COALESCE(?, pacienteNome),
-       pacienteDataNascimento = COALESCE(?, pacienteDataNascimento),
-       status = COALESCE(?, status),
-       atualizadoEm = ?
-     WHERE id = ?`,
-  );
-  const apagarPront = db.prepare("DELETE FROM Prontuario WHERE id = ?");
-  const buscarProfessorPorMatricula = db.prepare(
-    "SELECT id FROM Usuario WHERE matricula = ? AND UPPER(perfil) = 'PROFESSOR' AND ativo = 1",
-  );
-  const gravarLiberacaoManual = db.prepare(
-    `UPDATE Prontuario
-     SET acessoExpiraEm = ?, acessoRevogadoEm = NULL, acessoSolicitadoEm = NULL,
-         acessoRecusadoEm = NULL, atualizadoEm = ?
-     WHERE id = ?`,
-  );
-  const registrarAuditoria = db.prepare(
-    `INSERT INTO AuditLog (id, usuarioId, prontuarioId, acao, detalhe) VALUES (?, ?, ?, ?, ?)`,
-  );
-  const upsertSecao = db.prepare(
-    `INSERT INTO Secao (id, prontuarioId, secaoId, conteudo, atualizadoEm) VALUES (?, ?, ?, ?, ?)
-     ON CONFLICT (prontuarioId, secaoId)
-     DO UPDATE SET conteudo = excluded.conteudo, atualizadoEm = excluded.atualizadoEm`,
-  );
-  const apagarSecao = db.prepare("DELETE FROM Secao WHERE prontuarioId = ? AND secaoId = ?");
-  const registrar = db.prepare(
-    `INSERT INTO SyncOperationLog (id, prontuarioId, entity, entityId, op, ts, descartada)
-     VALUES (?, (SELECT id FROM Prontuario WHERE id = ?), ?, ?, ?, ?, ?)`,
-  );
+  const buscarPront = `SELECT "id", "status", "alunoTitularId", "professorSupervisorId", "descartadoEm",
+            "acessoSolicitadoEm", "acessoExpiraEm", "acessoRevogadoEm", "acessoRecusadoEm"
+      FROM "Prontuario" WHERE "id" = $1 FOR UPDATE`;
+  const invalidarAssinatura = `UPDATE "Prontuario"
+     SET "status" = 'EM_ANDAMENTO',
+         "assinadoEm" = NULL, "assinadoPorId" = NULL, "assinadoPorNome" = NULL,
+         "assinaturaInvalidada" = TRUE,
+         "acessoSolicitadoEm" = NULL, "acessoExpiraEm" = NULL, "acessoRevogadoEm" = NULL,
+         "atualizadoEm" = $1
+     WHERE "id" = $2`;
+  const inserirPront = `INSERT INTO "Prontuario" ("id", "pacienteNome", "pacienteDataNascimento", "alunoTitularId", "status", "acessoExpiraEm")
+     VALUES ($1, $2, $3, $4, COALESCE($5::text, 'EM_ANDAMENTO'), $6)`;
+  const atualizarPront = `UPDATE "Prontuario" SET
+       "pacienteNome" = COALESCE($1, "pacienteNome"),
+       "pacienteDataNascimento" = COALESCE($2::timestamptz, "pacienteDataNascimento"),
+       "status" = COALESCE($3::text, "status"),
+       "atualizadoEm" = $4
+     WHERE "id" = $5`;
+  const buscarParaDescarte = `SELECT "id", "status", "alunoTitularId", "pacienteNome", "pacienteDataNascimento" FROM "Prontuario" WHERE "id" = $1`;
+  const buscarSecoesParaDescarte = `SELECT "conteudo" FROM "Secao" WHERE "prontuarioId" = $1`;
+  const gravarDescarte = `UPDATE "Prontuario" SET "descartadoEm" = $1, "descartadoPorId" = $2, "atualizadoEm" = $3 WHERE "id" = $4`;
+  const buscarProfessorPorMatricula = `SELECT "id" FROM "Usuario" WHERE "matricula" = $1 AND UPPER("perfil") = 'PROFESSOR' AND "ativo"`;
+  const gravarLiberacaoManual = `UPDATE "Prontuario"
+     SET "acessoExpiraEm" = $1, "acessoRevogadoEm" = NULL, "acessoSolicitadoEm" = NULL,
+         "acessoRecusadoEm" = NULL, "atualizadoEm" = $2
+     WHERE "id" = $3`;
+  const registrarAuditoria = `INSERT INTO "AuditLog" ("id", "usuarioId", "prontuarioId", "acao", "detalhe") VALUES ($1, $2, $3, $4, $5)`;
+  const upsertSecao = `INSERT INTO "Secao" ("id", "prontuarioId", "secaoId", "conteudo", "atualizadoEm") VALUES ($1, $2, $3, $4, $5)
+     ON CONFLICT ("prontuarioId", "secaoId")
+     DO UPDATE SET "conteudo" = EXCLUDED."conteudo", "atualizadoEm" = EXCLUDED."atualizadoEm"`;
+  const apagarSecao = `DELETE FROM "Secao" WHERE "prontuarioId" = $1 AND "secaoId" = $2`;
+  const registrar = `INSERT INTO "SyncOperationLog" ("id", "prontuarioId", "entity", "entityId", "op", "ts", "descartada")
+     VALUES ($1, (SELECT "id" FROM "Prontuario" WHERE "id" = $2), $3, $4, $5, $6, $7)`;
 
-  function liberarManualmente(op: SyncOperation): boolean {
+  async function liberarManualmente(tx: Executor, op: SyncOperation): Promise<boolean> {
     const p = liberacaoManualPayload.safeParse(op.payload);
     if (!p.success) return false;
 
-    const professor = buscarProfessorPorMatricula.get(p.data.matricula) as unknown as { id: string } | undefined;
+    const professor = await uma<{ id: string }>(tx, buscarProfessorPorMatricula, [p.data.matricula]);
     if (!professor) return false;
 
     const expiraMs = new Date(p.data.acessoExpiraEm).getTime();
     if (expiraMs > op.ts + ACESSO_DURACAO_MS) return false;
 
     const agora = new Date().toISOString();
-    gravarLiberacaoManual.run(new Date(expiraMs).toISOString(), agora, op.prontuarioId);
-    registrarAuditoria.run(
+    await executar(tx, gravarLiberacaoManual, [new Date(expiraMs).toISOString(), agora, op.prontuarioId]);
+    await executar(tx, registrarAuditoria, [
       randomUUID(),
       professor.id,
       op.prontuarioId,
       "liberacao-manual-offline",
       JSON.stringify({ matricula: p.data.matricula, acessoExpiraEm: p.data.acessoExpiraEm, ts: op.ts }),
-    );
+    ]);
     return true;
   }
 
-  function aplicar(op: SyncOperation, existe: boolean): void {
+  async function secoesSemConteudo(tx: Executor, prontuarioId: string): Promise<boolean> {
+    const linhas = await todas<{ conteudo: string }>(tx, buscarSecoesParaDescarte, [prontuarioId]);
+    const conteudos: unknown[] = [];
+    for (const linha of linhas) {
+      try {
+        conteudos.push(JSON.parse(linha.conteudo));
+      } catch {
+        return false;
+      }
+    }
+    return secoesVazias(conteudos);
+  }
+
+  async function descartarRascunho(tx: Executor, op: SyncOperation, usuario: UsuarioSync): Promise<boolean> {
+    const pront = await uma<RascunhoRow>(tx, buscarParaDescarte, [op.prontuarioId]);
+    if (!pront) return false;
+    if (pront.alunoTitularId !== usuario.id) return false;
+    if (pront.status.toUpperCase() !== "EM_ANDAMENTO") return false;
+    if (pront.pacienteNome.trim() !== "" || pront.pacienteDataNascimento) return false;
+    if (!(await secoesSemConteudo(tx, pront.id))) return false;
+
+    const agora = new Date().toISOString();
+    await executar(tx, gravarDescarte, [agora, usuario.id, agora, pront.id]);
+    await executar(tx, registrarAuditoria, [
+      randomUUID(),
+      usuario.id,
+      pront.id,
+      "rascunho-descartado",
+      JSON.stringify({ motivo: "aluno descartou rascunho vazio" }),
+    ]);
+    return true;
+  }
+
+  async function aplicar(tx: Executor, op: SyncOperation, existe: boolean, usuario: UsuarioSync): Promise<void> {
     const agora = new Date().toISOString();
 
     if (op.entity === "prontuario") {
-      if (op.op === "delete") {
-        apagarPront.run(op.entityId);
-        return;
-      }
+      if (op.op === "delete") throw new Error("Exclusão de prontuário não é permitida");
       const p = prontuarioPayload.parse(op.payload);
       let nascimento: string | null = null;
       if (p.pacienteDataNascimento) {
@@ -130,10 +162,13 @@ export const syncRoutes: FastifyPluginAsync = async (app) => {
 
       if (!existe) {
         if (!p.alunoTitularId || p.pacienteNome === undefined) throw new Error("Payload incompleto para criar prontuário");
+        if (usuario.perfil !== "aluno" || p.alunoTitularId !== usuario.id) {
+          throw new Error("Prontuário não pode ser criado em nome de outro usuário");
+        }
         const acessoExpiraEm = new Date(op.ts + ACESSO_DURACAO_MS).toISOString();
-        inserirPront.run(op.entityId, p.pacienteNome, nascimento, p.alunoTitularId, status, acessoExpiraEm);
+        await executar(tx, inserirPront, [op.entityId, p.pacienteNome, nascimento, p.alunoTitularId, status, acessoExpiraEm]);
       } else {
-        atualizarPront.run(p.pacienteNome || null, nascimento, null, agora, op.entityId);
+        await executar(tx, atualizarPront, [p.pacienteNome || null, nascimento, null, agora, op.entityId]);
       }
       return;
     }
@@ -142,10 +177,10 @@ export const syncRoutes: FastifyPluginAsync = async (app) => {
       if (!existe) throw new Error("Prontuário não existe no servidor");
       const p = secaoPayload.parse(op.payload);
       if (op.op === "delete") {
-        apagarSecao.run(op.prontuarioId, p.secaoId);
+        await executar(tx, apagarSecao, [op.prontuarioId, p.secaoId]);
         return;
       }
-      upsertSecao.run(randomUUID(), op.prontuarioId, p.secaoId, JSON.stringify(p.conteudo ?? {}), agora);
+      await executar(tx, upsertSecao, [randomUUID(), op.prontuarioId, p.secaoId, JSON.stringify(p.conteudo ?? {}), agora]);
       return;
     }
 
@@ -158,26 +193,41 @@ export const syncRoutes: FastifyPluginAsync = async (app) => {
     let descartadas = 0;
     const envios: EnvioSincronizado[] = [];
     const acessoExpirado = new Set<string>();
+    const usuario: UsuarioSync = { id: req.user.sub, perfil: req.user.perfil };
+
+    const temPermissao = (pront: ProntRow): boolean =>
+      usuario.perfil === "aluno"
+        ? pront.alunoTitularId === usuario.id
+        : pront.professorSupervisorId === usuario.id;
 
     // sort é estável: operações com o mesmo ts mantêm a ordem de chegada
     for (const op of [...operations].sort((a, b) => a.ts - b.ts)) {
-      const descartada = transacao(db, () => {
-        const pront = buscarPront.get(op.prontuarioId) as unknown as ProntRow | undefined;
+      const descartada = await transacao(db, async (tx) => {
+        const pront = await uma<ProntRow>(tx, buscarPront, [op.prontuarioId]);
 
         const status = pront?.status.toUpperCase();
         const assinado = status === "ASSINADO";
         const enviado = status === "ENVIADO";
         const transferido = status === "TRANSFERIDO";
-        let descartar = false;
+        const negado = !!pront && (pront.descartadoEm !== null || !temPermissao(pront));
+        let descartar = negado;
+        if (negado) {
+          req.log.warn(
+            { usuarioId: usuario.id, prontuarioId: op.prontuarioId, op: op.op, entity: op.entity },
+            "sync: operação em prontuário sem permissão descartada",
+          );
+        }
 
-        if (pront && editaFicha(op)) {
+        if (pront && !negado && editaFicha(op)) {
           if (transferido) {
             descartar = true;
           } else if (assinado) {
             if (acessoCobreOperacao(pront, op.ts)) {
               const agora = new Date().toISOString();
-              invalidarAssinatura.run(agora, pront.id);
-              registrar.run(randomUUID(), pront.id, "prontuario", pront.id, "invalidar-assinatura", Date.now(), 0);
+              await executar(tx, invalidarAssinatura, [agora, pront.id]);
+              await executar(tx, registrar, [
+                randomUUID(), pront.id, "prontuario", pront.id, "invalidar-assinatura", Date.now(), false,
+              ]);
               pront.status = "EM_ANDAMENTO";
             } else {
               descartar = true;
@@ -202,26 +252,30 @@ export const syncRoutes: FastifyPluginAsync = async (app) => {
 
         if (!descartar) {
           try {
-            if (op.entity === "prontuario" && op.op === "enviar") {
-              const r = enviarProntuario(db, op.prontuarioId, req.user.sub);
-              envios.push({ prontuarioId: op.prontuarioId, ...r });
-              if (!r.ok) descartar = true;
-            } else if (liberacaoManual) {
-              if (!pront || !liberarManualmente(op)) descartar = true;
-            } else if (op.entity === "prontuario" && op.op === "reabrir") {
-              if (reabrirProntuario(db, op.prontuarioId, req.user.sub) !== "ok") descartar = true;
-            } else {
-              aplicar(op, !!pront);
-            }
+            await comSavepoint(tx, async () => {
+              if (op.entity === "prontuario" && op.op === "descartar") {
+                if (!(await descartarRascunho(tx, op, usuario))) descartar = true;
+              } else if (op.entity === "prontuario" && op.op === "enviar") {
+                const r = await enviarProntuario(tx, op.prontuarioId, req.user.sub);
+                envios.push({ prontuarioId: op.prontuarioId, ...r });
+                if (!r.ok) descartar = true;
+              } else if (liberacaoManual) {
+                if (!pront || !(await liberarManualmente(tx, op))) descartar = true;
+              } else if (op.entity === "prontuario" && op.op === "reabrir") {
+                if ((await reabrirProntuario(tx, op.prontuarioId, req.user.sub)) !== "ok") descartar = true;
+              } else {
+                await aplicar(tx, op, !!pront, usuario);
+              }
+            });
           } catch (err) {
             req.log.warn({ err, entityId: op.entityId }, "operação de sync descartada");
             descartar = true;
           }
         }
 
-        registrar.run(
-          randomUUID(), op.prontuarioId, op.entity, op.entityId, op.op, op.ts, descartar ? 1 : 0,
-        );
+        await executar(tx, registrar, [
+          randomUUID(), op.prontuarioId, op.entity, op.entityId, op.op, op.ts, descartar,
+        ]);
         return descartar;
       });
 
