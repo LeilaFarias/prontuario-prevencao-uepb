@@ -74,8 +74,8 @@ app.post("/auth/signup", async (req, reply) => {
 
   app.post(
     "/auth/login",
-    { config: { rateLimit: { max: 5, timeWindow: "15 minutes" } } },
-    async (req, reply) => {
+      { config: { rateLimit: { max: env.LOGIN_RATE_LIMIT_MAX, timeWindow: "15 minutes" } } },    
+      async (req, reply) => {
       const dados = loginSchema.parse(req.body);
       const usuario = await uma<UsuarioRow>(db, `SELECT * FROM "Usuario" WHERE "email" = $1`, [dados.email]);
       const ok = usuario ? await verificarSenha(dados.senha, usuario.senhaHash) : false;
