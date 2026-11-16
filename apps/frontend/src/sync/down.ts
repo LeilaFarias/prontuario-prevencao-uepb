@@ -1,9 +1,9 @@
 import type { HistoricoProntuario } from "@prontuario/shared";
 import { db, type LocalProntuario, type LocalStatus } from "../db/dexie";
-import { api } from "../lib/api";
+import { api, TIMEOUT_SYNC_MS } from "../lib/api";
 import { avisoJaVisto, marcadorDeAviso } from "../lib/avisosVistos";
 import { getSession } from "../lib/session";
-import { notifyChanged } from "./queue";
+import { flushAtivoDesde, notifyChanged } from "./queue";
 
 export const ULTIMO_SYNC_DOWN_KEY = "prontuario:ultimoSyncDown";
 
@@ -94,7 +94,7 @@ interface ProfessorLiberacaoRemoto {
 async function sincronizarProfessoresLiberacao(): Promise<void> {
   if (getSession()?.user.perfil !== "aluno") return;
   try {
-    const lista = await api.get<ProfessorLiberacaoRemoto[]>("/sync/professores-liberacao");
+    const lista = await api.get<ProfessorLiberacaoRemoto[]>("/sync/professores-liberacao", { timeoutMs: TIMEOUT_SYNC_MS });
     const sincronizadoEm = Date.now();
     await db.professoresLiberacao.bulkPut(
       lista.map((p) => ({
@@ -115,11 +115,11 @@ export function estaOnline(): boolean {
 }
 
 export function buscarResumos(): Promise<ProntuarioRemotoResumo[]> {
-  return api.get<ProntuarioRemotoResumo[]>("/prontuarios");
+  return api.get<ProntuarioRemotoResumo[]>("/prontuarios", { timeoutMs: TIMEOUT_SYNC_MS });
 }
 
 export function buscarDetalhe(id: string): Promise<ProntuarioRemoto> {
-  return api.get<ProntuarioRemoto>(`/prontuarios/${encodeURIComponent(id)}`);
+  return api.get<ProntuarioRemoto>(`/prontuarios/${encodeURIComponent(id)}`, { timeoutMs: TIMEOUT_SYNC_MS });
 }
 
 export async function aplicarRemoto(remoto: ProntuarioRemoto): Promise<boolean> {
@@ -173,13 +173,6 @@ export async function aplicarRemoto(remoto: ProntuarioRemoto): Promise<boolean> 
 
     if (pendentes > 0) {
       if (!acessoMudou) return false;
-      const liberacaoPendente = await db.syncQueue
-        .where("prontuarioId")
-        .equals(local.id)
-        .filter((o) => o.op === "liberacao-manual")
-        .count();
-      if (liberacaoPendente > 0) return false;
-
       await db.prontuarios.put({
         ...local,
         status: novoStatus,
@@ -240,6 +233,7 @@ async function removerTransferidos(resumos: ProntuarioRemotoResumo[]): Promise<b
 }
 
 export async function sincronizarParaBaixo(): Promise<void> {
+  const inicio = Date.now();
   const resumos = await buscarResumos();
   await sincronizarProfessoresLiberacao();
   const alvos: ProntuarioRemotoResumo[] = [];
@@ -247,7 +241,7 @@ export async function sincronizarParaBaixo(): Promise<void> {
     if (await precisaAtualizar(r)) alvos.push(r);
   }
 
-  let alterou = await removerTransferidos(resumos);
+  let alterou = flushAtivoDesde(inicio) ? false : await removerTransferidos(resumos);
   for (let i = 0; i < alvos.length; i += SIMULTANEOS) {
     const lote = alvos.slice(i, i + SIMULTANEOS);
     const resultados = await Promise.allSettled(
@@ -257,6 +251,7 @@ export async function sincronizarParaBaixo(): Promise<void> {
       if (res.status === "fulfilled") alterou = alterou || res.value;
       else console.warn("[syncDown] falha ao buscar prontuário:", res.reason);
     }
+    if (resultados.every((res) => res.status === "rejected")) break;
   }
 
   try {

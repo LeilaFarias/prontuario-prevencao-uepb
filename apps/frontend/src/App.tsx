@@ -15,6 +15,7 @@ import Perfil from "./routes/Perfil";
 import RecuperarSenha from "./routes/RecuperarSenha";
 import RedefinirSenha from "./routes/RedefinirSenha";
 import SessaoAviso from "./components/SessaoAviso";
+import ErrorBoundary from "./components/ErrorBoundary";
 
 function Protegida({ children }: { children: ReactElement }) {
   return getSession() ? children : <Navigate to="/login" replace />;
@@ -47,9 +48,16 @@ export default function App() {
 
   useEffect(() => {
     void atualizarCacheProfessores();
-    const aoFicarOnline = () => void atualizarCacheProfessores();
+    let agendado: number | undefined;
+    const aoFicarOnline = () => {
+      window.clearTimeout(agendado);
+      agendado = window.setTimeout(() => void atualizarCacheProfessores(), 3_000);
+    };
     window.addEventListener("online", aoFicarOnline);
-    return () => window.removeEventListener("online", aoFicarOnline);
+    return () => {
+      window.clearTimeout(agendado);
+      window.removeEventListener("online", aoFicarOnline);
+    };
   }, [token]);
 
   return (
@@ -66,7 +74,7 @@ export default function App() {
         <Route path="/encaminhamentos" element={<SomenteProfessor><Encaminhamentos /></SomenteProfessor>} />
         <Route path="/fila/:id" element={<SomenteProfessor><RevisaoProntuario /></SomenteProfessor>} />
         <Route path="/perfil" element={<Protegida><Perfil /></Protegida>} />
-        <Route path="/prontuario/:id" element={<Protegida><Prontuario /></Protegida>} />
+        <Route path="/prontuario/:id" element={<Protegida><ErrorBoundary><Prontuario /></ErrorBoundary></Protegida>} />
         <Route path="*" element={<Inicio />} />
       </Routes>
     </div>

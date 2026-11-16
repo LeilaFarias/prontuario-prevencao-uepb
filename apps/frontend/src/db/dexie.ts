@@ -69,7 +69,7 @@ export interface LocalLiberacaoOffline {
 export interface LocalSyncOp {
   id?: number;
   prontuarioId: string;
-  op: "create" | "update" | "delete" | "enviar" | "reabrir" | "liberacao-manual" | "descartar";
+  op: "create" | "update" | "delete" | "enviar" | "reabrir" | "descartar";
   entity: "prontuario" | "secao" | "procedimento" | "anexo";
   entityId: string;
   payload: Record<string, unknown>;

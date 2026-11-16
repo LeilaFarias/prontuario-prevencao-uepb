@@ -1,5 +1,7 @@
-import { useCallback, useEffect, useRef, useState } from "react";
+import { startTransition, useCallback, useEffect, useRef, useState } from "react";
 import { estaOnline, sincronizarParaBaixo, ULTIMO_SYNC_DOWN_KEY } from "../sync/down";
+
+const DEBOUNCE_MS = 2_000;
 
 let _rodando = false;
 
@@ -24,31 +26,36 @@ export function useSyncDown(): {
   const executar = useCallback(async () => {
     if (_rodando || !estaOnline()) return;
     _rodando = true;
-    if (montado.current) setSincronizando(true);
+    if (montado.current) startTransition(() => setSincronizando(true));
     try {
       await sincronizarParaBaixo();
-      if (montado.current) setUltimoSyncDown(lerUltimoSyncDown());
+      if (montado.current) startTransition(() => setUltimoSyncDown(lerUltimoSyncDown()));
     } catch (err) {
       console.warn("[syncDown] falhou:", err);
     } finally {
       _rodando = false;
-      if (montado.current) setSincronizando(false);
+      if (montado.current) startTransition(() => setSincronizando(false));
     }
   }, []);
 
   useEffect(() => {
     montado.current = true;
-    const aoFicarVisivel = () => {
-      if (document.visibilityState === "visible") void executar();
+    let agendado: number | undefined;
+    const agendar = () => {
+      window.clearTimeout(agendado);
+      agendado = window.setTimeout(() => void executar(), DEBOUNCE_MS);
     };
-    const aoFicarOnline = () => void executar();
+    const aoFicarVisivel = () => {
+      if (document.visibilityState === "visible") agendar();
+    };
 
     void executar();
-    window.addEventListener("online", aoFicarOnline);
+    window.addEventListener("online", agendar);
     document.addEventListener("visibilitychange", aoFicarVisivel);
     return () => {
       montado.current = false;
-      window.removeEventListener("online", aoFicarOnline);
+      window.clearTimeout(agendado);
+      window.removeEventListener("online", agendar);
       document.removeEventListener("visibilitychange", aoFicarVisivel);
     };
   }, [executar]);

@@ -21,7 +21,7 @@
 }
 
 @layer base {
-  html, body { margin: 0; background: var(--line-soft); }
+  html, body { margin: 0; background: var(--line-soft); overscroll-behavior-y: none; }
   body { font-family: "IBM Plex Sans", system-ui, sans-serif; color: var(--ink); -webkit-font-smoothing: antialiased; }
   button { font-family: inherit; }
 }

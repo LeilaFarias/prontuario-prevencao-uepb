@@ -26,11 +26,6 @@ const secaoPayload = z.object({
   conteudo: z.unknown(),
 });
 
-const liberacaoManualPayload = z.object({
-  matricula: z.string().trim().min(1),
-  acessoExpiraEm: z.string().refine((v) => !Number.isNaN(new Date(v).getTime())),
-});
-
 const liberacaoOfflinePayload = z.object({
   professorId: z.string().min(1),
   prontuarioId: z.string().min(1),
@@ -79,7 +74,7 @@ export const syncRoutes: FastifyPluginAsync = async (app) => {
      SET "status" = 'EM_ANDAMENTO',
          "assinadoEm" = NULL, "assinadoPorId" = NULL, "assinadoPorNome" = NULL,
          "assinaturaInvalidada" = TRUE,
-         "acessoSolicitadoEm" = NULL, "acessoExpiraEm" = NULL, "acessoRevogadoEm" = NULL,
+         "acessoSolicitadoEm" = NULL,
          "atualizadoEm" = $1
      WHERE "id" = $2`;
   const inserirPront = `INSERT INTO "Prontuario" ("id", "pacienteNome", "pacienteDataNascimento", "alunoTitularId", "status", "acessoExpiraEm")
@@ -93,7 +88,6 @@ export const syncRoutes: FastifyPluginAsync = async (app) => {
   const buscarParaDescarte = `SELECT "id", "status", "alunoTitularId", "pacienteNome", "pacienteDataNascimento" FROM "Prontuario" WHERE "id" = $1`;
   const buscarSecoesParaDescarte = `SELECT "conteudo" FROM "Secao" WHERE "prontuarioId" = $1`;
   const gravarDescarte = `UPDATE "Prontuario" SET "descartadoEm" = $1, "descartadoPorId" = $2, "atualizadoEm" = $3 WHERE "id" = $4`;
-  const buscarProfessorPorMatricula = `SELECT "id" FROM "Usuario" WHERE "matricula" = $1 AND UPPER("perfil") = 'PROFESSOR' AND "ativo"`;
   const gravarLiberacaoManual = `UPDATE "Prontuario"
      SET "acessoExpiraEm" = $1, "acessoRevogadoEm" = NULL, "acessoSolicitadoEm" = NULL,
          "acessoRecusadoEm" = NULL, "atualizadoEm" = $2
@@ -105,28 +99,6 @@ export const syncRoutes: FastifyPluginAsync = async (app) => {
   const apagarSecao = `DELETE FROM "Secao" WHERE "prontuarioId" = $1 AND "secaoId" = $2`;
   const registrar = `INSERT INTO "SyncOperationLog" ("id", "prontuarioId", "entity", "entityId", "op", "ts", "descartada")
      VALUES ($1, (SELECT "id" FROM "Prontuario" WHERE "id" = $2), $3, $4, $5, $6, $7)`;
-
-  async function liberarManualmente(tx: Executor, op: SyncOperation): Promise<boolean> {
-    const p = liberacaoManualPayload.safeParse(op.payload);
-    if (!p.success) return false;
-
-    const professor = await uma<{ id: string }>(tx, buscarProfessorPorMatricula, [p.data.matricula]);
-    if (!professor) return false;
-
-    const expiraMs = new Date(p.data.acessoExpiraEm).getTime();
-    if (expiraMs > op.ts + ACESSO_DURACAO_MS) return false;
-
-    const agora = new Date().toISOString();
-    await executar(tx, gravarLiberacaoManual, [new Date(expiraMs).toISOString(), agora, op.prontuarioId]);
-    await executar(tx, registrarAuditoria, [
-      randomUUID(),
-      professor.id,
-      op.prontuarioId,
-      "liberacao-manual-offline",
-      JSON.stringify({ matricula: p.data.matricula, acessoExpiraEm: p.data.acessoExpiraEm, ts: op.ts }),
-    ]);
-    return true;
-  }
 
   const buscarLiberacaoOffline = `SELECT "id", "alunoId" FROM "LiberacaoOffline" WHERE "id" = $1`;
   const inserirLiberacaoOffline = `INSERT INTO "LiberacaoOffline" ("id", "alunoId", "professorId", "prontuarioId", "liberadoEm", "expiresAt", "sincronizado")
@@ -314,12 +286,10 @@ export const syncRoutes: FastifyPluginAsync = async (app) => {
           }
         }
 
-        const liberacaoManual = op.entity === "prontuario" && op.op === "liberacao-manual";
         const liberacaoOffline = op.entity === "prontuario" && op.op === "liberacao-offline";
 
         if (
           !descartar &&
-          !liberacaoManual &&
           !liberacaoOffline &&
           pront?.acessoRevogadoEm &&
           op.ts > new Date(pront.acessoRevogadoEm).getTime()
@@ -338,8 +308,6 @@ export const syncRoutes: FastifyPluginAsync = async (app) => {
                 if (!r.ok) descartar = true;
               } else if (liberacaoOffline) {
                 if (!pront || !(await registrarLiberacaoOffline(tx, op, usuario, pront))) descartar = true;
-              } else if (liberacaoManual) {
-                if (!pront || !(await liberarManualmente(tx, op))) descartar = true;
               } else if (op.entity === "prontuario" && op.op === "reabrir") {
                 if ((await reabrirProntuario(tx, op.prontuarioId, req.user.sub)) !== "ok") descartar = true;
               } else {
