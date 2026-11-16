@@ -108,7 +108,7 @@ O frontend sobe em `http://localhost:5173` e o proxy do Vite encaminha as rotas 
 
 ## Deploy
 
-O deploy é único, no **Railway**: o Fastify serve o frontend compilado (`apps/frontend/dist`) e a API na mesma origem. A Vercel não é mais usada.
+O deploy é único, no **Railway**: o Fastify serve o frontend compilado (`apps/frontend/dist`) e a API na mesma origem.
 
 - **Build** (na raiz): `pnpm build` compila o frontend (`tsc` + `vite build`, gerando `apps/frontend/dist`) e faz o typecheck do backend.
 - **Start**: `pnpm --filter @prontuario/backend start`. O `railway.json` na raiz já define build e start.
