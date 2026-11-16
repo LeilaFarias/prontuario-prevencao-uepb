@@ -178,9 +178,10 @@ export function flush(): Promise<void> {
 
 async function executarFlush(): Promise<void> {
   try {
-    for (;;) {
+    for (let primeira = true; ; primeira = false) {
       const lote = await db.syncQueue.toCollection().limit(LOTE).toArray();
-      if (lote.length === 0) break;
+      const liberacoes = primeira ? await db.liberacoesOffline.filter((l) => !l.sincronizado).toArray() : [];
+      if (lote.length === 0 && liberacoes.length === 0) break;
 
       const prontCache = new Map<string, LocalProntuario | undefined>();
 
@@ -203,11 +204,30 @@ async function executarFlush(): Promise<void> {
         if (!bloqueado) enviar.push(op);
       }
 
-      if (enviar.length === 0) break; 
+      if (enviar.length === 0 && liberacoes.length === 0) break;
 
       const resposta = await api.post<SyncResponse>("/sync", {
-        operations: enviar.map(({ id: _id, ...op }) => op),
+        operations: [
+          ...enviar.map(({ id: _id, ...op }) => op),
+          ...liberacoes.map((l) => ({
+            prontuarioId: l.prontuarioId,
+            op: "liberacao-offline" as const,
+            entity: "prontuario" as const,
+            entityId: l.id,
+            payload: {
+              professorId: l.professorId,
+              prontuarioId: l.prontuarioId,
+              liberadoEm: l.liberadoEm,
+              expiresAt: l.expiresAt,
+            },
+            ts: l.liberadoEm,
+          })),
+        ],
       });
+
+      if (liberacoes.length > 0) {
+        await Promise.all(liberacoes.map((l) => db.liberacoesOffline.update(l.id, { sincronizado: true })));
+      }
 
       const bloqueadasBackend = new Set(resposta.acessoExpirado ?? []);
       const apagar = enviar.filter((op) => !bloqueadasBackend.has(op.prontuarioId));
@@ -435,6 +455,37 @@ export async function liberarAcessoManual(prontuarioId: string, matricula: strin
       entityId: prontuarioId,
       payload: { matricula, acessoExpiraEm },
       ts: agora,
+    });
+  });
+
+  registrarSalvamento(agora);
+  notifyChanged();
+  void flush();
+  return acessoExpiraEm;
+}
+
+export async function liberarAcessoOffline(prontuarioId: string, professorId: string): Promise<string> {
+  const alunoId = getSession()?.user.id;
+  if (!alunoId) throw new Error("Sessão não encontrada");
+
+  const agora = Date.now();
+  const expiresAt = agora + ACESSO_DURACAO_MS;
+  const acessoExpiraEm = new Date(expiresAt).toISOString();
+
+  await db.transaction("rw", db.prontuarios, db.liberacoesOffline, async () => {
+    await db.liberacoesOffline.add({
+      id: crypto.randomUUID(),
+      alunoId,
+      professorId,
+      prontuarioId,
+      liberadoEm: agora,
+      expiresAt,
+      sincronizado: false,
+    });
+    await db.prontuarios.update(prontuarioId, {
+      acessoExpiraEm,
+      acessoRevogadoEm: undefined,
+      acessoRecusadoEm: undefined,
     });
   });
 

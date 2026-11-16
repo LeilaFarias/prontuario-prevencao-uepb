@@ -1,4 +1,10 @@
+import { randomUUID, scrypt, timingSafeEqual } from "node:crypto";
+import { promisify } from "node:util";
+import { z } from "zod";
 import { ACESSO_TEMPORARIO_HORAS } from "@prontuario/shared";
+import { executar, uma, type Executor } from "../db";
+
+const scryptAsync = promisify(scrypt);
 
 export const ACESSO_DURACAO_MS = ACESSO_TEMPORARIO_HORAS * 3600 * 1000;
 
@@ -43,4 +49,64 @@ export function tempoDeEspera(iso: string, agora: number = Date.now()): string {
   if (horas < 24) return `há ${horas}h`;
   const dias = Math.floor(horas / 24);
   return `há ${dias} ${dias === 1 ? "dia" : "dias"}`;
+}
+
+export const liberacaoManualOnlineSchema = z.object({
+  matricula: z.string().trim().min(1),
+  pin: z.string().regex(/^\d{8}$/),
+});
+
+export const PIN_INVALIDO = { message: "PIN inválido", codigo: "PIN_INVALIDO" } as const;
+
+interface ProfessorPinRow {
+  id: string;
+  pinHash: string | null;
+  saltServer: string | null;
+}
+
+export async function verificarPinProfessor(db: Executor, matricula: string, pin: string): Promise<string | null> {
+  const professor = await uma<ProfessorPinRow>(
+    db,
+    `SELECT "id", "pinHash", "saltServer" FROM "Usuario" WHERE "matricula" = $1 AND UPPER("perfil") = 'PROFESSOR' AND "ativo"`,
+    [matricula],
+  );
+  if (!professor?.pinHash || !professor.saltServer) return null;
+
+  const esperado = Buffer.from(professor.pinHash, "hex");
+  const calculado = (await scryptAsync(pin, professor.saltServer, 64)) as Buffer;
+  if (esperado.length !== calculado.length || !timingSafeEqual(esperado, calculado)) return null;
+  return professor.id;
+}
+
+export async function registrarAcessoLiberadoOnline(
+  db: Executor,
+  professorId: string,
+  prontuarioId: string,
+  matricula: string,
+): Promise<void> {
+  await executar(
+    db,
+    `INSERT INTO "AuditLog" ("id", "usuarioId", "prontuarioId", "acao", "detalhe") VALUES ($1, $2, $3, $4, $5)`,
+    [randomUUID(), professorId, prontuarioId, "acesso-liberado-online", JSON.stringify({ matricula })],
+  );
+}
+
+export async function acessoCobreOperacaoOuLiberacao(
+  db: Executor,
+  r: AcessoRow & { id: string },
+  ts: number,
+): Promise<boolean> {
+  if (acessoCobreOperacao(r, ts)) return true;
+  const quando = new Date(ts).toISOString();
+  const liberacao = await uma<{ id: string }>(
+    db,
+    `SELECT "id" FROM "LiberacaoOffline"
+     WHERE "prontuarioId" = $1
+       AND "liberadoEm" <= $2::timestamptz
+       AND "expiresAt" >= $2::timestamptz
+       AND ($3::timestamptz IS NULL OR "liberadoEm" > $3::timestamptz)
+     LIMIT 1`,
+    [r.id, quando, r.acessoRevogadoEm],
+  );
+  return liberacao !== undefined;
 }

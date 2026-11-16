@@ -43,7 +43,7 @@ const API_PREFIXES = [
 const isApiPath = (url: string) =>
   API_PREFIXES.some((p) => url === p || url.startsWith(`${p}/`) || url.startsWith(`${p}?`));
 
-const app = Fastify({ logger: true, bodyLimit: 10 * 1024 * 1024 });
+const app = Fastify({ logger: true, bodyLimit: 10 * 1024 * 1024, trustProxy: 1 });
 
 if (env.CORS_ORIGIN !== "") {
   await app.register(cors, {

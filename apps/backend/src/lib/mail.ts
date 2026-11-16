@@ -1,9 +1,20 @@
+import { randomUUID } from "node:crypto";
+import { executar, type Executor } from "../db";
 import { env } from "../env";
 
 interface EmailRedefinicao {
   para: string;
   nome: string;
   link: string;
+  db?: Executor;
+  usuarioId?: string | null;
+}
+
+export class EmailNaoConfiguradoError extends Error {
+  constructor() {
+    super("Serviço de e-mail não configurado");
+    this.name = "EmailNaoConfiguradoError";
+  }
 }
 
 const escapar = (t: string) =>
@@ -29,10 +40,16 @@ function htmlDoEmail(nome: string, link: string): string {
 </html>`;
 }
 
-export async function enviarEmailRedefinicao({ para, nome, link }: EmailRedefinicao): Promise<void> {
+export async function enviarEmailRedefinicao({ para, nome, link, db, usuarioId }: EmailRedefinicao): Promise<void> {
   if (!env.BREVO_API_KEY || !env.MAIL_FROM_EMAIL) {
-    console.log(`[mail] Brevo não configurado — link de redefinição para ${para}:\n${link}`);
-    return;
+    if (db) {
+      await executar(
+        db,
+        `INSERT INTO "AuditLog" ("id", "usuarioId", "prontuarioId", "acao", "detalhe") VALUES ($1, $2, $3, $4, $5)`,
+        [randomUUID(), usuarioId ?? null, null, "email-nao-enviado", JSON.stringify({ motivo: "brevo-nao-configurado" })],
+      );
+    }
+    throw new EmailNaoConfiguradoError();
   }
 
   try {

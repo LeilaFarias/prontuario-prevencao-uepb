@@ -1,4 +1,5 @@
-import { randomUUID } from "node:crypto";
+import { pbkdf2, randomBytes, randomUUID, scrypt } from "node:crypto";
+import { promisify } from "node:util";
 import type { FastifyPluginAsync } from "fastify";
 import { z } from "zod";
 import {
@@ -10,6 +11,13 @@ import {
 } from "@prontuario/shared";
 import { executar, todas, transacao, uma } from "../db";
 import { hashSenha, verificarSenha } from "../lib/senha";
+
+const scryptAsync = promisify(scrypt);
+const pbkdf2Async = promisify(pbkdf2);
+
+const definirPinSchema = z.object({
+  pin: z.string().regex(/^\d{8}$/, "PIN deve ter 8 dígitos"),
+});
 
 const excluirContaComMotivoSchema = excluirContaSchema.extend({
   motivo: z.string().trim().max(500).optional(),
@@ -94,6 +102,21 @@ export const userRoutes: FastifyPluginAsync = async (app) => {
       id,
     ]);
     return { ok: true };
+  });
+
+  app.put("/users/me/pin", protegida, async (req, reply) => {
+    const { pin } = definirPinSchema.parse(req.body);
+    const saltServer = randomBytes(16).toString("hex");
+    const saltClient = randomBytes(16).toString("hex");
+    const pinHashServer = ((await scryptAsync(pin, saltServer, 64)) as Buffer).toString("hex");
+    const pinHashClient = (await pbkdf2Async(pin, saltClient, 600000, 32, "sha256")).toString("hex");
+
+    await executar(
+      db,
+      `UPDATE "Usuario" SET "pinHash" = $1, "saltServer" = $2, "pinHashClient" = $3, "saltClient" = $4 WHERE "id" = $5`,
+      [pinHashServer, saltServer, pinHashClient, saltClient, req.user.sub],
+    );
+    return reply.status(204).send();
   });
 
   app.put("/users/me/matricula", protegida, async (req, reply) => {

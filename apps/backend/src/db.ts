@@ -24,6 +24,7 @@ export const TABELAS = [
   "AuditLog",
   "Notificacao",
   "Configuracao",
+  "LiberacaoOffline",
 ] as const;
 
 const SCHEMA = `
@@ -158,6 +159,25 @@ export async function migrar(db: Db): Promise<void> {
   await transacao(db, async (tx) => {
     await tx.query("SELECT pg_advisory_xact_lock($1)", [LOCK_MIGRACAO]);
     await tx.query(SCHEMA);
+    await tx.query(
+      `ALTER TABLE "Usuario"
+         ADD COLUMN IF NOT EXISTS "pinHash" TEXT NULL,
+         ADD COLUMN IF NOT EXISTS "pinHashClient" TEXT NULL,
+         ADD COLUMN IF NOT EXISTS "saltClient" TEXT NULL,
+         ADD COLUMN IF NOT EXISTS "saltServer" TEXT NULL`,
+    );
+    await tx.query(
+      `CREATE TABLE IF NOT EXISTS "LiberacaoOffline" (
+         "id"           TEXT PRIMARY KEY,
+         "alunoId"      TEXT NOT NULL REFERENCES "Usuario"("id"),
+         "professorId"  TEXT NOT NULL REFERENCES "Usuario"("id"),
+         "prontuarioId" TEXT NOT NULL REFERENCES "Prontuario"("id") ON DELETE CASCADE,
+         "liberadoEm"   TIMESTAMPTZ NOT NULL,
+         "expiresAt"    TIMESTAMPTZ NOT NULL,
+         "sincronizado" BOOLEAN NOT NULL DEFAULT false
+       )`,
+    );
+    await tx.query(`CREATE INDEX IF NOT EXISTS idx_liberacao_offline_pront ON "LiberacaoOffline"("prontuarioId")`);
     for (const tabela of TABELAS) {
       await tx.query(`ALTER TABLE "${tabela}" ENABLE ROW LEVEL SECURITY`);
     }

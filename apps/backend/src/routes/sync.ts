@@ -9,14 +9,15 @@ import {
   type SyncResponse,
 } from "@prontuario/shared";
 import { comSavepoint, executar, todas, transacao, uma, type Executor } from "../db";
-import { ACESSO_DURACAO_MS, acessoCobreOperacao, type AcessoRow } from "../lib/acesso";
+import { ACESSO_DURACAO_MS, acessoCobreOperacaoOuLiberacao, type AcessoRow } from "../lib/acesso";
 import { enviarProntuario } from "../lib/envio";
 import { reabrirProntuario } from "../lib/reabertura";
+
+const TS_TOLERANCIA_FUTURO_MS = 5 * 60 * 1000;
 
 const prontuarioPayload = z.object({
   pacienteNome: z.string().optional(),
   pacienteDataNascimento: z.string().optional(),
-  status: z.string().optional(),
   alunoTitularId: z.string().optional(),
 });
 
@@ -28,6 +29,13 @@ const secaoPayload = z.object({
 const liberacaoManualPayload = z.object({
   matricula: z.string().trim().min(1),
   acessoExpiraEm: z.string().refine((v) => !Number.isNaN(new Date(v).getTime())),
+});
+
+const liberacaoOfflinePayload = z.object({
+  professorId: z.string().min(1),
+  prontuarioId: z.string().min(1),
+  liberadoEm: z.number().int().positive(),
+  expiresAt: z.number().int().positive(),
 });
 
 interface ProntRow extends AcessoRow {
@@ -44,6 +52,13 @@ interface RascunhoRow {
   alunoTitularId: string;
   pacienteNome: string;
   pacienteDataNascimento: string | null;
+}
+
+interface ProfessorLiberacaoRow {
+  professorId: string;
+  nome: string;
+  pinHashClient: string;
+  saltClient: string;
 }
 
 interface UsuarioSync {
@@ -113,6 +128,50 @@ export const syncRoutes: FastifyPluginAsync = async (app) => {
     return true;
   }
 
+  const buscarLiberacaoOffline = `SELECT "id", "alunoId" FROM "LiberacaoOffline" WHERE "id" = $1`;
+  const inserirLiberacaoOffline = `INSERT INTO "LiberacaoOffline" ("id", "alunoId", "professorId", "prontuarioId", "liberadoEm", "expiresAt", "sincronizado")
+     VALUES ($1, $2, $3, $4, $5, $6, TRUE)`;
+
+  async function registrarLiberacaoOffline(
+    tx: Executor,
+    op: SyncOperation,
+    usuario: UsuarioSync,
+    pront: ProntRow,
+  ): Promise<boolean> {
+    if (usuario.perfil !== "aluno") return false;
+    const p = liberacaoOfflinePayload.safeParse(op.payload);
+    if (!p.success) return false;
+
+    const { professorId, liberadoEm, expiresAt } = p.data;
+    if (p.data.prontuarioId !== op.prontuarioId) return false;
+    if (liberadoEm > Date.now() + TS_TOLERANCIA_FUTURO_MS) return false;
+    if (expiresAt <= liberadoEm || expiresAt > liberadoEm + ACESSO_DURACAO_MS) return false;
+    if (pront.professorSupervisorId !== professorId) return false;
+
+    const existente = await uma<{ id: string; alunoId: string }>(tx, buscarLiberacaoOffline, [op.entityId]);
+    if (existente) return existente.alunoId === usuario.id;
+
+    const liberadoIso = new Date(liberadoEm).toISOString();
+    const expiraIso = new Date(expiresAt).toISOString();
+    await executar(tx, inserirLiberacaoOffline, [
+      op.entityId, usuario.id, professorId, op.prontuarioId, liberadoIso, expiraIso,
+    ]);
+
+    const revogadoEm = pront.acessoRevogadoEm ? new Date(pront.acessoRevogadoEm).getTime() : null;
+    if (revogadoEm === null || liberadoEm > revogadoEm) {
+      await executar(tx, gravarLiberacaoManual, [expiraIso, new Date().toISOString(), op.prontuarioId]);
+    }
+
+    await executar(tx, registrarAuditoria, [
+      randomUUID(),
+      usuario.id,
+      op.prontuarioId,
+      "acesso-liberado-offline",
+      JSON.stringify({ professorId, liberadoEm, expiresAt }),
+    ]);
+    return true;
+  }
+
   async function secoesSemConteudo(tx: Executor, prontuarioId: string): Promise<boolean> {
     const linhas = await todas<{ conteudo: string }>(tx, buscarSecoesParaDescarte, [prontuarioId]);
     const conteudos: unknown[] = [];
@@ -158,7 +217,6 @@ export const syncRoutes: FastifyPluginAsync = async (app) => {
         if (Number.isNaN(d.getTime())) throw new Error("Data de nascimento inválida");
         nascimento = d.toISOString();
       }
-      const status = p.status?.toUpperCase() ?? null;
 
       if (!existe) {
         if (!p.alunoTitularId || p.pacienteNome === undefined) throw new Error("Payload incompleto para criar prontuário");
@@ -166,7 +224,7 @@ export const syncRoutes: FastifyPluginAsync = async (app) => {
           throw new Error("Prontuário não pode ser criado em nome de outro usuário");
         }
         const acessoExpiraEm = new Date(op.ts + ACESSO_DURACAO_MS).toISOString();
-        await executar(tx, inserirPront, [op.entityId, p.pacienteNome, nascimento, p.alunoTitularId, status, acessoExpiraEm]);
+        await executar(tx, inserirPront, [op.entityId, p.pacienteNome, nascimento, p.alunoTitularId, "EM_ANDAMENTO", acessoExpiraEm]);
       } else {
         await executar(tx, atualizarPront, [p.pacienteNome || null, nascimento, null, agora, op.entityId]);
       }
@@ -186,6 +244,22 @@ export const syncRoutes: FastifyPluginAsync = async (app) => {
 
     throw new Error(`Entidade "${op.entity}" ainda não suportada na Sprint 1`);
   }
+
+  const buscarProfessoresLiberacao = `SELECT DISTINCT u."id" AS "professorId", u."nome", u."pinHashClient", u."saltClient"
+     FROM "Prontuario" p
+     JOIN "Usuario" u ON u."id" = p."professorSupervisorId"
+     WHERE p."alunoTitularId" = $1
+       AND u."ativo"
+       AND u."pinHashClient" IS NOT NULL
+       AND u."saltClient" IS NOT NULL
+     ORDER BY u."nome"`;
+
+  app.get("/sync/professores-liberacao", { preHandler: app.autenticar }, async (req, reply) => {
+    if (req.user.perfil !== "aluno") {
+      return reply.status(403).send({ message: "Apenas alunos podem baixar dados de liberação." });
+    }
+    return todas<ProfessorLiberacaoRow>(db, buscarProfessoresLiberacao, [req.user.sub]);
+  });
 
   app.post("/sync", { preHandler: app.autenticar }, async (req) => {
     const { operations } = syncBatchSchema.parse(req.body);
@@ -210,7 +284,8 @@ export const syncRoutes: FastifyPluginAsync = async (app) => {
         const enviado = status === "ENVIADO";
         const transferido = status === "TRANSFERIDO";
         const negado = !!pront && (pront.descartadoEm !== null || !temPermissao(pront));
-        let descartar = negado;
+        const tsFuturo = op.ts > Date.now() + TS_TOLERANCIA_FUTURO_MS;
+        let descartar = negado || tsFuturo;
         if (negado) {
           req.log.warn(
             { usuarioId: usuario.id, prontuarioId: op.prontuarioId, op: op.op, entity: op.entity },
@@ -218,11 +293,11 @@ export const syncRoutes: FastifyPluginAsync = async (app) => {
           );
         }
 
-        if (pront && !negado && editaFicha(op)) {
+        if (pront && !descartar && editaFicha(op)) {
           if (transferido) {
             descartar = true;
           } else if (assinado) {
-            if (acessoCobreOperacao(pront, op.ts)) {
+            if (await acessoCobreOperacaoOuLiberacao(tx, pront, op.ts)) {
               const agora = new Date().toISOString();
               await executar(tx, invalidarAssinatura, [agora, pront.id]);
               await executar(tx, registrar, [
@@ -235,15 +310,17 @@ export const syncRoutes: FastifyPluginAsync = async (app) => {
             }
           } else if (enviado) {
             descartar = true;
-            if (!acessoCobreOperacao(pront, op.ts)) acessoExpirado.add(op.prontuarioId);
+            if (!(await acessoCobreOperacaoOuLiberacao(tx, pront, op.ts))) acessoExpirado.add(op.prontuarioId);
           }
         }
 
         const liberacaoManual = op.entity === "prontuario" && op.op === "liberacao-manual";
+        const liberacaoOffline = op.entity === "prontuario" && op.op === "liberacao-offline";
 
         if (
           !descartar &&
           !liberacaoManual &&
+          !liberacaoOffline &&
           pront?.acessoRevogadoEm &&
           op.ts > new Date(pront.acessoRevogadoEm).getTime()
         ) {
@@ -259,6 +336,8 @@ export const syncRoutes: FastifyPluginAsync = async (app) => {
                 const r = await enviarProntuario(tx, op.prontuarioId, req.user.sub);
                 envios.push({ prontuarioId: op.prontuarioId, ...r });
                 if (!r.ok) descartar = true;
+              } else if (liberacaoOffline) {
+                if (!pront || !(await registrarLiberacaoOffline(tx, op, usuario, pront))) descartar = true;
               } else if (liberacaoManual) {
                 if (!pront || !(await liberarManualmente(tx, op))) descartar = true;
               } else if (op.entity === "prontuario" && op.op === "reabrir") {

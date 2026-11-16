@@ -24,7 +24,7 @@ import TelaBloqueio from "../components/TelaBloqueio";
 import TimerAcesso from "../components/TimerAcesso";
 import Topbar from "../components/Topbar";
 import LiberacaoManualModal from "../components/LiberacaoManualModal";
-import { db, type LocalProntuario, type LocalStatus } from "../db/dexie";
+import { aplicarLiberacaoOffline, db, type LocalProntuario, type LocalStatus } from "../db/dexie";
 import { useProntuarioSync } from "../hooks/useProntuarioSync";
 import { salvarSecoesPendentes } from "../hooks/useSecao";
 import { ACESSO_EXPIRADO_EVENT, acessoVigente, pedidoPendente, pedidoRecusado } from "../lib/acesso";
@@ -82,17 +82,19 @@ export default function Prontuario() {
   useEffect(() => {
     let ativo = true;
     if (!id) return;
-    void db.prontuarios.get(id).then((p) => {
-      if (!ativo) return;
-      if (!p || p.descartadoEm) return setEstado("nao-encontrado");
-      setPront(p);
-      const doBanco = Object.fromEntries(
-        Object.entries(p.secoes).map(([secao, c]) => [secao, String(c?.texto ?? "")]),
-      );
-      const digitando = pendente.current;
-      setValores(digitando ? { ...doBanco, [digitando.secaoId]: digitando.texto } : doBanco);
-      setEstado("ok");
-    });
+    void aplicarLiberacaoOffline(id)
+      .then(() => db.prontuarios.get(id))
+      .then((p) => {
+        if (!ativo) return;
+        if (!p || p.descartadoEm) return setEstado("nao-encontrado");
+        setPront(p);
+        const doBanco = Object.fromEntries(
+          Object.entries(p.secoes).map(([secao, c]) => [secao, String(c?.texto ?? "")]),
+        );
+        const digitando = pendente.current;
+        setValores(digitando ? { ...doBanco, [digitando.secaoId]: digitando.texto } : doBanco);
+        setEstado("ok");
+      });
     return () => {
       ativo = false;
     };
@@ -344,6 +346,7 @@ export default function Prontuario() {
             open
             onClose={() => setModalManual(false)}
             prontuarioId={atual.id}
+            professorSupervisorId={atual.professorSupervisorId}
             pacienteNome={nomeExibido}
             onLiberado={() => {
               setModalManual(false);

@@ -84,6 +84,32 @@ function paraTimestamp(iso: string): number {
   return Number.isFinite(t) ? t : 0;
 }
 
+interface ProfessorLiberacaoRemoto {
+  professorId: string;
+  nome: string;
+  pinHashClient: string;
+  saltClient: string;
+}
+
+async function sincronizarProfessoresLiberacao(): Promise<void> {
+  if (getSession()?.user.perfil !== "aluno") return;
+  try {
+    const lista = await api.get<ProfessorLiberacaoRemoto[]>("/sync/professores-liberacao");
+    const sincronizadoEm = Date.now();
+    await db.professoresLiberacao.bulkPut(
+      lista.map((p) => ({
+        professorId: p.professorId,
+        nome: p.nome,
+        pinHashClient: p.pinHashClient,
+        saltClient: p.saltClient,
+        sincronizadoEm,
+      })),
+    );
+  } catch (e) {
+    console.warn("[syncDown] falha ao buscar professores de liberação:", e);
+  }
+}
+
 export function estaOnline(): boolean {
   return navigator.onLine;
 }
@@ -215,6 +241,7 @@ async function removerTransferidos(resumos: ProntuarioRemotoResumo[]): Promise<b
 
 export async function sincronizarParaBaixo(): Promise<void> {
   const resumos = await buscarResumos();
+  await sincronizarProfessoresLiberacao();
   const alvos: ProntuarioRemotoResumo[] = [];
   for (const r of resumos) {
     if (await precisaAtualizar(r)) alvos.push(r);
