@@ -81,7 +81,7 @@ async function login(email: string, senha: string): Promise<LoginResposta> {
 }
 
 async function obterAluno(indice: number, rodada: number): Promise<Omit<Aluno, "prontuarioId">> {
-  const email = `teste-sync-${rodada}-${indice}@uepb.edu.br`;
+  const email = `teste-sync-${rodada}-${indice}@aluno.uepb.edu.br`;
   const r = await chamar<{ id: string }>("/auth/signup", {
     nome: `Aluno Teste Sync ${indice}`,
     email,

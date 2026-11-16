@@ -3,6 +3,7 @@ import type { FastifyPluginAsync } from "fastify";
 import { loginSchema, signupSchema, type LoginResponse } from "@prontuario/shared";
 import { executar, uma } from "../db";
 import { env } from "../env";
+import { emailPermitidoParaSignup } from "../lib/email-institucional";
 import { hashSenha, verificarSenha } from "../lib/senha";
 
 interface UsuarioRow {
@@ -20,6 +21,17 @@ export const authRoutes: FastifyPluginAsync = async (app) => {
   const { db } = app;
 app.post("/auth/signup", async (req, reply) => {
   const dados = signupSchema.parse(req.body);
+
+  if (!emailPermitidoParaSignup(dados.email, dados.perfil)) {
+    return reply.status(400).send({
+      message:
+        dados.perfil === "aluno"
+          ? "O cadastro de aluno é restrito a emails @aluno.uepb.edu.br."
+          : "O cadastro de professor é restrito a emails @servidor.uepb.edu.br.",
+      codigo: "EMAIL_NAO_INSTITUCIONAL",
+    });
+  }
+
   const matricula = dados.perfil === "professor" ? dados.matricula || null : null;
 
   const existente = await uma<{ id: string; ativo: boolean }>(
