@@ -9,3 +9,5 @@ dev-dist
 *.db-shm
 *.db-wal
 *.db-journal
+apps/backend/certs/*.crt
+apps/backend/certs/*.pem

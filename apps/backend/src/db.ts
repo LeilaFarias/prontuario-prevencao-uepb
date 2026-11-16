@@ -1,5 +1,6 @@
+import { existsSync, readFileSync } from "node:fs";
 import pg from "pg";
-import type { Pool as PgPool, PoolClient, QueryResult } from "pg";
+import type { Pool as PgPool, PoolClient, PoolConfig, QueryResult } from "pg";
 import { env } from "./env";
 
 const { Pool, types } = pg;
@@ -143,13 +144,41 @@ CREATE TABLE IF NOT EXISTS "Configuracao" (
 
 const LOCK_MIGRACAO = 727274;
 
+const HOSTS_LOCAIS = new Set(["localhost", "127.0.0.1", "[::1]"]);
+
+function hostEhLocal(url: string): boolean {
+  try {
+    return HOSTS_LOCAIS.has(new URL(url).hostname);
+  } catch {
+    return false;
+  }
+}
+
+function configurarSsl(): PoolConfig["ssl"] {
+  if (!env.DATABASE_SSL) return false;
+
+  const caPath = env.SUPABASE_CA_PATH;
+  if (caPath) {
+    if (!existsSync(caPath)) {
+      throw new Error(`SUPABASE_CA_PATH aponta para um arquivo inexistente: ${caPath}`);
+    }
+    return { ca: readFileSync(caPath, "utf8"), rejectUnauthorized: true };
+  }
+
+  if (hostEhLocal(env.DATABASE_URL)) return false;
+
+  throw new Error(
+    "SUPABASE_CA_PATH não configurado. Baixe o CA em Supabase → Database → Settings → SSL Configuration e aponte SUPABASE_CA_PATH para o arquivo.",
+  );
+}
+
 export function criarPool(): Db {
   const pool = new Pool({
     connectionString: env.DATABASE_URL,
     max: env.DATABASE_POOL_MAX,
     idleTimeoutMillis: 30000,
     connectionTimeoutMillis: 5000,
-    ssl: env.DATABASE_SSL ? { rejectUnauthorized: false } : false,
+    ssl: configurarSsl(),
   });
   pool.on("error", (err) => console.error("[db] erro em conexão ociosa:", err));
   return pool;

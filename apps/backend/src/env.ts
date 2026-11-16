@@ -20,6 +20,7 @@ const envSchema = z.object({
     .refine((v) => /^postgres(ql)?:\/\//.test(v), "DATABASE_URL deve ser uma URL postgresql://"),
   DATABASE_POOL_MAX: z.coerce.number().int().min(1).default(10),
   DATABASE_SSL: booleano,
+  SUPABASE_CA_PATH: z.string().optional(),
   JWT_SECRET: z.string().min(32, "JWT_SECRET precisa ter 32+ caracteres").refine(semValorDeExemplo, MSG_EXEMPLO),
   JWT_ACCESS_TTL: z.string().default("5h"),
   JWT_REFRESH_TTL: z.string().default("5h"), 

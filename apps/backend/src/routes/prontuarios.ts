@@ -17,6 +17,7 @@ import {
 } from "@prontuario/shared";
 import { executar, todas, transacao, uma, type Executor } from "../db";
 import { ACESSO_DURACAO_MS, estadoAcesso, pedidoPendente, type AcessoRow } from "../lib/acesso";
+import { registrarAuditoria as auditar } from "../lib/auditoria";
 import { buscarDuplicado, enviarProntuario } from "../lib/envio";
 import { reabrirProntuario } from "../lib/reabertura";
 import { verificarSenha } from "../lib/senha";
@@ -453,6 +454,14 @@ export const prontuariosRoutes: FastifyPluginAsync = async (app) => {
 
     const envio = await uma<{ ts: number | null }>(db, buscarEnvio, [linha.id]);
     const enviadoEm = envio?.ts ? new Date(envio.ts).toISOString() : null;
+
+    await auditar(
+      db,
+      req.user.sub,
+      "prontuario-lido",
+      { prontuarioId: linha.id, status: linha.status, perfil: req.user.perfil },
+      linha.id,
+    );
 
     return {
       ...linha,

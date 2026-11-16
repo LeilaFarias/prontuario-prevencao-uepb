@@ -113,6 +113,10 @@ O banco é um PostgreSQL no **Supabase**. O backend se conecta pelo **pooler de 
 3. Não use a conexão direta (`db.<project-ref>.supabase.co`, apenas IPv6) nem o modo transação (porta `6543`): o backend usa transações explícitas e `SAVEPOINT`, que dependem de uma sessão estável.
 4. Codifique na URL caracteres especiais da senha (`@` vira `%40`) e não inclua `?sslmode=`: o SSL é controlado por `DATABASE_SSL` (padrão `true`; use `false` só em Postgres local sem SSL).
 5. `DATABASE_POOL_MAX` (padrão 10) limita as conexões do backend. Mantenha-o abaixo do limite de conexões do pooler do seu plano, somando todas as instâncias.
+6. O backend valida o certificado do banco (`rejectUnauthorized: true`) e em produção exige o CA do Supabase:
+   - Baixe o certificado em **Supabase → Database → Settings → SSL Configuration → Download certificate**.
+   - Aponte `SUPABASE_CA_PATH` para o arquivo (ex.: `/etc/secrets/supabase-ca.crt` no Render). O arquivo não vai para o Git (`apps/backend/certs/*.crt` e `*.pem` estão no `.gitignore`).
+   - No Render, adicione o certificado em **Environment → Secret Files** com o nome `supabase-ca.crt`; ele fica montado em `/etc/secrets/`. Sem `SUPABASE_CA_PATH`, o backend só sobe se `DATABASE_URL` apontar para `localhost`/`127.0.0.1`.
 
 As tabelas são criadas automaticamente na subida do servidor, e também por `pnpm db:migrate`. A migração é idempotente e ativa o Row Level Security em todas as tabelas, sem políticas, de modo que a API REST pública do Supabase (chaves `anon` e `authenticated`) não enxerga os dados. O backend se conecta como o dono do banco e não é afetado.
 
