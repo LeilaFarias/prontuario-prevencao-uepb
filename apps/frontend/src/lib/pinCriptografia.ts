@@ -73,13 +73,13 @@ async function obterMeta(userId: string): Promise<MetaPin> {
   throw new Error("Conecte-se à internet para desbloquear neste aparelho.");
 }
 
-async function validarChave(chave: CryptoKey, meta: MetaPin): Promise<boolean> {
+async function validarChave(chave: CryptoKey, meta: MetaPin): Promise<boolean | null> {
   const comSecao = await db.prontuarios
     .filter((p) => Object.values(p.secoes).some((v) => typeof v === "string"))
     .first();
   const cifrado =
     (comSecao && Object.values(comSecao.secoes).find((v): v is string => typeof v === "string")) ?? meta.canario;
-  if (!cifrado) return true;
+  if (!cifrado) return null;
   try {
     await decifrar(chave, cifrado);
     return true;
@@ -92,7 +92,13 @@ export async function desbloquear(userId: string, pin: string): Promise<boolean>
   const meta = await obterMeta(userId);
   if (!meta.tem || !meta.salt) throw new Error("PIN de criptografia não definido.");
   const chave = await derivarChave(pin, meta.salt);
-  if (!(await validarChave(chave, meta))) return false;
+  const referencia = await validarChave(chave, meta);
+  if (referencia === false) return false;
+  if (referencia === null) {
+    if (!navigator.onLine) throw new Error("Conecte-se à internet para o primeiro desbloqueio neste aparelho.");
+    const { valido } = await api.post<{ valido: boolean }>("/users/me/pin-criptografia/verificar", { pin });
+    if (!valido) return false;
+  }
   if (!meta.canario) gravarMeta(userId, { ...meta, canario: await cifrar(chave, CANARIO) });
   setChave(chave);
   return true;

@@ -5,6 +5,7 @@ import { loginSchema, signupSchema, type LoginResponse } from "@prontuario/share
 import { executar, uma } from "../db";
 import { env } from "../env";
 import { emailPermitidoParaSignup } from "../lib/email-institucional";
+import { gerarHashesPinCriptografia, gerarHashesPinLiberacao } from "../lib/pin";
 import { hashSenha, verificarSenha } from "../lib/senha";
 
 interface UsuarioRow {
@@ -72,11 +73,21 @@ app.post("/auth/signup", async (req, reply) => {
 
   const senhaHash = await hashSenha(dados.senha);
 
+  const cripto = await gerarHashesPinCriptografia(dados.pin);
+  const liberacao = dados.perfil === "professor" ? await gerarHashesPinLiberacao(dados.pin) : null;
+
   const id = randomUUID();
   await executar(
     db,
-    `INSERT INTO "Usuario" ("id", "nome", "email", "senhaHash", "perfil", "matricula") VALUES ($1, $2, $3, $4, $5, $6)`,
-    [id, dados.nome, dados.email, senhaHash, dados.perfil.toUpperCase(), matricula],
+    `INSERT INTO "Usuario" ("id", "nome", "email", "senhaHash", "perfil", "matricula",
+       "pinCriptografiaHash", "saltCriptografia", "pinHash", "saltServer", "pinHashClient", "saltClient")
+     VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12)`,
+    [
+      id, dados.nome, dados.email, senhaHash, dados.perfil.toUpperCase(), matricula,
+      cripto.pinCriptografiaHash, cripto.saltCriptografia,
+      liberacao?.pinHash ?? null, liberacao?.saltServer ?? null,
+      liberacao?.pinHashClient ?? null, liberacao?.saltClient ?? null,
+    ],
   );
 
   return reply.status(201).send({ id });

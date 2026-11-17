@@ -1,5 +1,4 @@
-import { pbkdf2, randomBytes, randomUUID, scrypt } from "node:crypto";
-import { promisify } from "node:util";
+import { randomUUID } from "node:crypto";
 import type { FastifyPluginAsync } from "fastify";
 import { z } from "zod";
 import {
@@ -12,11 +11,9 @@ import {
   type UsuarioMe,
 } from "@prontuario/shared";
 import { executar, todas, transacao, uma } from "../db";
+import { gerarHashesPinCriptografia, gerarHashesPinLiberacao, verificarPinCriptografia } from "../lib/pin";
 import { hashSenha, verificarSenha } from "../lib/senha";
 import { SQL_VERSAO_ATUAL } from "../lib/termos";
-
-const scryptAsync = promisify(scrypt);
-const pbkdf2Async = promisify(pbkdf2);
 
 const definirPinSchema = z.object({
   pin: z.string().regex(/^\d{8}$/, "PIN deve ter 8 dígitos"),
@@ -148,33 +145,43 @@ export const userRoutes: FastifyPluginAsync = async (app) => {
     return { ok: true };
   });
 
-  app.put("/users/me/pin", protegida, async (req, reply) => {
-    const { pin } = definirPinSchema.parse(req.body);
-    const saltServer = randomBytes(16).toString("hex");
-    const saltClient = randomBytes(16).toString("hex");
-    const pinHashServer = ((await scryptAsync(pin, saltServer, 64)) as Buffer).toString("hex");
-    const pinHashClient = (await pbkdf2Async(pin, saltClient, 600000, 32, "sha256")).toString("hex");
-
-    await executar(
-      db,
-      `UPDATE "Usuario" SET "pinHash" = $1, "saltServer" = $2, "pinHashClient" = $3, "saltClient" = $4 WHERE "id" = $5`,
-      [pinHashServer, saltServer, pinHashClient, saltClient, req.user.sub],
-    );
-    return reply.status(204).send();
-  });
-
   app.put("/users/me/pin-criptografia", protegida, async (req, reply) => {
     const { pin } = definirPinSchema.parse(req.body);
-    const salt = randomBytes(16).toString("hex");
-    const pinCriptografiaHash = ((await scryptAsync(pin, salt, 64)) as Buffer).toString("hex");
+    const cripto = await gerarHashesPinCriptografia(pin);
+    const professor = req.user.perfil.toLowerCase() === "professor";
+    const liberacao = professor ? await gerarHashesPinLiberacao(pin) : null;
 
-    await executar(db, `UPDATE "Usuario" SET "pinCriptografiaHash" = $1, "saltCriptografia" = $2 WHERE "id" = $3`, [
-      pinCriptografiaHash,
-      salt,
-      req.user.sub,
-    ]);
+    await transacao(db, async (tx) => {
+      await executar(tx, `UPDATE "Usuario" SET "pinCriptografiaHash" = $1, "saltCriptografia" = $2 WHERE "id" = $3`, [
+        cripto.pinCriptografiaHash,
+        cripto.saltCriptografia,
+        req.user.sub,
+      ]);
+      if (liberacao) {
+        await executar(
+          tx,
+          `UPDATE "Usuario" SET "pinHash" = $1, "saltServer" = $2, "pinHashClient" = $3, "saltClient" = $4 WHERE "id" = $5`,
+          [liberacao.pinHash, liberacao.saltServer, liberacao.pinHashClient, liberacao.saltClient, req.user.sub],
+        );
+      }
+    });
     return reply.status(204).send();
   });
+
+  app.post(
+    "/users/me/pin-criptografia/verificar",
+    { ...protegida, config: { rateLimit: { max: 10, timeWindow: "15 minutes" } } },
+    async (req) => {
+      const { pin } = definirPinSchema.parse(req.body);
+      const u = await uma<{ pinCriptografiaHash: string | null; saltCriptografia: string | null }>(
+        db,
+        `SELECT "pinCriptografiaHash", "saltCriptografia" FROM "Usuario" WHERE "id" = $1`,
+        [req.user.sub],
+      );
+      if (!u?.pinCriptografiaHash || !u.saltCriptografia) return { valido: false };
+      return { valido: await verificarPinCriptografia(pin, u.pinCriptografiaHash, u.saltCriptografia) };
+    },
+  );
 
   app.post(
     "/users/me/pin-criptografia/reset",
@@ -188,7 +195,14 @@ export const userRoutes: FastifyPluginAsync = async (app) => {
         return reply.status(401).send({ message: "Senha incorreta." });
       }
 
-      await executar(db, `UPDATE "Usuario" SET "pinCriptografiaHash" = NULL, "saltCriptografia" = NULL WHERE "id" = $1`, [id]);
+      await executar(
+        db,
+        `UPDATE "Usuario"
+         SET "pinCriptografiaHash" = NULL, "saltCriptografia" = NULL,
+             "pinHash" = NULL, "saltServer" = NULL, "pinHashClient" = NULL, "saltClient" = NULL
+         WHERE "id" = $1`,
+        [id],
+      );
       return reply.status(204).send();
     },
   );

@@ -1,6 +1,7 @@
 import { useState, type FormEvent } from "react";
 import { Lock, TriangleAlert } from "lucide-react";
 import BottomSheet from "./BottomSheet";
+import PinExplicacao, { TEXTOS_PIN } from "./PinExplicacao";
 import { ApiError } from "../lib/api";
 import { definirPin, desbloquear, esquecerPin } from "../lib/pinCriptografia";
 import { getSession } from "../lib/session";
@@ -11,12 +12,13 @@ const PIN_VALIDO = /^\d{8}$/;
 const apenasDigitos = (v: string) => v.replace(/\D/g, "").slice(0, 8);
 const mensagem = (e: unknown) => (e instanceof Error ? e.message : "Algo deu errado. Tente novamente.");
 
-function CampoPin({ id, label, valor, onChange, autoFocus }: {
+function CampoPin({ id, label, valor, onChange, autoFocus, placeholder = "8 dígitos" }: {
   id: string;
   label: string;
   valor: string;
   onChange: (v: string) => void;
   autoFocus?: boolean;
+  placeholder?: string;
 }) {
   return (
     <div>
@@ -28,7 +30,7 @@ function CampoPin({ id, label, valor, onChange, autoFocus }: {
         maxLength={8}
         autoComplete="off"
         autoFocus={autoFocus}
-        placeholder="8 dígitos"
+        placeholder={placeholder}
         className="input"
         value={valor}
         onChange={(e) => onChange(apenasDigitos(e.target.value))}
@@ -91,6 +93,8 @@ export function EsqueciPinSheet({ onClose }: { onClose: () => void }) {
 
 export default function UnlockPin({ temPin, onDesbloqueado }: { temPin: boolean; onDesbloqueado: () => void }) {
   const userId = getSession()?.user.id ?? "";
+  const perfil = getSession()?.user.perfil ?? "aluno";
+  const textos = TEXTOS_PIN[perfil];
   const [pin, setPin] = useState("");
   const [confirmar, setConfirmar] = useState("");
   const [erro, setErro] = useState<string | null>(null);
@@ -160,17 +164,39 @@ export default function UnlockPin({ temPin, onDesbloqueado }: { temPin: boolean;
           <Lock size={22} />
         </div>
         <h1 className="font-display text-[22px] font-medium text-ink">
-          {temPin ? "Desbloquear dados" : "Definir PIN de criptografia"}
+          {temPin ? "Desbloquear dados" : textos.titulo}
         </h1>
         <p className="mt-1 text-[13px] leading-relaxed text-ink-soft">
           {temPin
-            ? "Digite o PIN de 8 dígitos para ver os prontuários neste aparelho."
-            : "Este PIN protege os prontuários guardados neste aparelho. Ele é diferente da sua senha e do PIN de liberação."}
+            ? perfil === "professor"
+              ? "Digite seu PIN de 8 dígitos para ver os prontuários neste aparelho e autorizar a liberação de acesso offline aos alunos."
+              : "Digite seu PIN de 8 dígitos para ver os prontuários neste aparelho."
+            : textos.subtitulo}
         </p>
+        {!temPin && (
+          <div className="mt-4 flex flex-col gap-3">
+            <PinExplicacao perfil={perfil} />
+          </div>
+        )}
 
         <form onSubmit={(e) => void (temPin ? tentarDesbloquear(e) : pedirConfirmacao(e))} noValidate className="mt-5 flex flex-col gap-3.5">
-          <CampoPin id="pin-cripto" label={temPin ? "PIN" : "Novo PIN"} valor={pin} onChange={setPin} autoFocus />
-          {!temPin && <CampoPin id="pin-cripto-confirmar" label="Confirmar PIN" valor={confirmar} onChange={setConfirmar} />}
+          <CampoPin
+            id="pin-cripto"
+            label={temPin ? "PIN" : textos.rotuloPin}
+            placeholder={temPin ? undefined : textos.placeholderPin}
+            valor={pin}
+            onChange={setPin}
+            autoFocus
+          />
+          {!temPin && (
+            <CampoPin
+              id="pin-cripto-confirmar"
+              label="Confirme seu PIN"
+              placeholder="Digite novamente o PIN"
+              valor={confirmar}
+              onChange={setConfirmar}
+            />
+          )}
           {erro && <div role="alert" className="banner-erro">{erro}</div>}
           <button type="submit" disabled={ocupado} className="btn-primary">
             {ocupado ? (temPin ? "Desbloqueando…" : "Verificando…") : temPin ? "Desbloquear" : "Definir PIN"}

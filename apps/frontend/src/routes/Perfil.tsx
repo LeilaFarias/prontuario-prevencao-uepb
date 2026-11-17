@@ -3,7 +3,7 @@ import { Link, useNavigate } from "react-router-dom";
 import { useForm } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
 import { z } from "zod";
-import { CalendarDays, Info, KeyRound, Lock, LogOut, TriangleAlert } from "lucide-react";
+import { CalendarDays, Info, Lock, LogOut, TriangleAlert } from "lucide-react";
 import {
   alterarMatriculaSchema,
   alterarSenhaBaseSchema,
@@ -300,96 +300,16 @@ function SemestreVigente({ tema }: { tema: Tema }) {
 
 const apenasDigitos = (v: string) => v.replace(/\D/g, "").slice(0, 8);
 
-function PinLiberacaoOffline({ tema }: { tema: Tema }) {
-  const [pin, setPin] = useState("");
-  const [confirmar, setConfirmar] = useState("");
-  const [erro, setErro] = useState<string | null>(null);
-  const [salvo, setSalvo] = useState(false);
-  const [salvando, setSalvando] = useState(false);
+const descricaoPin = (professor: boolean) =>
+  professor
+    ? "Desbloqueia os prontuários deste aparelho e autoriza a liberação de acesso offline aos alunos."
+    : "Desbloqueia os prontuários guardados neste aparelho.";
 
-  async function enviar() {
-    setSalvo(false);
-    if (!/^\d{8}$/.test(pin)) {
-      setErro("O PIN deve ter exatamente 8 dígitos.");
-      return;
-    }
-    if (pin !== confirmar) {
-      setErro("Os PINs não coincidem.");
-      return;
-    }
-    setErro(null);
-    setSalvando(true);
-    try {
-      await api.put<void>("/users/me/pin", { pin });
-      setPin("");
-      setConfirmar("");
-      setSalvo(true);
-    } catch (e) {
-      setErro(mensagem(e));
-    } finally {
-      setSalvando(false);
-    }
-  }
-
-  return (
-    <section className="mt-4 rounded-card border border-line-soft bg-raised p-4">
-      <div className="flex items-center gap-2">
-        <KeyRound size={16} className={tema.texto} />
-        <h2 className="font-display text-[15px] font-semibold text-ink">PIN de liberação offline</h2>
-      </div>
-      <p className="mt-1 text-[12px] text-ink-soft">Usado para liberar o acesso de alunos aos prontuários sem internet.</p>
-
-      <div className="mt-3 flex flex-col gap-3">
-        <div>
-          <label htmlFor="pin" className="label">PIN</label>
-          <input
-            id="pin"
-            type="password"
-            inputMode="numeric"
-            maxLength={8}
-            autoComplete="off"
-            placeholder="8 dígitos"
-            className="input"
-            value={pin}
-            onChange={(e) => {
-              setPin(apenasDigitos(e.target.value));
-              setSalvo(false);
-            }}
-          />
-        </div>
-        <div>
-          <label htmlFor="pin-confirmar" className="label">Confirmar PIN</label>
-          <input
-            id="pin-confirmar"
-            type="password"
-            inputMode="numeric"
-            maxLength={8}
-            autoComplete="off"
-            placeholder="8 dígitos"
-            className="input"
-            value={confirmar}
-            onChange={(e) => {
-              setConfirmar(apenasDigitos(e.target.value));
-              setSalvo(false);
-            }}
-          />
-        </div>
-      </div>
-
-      {erro && <div role="alert" className="banner-erro mt-3">{erro}</div>}
-      {salvo && <div role="status" className="banner-ok mt-3">PIN salvo</div>}
-
-      <button type="button" className="btn-prof mt-3" disabled={salvando} onClick={() => void enviar()}>
-        {salvando ? "Salvando…" : "Salvar PIN"}
-      </button>
-    </section>
-  );
-}
-
-function ModalPinCriptografia({ tema, userId, temPin, onClose, onConcluido }: {
+function ModalPinCriptografia({ tema, userId, temPin, professor, onClose, onConcluido }: {
   tema: Tema;
   userId: string;
   temPin: boolean;
+  professor: boolean;
   onClose: () => void;
   onConcluido: () => void;
 }) {
@@ -448,8 +368,8 @@ function ModalPinCriptografia({ tema, userId, temPin, onClose, onConcluido }: {
     <BottomSheet
       open
       onClose={onClose}
-      title={temPin ? "Alterar PIN de criptografia" : "Definir PIN de criptografia"}
-      subtitle="Protege os prontuários guardados neste aparelho."
+      title={temPin ? "Alterar PIN de segurança" : "Definir PIN de segurança"}
+      subtitle={descricaoPin(professor)}
       bloqueado={enviando}
     >
       <form onSubmit={(e) => void enviar(e)} noValidate className="flex flex-col gap-3.5">
@@ -463,7 +383,12 @@ function ModalPinCriptografia({ tema, userId, temPin, onClose, onConcluido }: {
   );
 }
 
-function PinCriptografiaLocal({ tema, userId, temPinServidor }: { tema: Tema; userId: string; temPinServidor?: boolean }) {
+function PinCriptografiaLocal({ tema, userId, professor, temPinServidor }: {
+  tema: Tema;
+  userId: string;
+  professor: boolean;
+  temPinServidor?: boolean;
+}) {
   const [tem, setTem] = useState(() => lerMetaPin(userId)?.tem ?? false);
   const [modal, setModal] = useState<null | "pin" | "esqueci">(null);
   const [salvo, setSalvo] = useState(false);
@@ -476,9 +401,9 @@ function PinCriptografiaLocal({ tema, userId, temPinServidor }: { tema: Tema; us
     <section className="mt-4 rounded-card border border-line-soft bg-raised p-4">
       <div className="flex items-center gap-2">
         <Lock size={16} className={tema.texto} />
-        <h2 className="font-display text-[15px] font-semibold text-ink">PIN de criptografia local</h2>
+        <h2 className="font-display text-[15px] font-semibold text-ink">PIN de segurança</h2>
       </div>
-      <p className="mt-1 text-[12px] text-ink-soft">Protege os prontuários guardados neste aparelho.</p>
+      <p className="mt-1 text-[12px] text-ink-soft">{descricaoPin(professor)}</p>
       <p className="mt-3 text-[13px] text-ink">
         Status: <span className="font-semibold">{tem ? "Definido" : "Não definido"}</span>
       </p>
@@ -506,6 +431,7 @@ function PinCriptografiaLocal({ tema, userId, temPinServidor }: { tema: Tema; us
           tema={tema}
           userId={userId}
           temPin={tem}
+          professor={professor}
           onClose={() => setModal(null)}
           onConcluido={() => {
             setTem(true);
@@ -587,8 +513,7 @@ export default function Perfil() {
         </div>
 
         {professor && <SemestreVigente tema={tema} />}
-        {professor && <PinLiberacaoOffline tema={tema} />}
-        <PinCriptografiaLocal tema={tema} userId={u.id} temPinServidor={usuario?.temPinCriptografia} />
+        <PinCriptografiaLocal tema={tema} userId={u.id} professor={professor} temPinServidor={usuario?.temPinCriptografia} />
         <SobreApp tema={tema} />
 
         <div className="mt-auto flex flex-col gap-2.5 pt-8">
