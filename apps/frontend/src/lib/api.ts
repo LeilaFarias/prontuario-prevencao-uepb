@@ -1,9 +1,25 @@
+import type { LoginResponse } from "@prontuario/shared";
+import { canUnlockOffline, clearLockout } from "./localAuth";
 import { clearSession, getSession } from "./session";
 
 export const API_URL = import.meta.env.VITE_API_URL ?? "";
 export const TIMEOUT_SYNC_MS = 8_000;
 export const TIMEOUT_FLUSH_MS = 20_000;
 export const EVENTO_TERMOS_NAO_ACEITOS = "termos-nao-aceitos";
+export const EVENTO_SESSION_NEEDS_PIN = "session:needs-pin";
+
+async function aoReceberLogin(resposta: LoginResponse | null): Promise<void> {
+  const userId = resposta?.user?.id;
+  if (!userId) return;
+  try {
+    await clearLockout(userId);
+    if (!(await canUnlockOffline(userId))) {
+      window.dispatchEvent(new CustomEvent(EVENTO_SESSION_NEEDS_PIN, { detail: { userId } }));
+    }
+  } catch (err) {
+    console.warn("[api] não foi possível verificar o PIN offline após o login", err instanceof Error ? err.name : err);
+  }
+}
 
 export class ApiError extends Error {
   constructor(
@@ -61,6 +77,7 @@ async function request<T>(method: string, path: string, body?: unknown, opcoes?:
   if (!res.ok) {
     throw new ApiError((data?.message ?? data?.error) ?? "Algo deu errado. Tente novamente.", res.status, data?.codigo);
   }
+  if (method === "POST" && path === "/auth/login") void aoReceberLogin(data as LoginResponse | null);
   return data as T;
 }
 
