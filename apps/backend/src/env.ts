@@ -34,6 +34,15 @@ const envSchema = z.object({
     .string()
     .min(32, "RESET_TOKEN_SECRET precisa ter 32+ caracteres")
     .refine(semValorDeExemplo, MSG_EXEMPLO),
+  ADMIN_EMAILS: z
+    .string()
+    .default("")
+    .transform((v) =>
+      v
+        .split(",")
+        .map((s) => s.trim().toLowerCase())
+        .filter(Boolean),
+    ),
   BACKUP_KEY: z.string().min(32, "BACKUP_KEY deve ter 32+ caracteres").refine(semValorDeExemplo, MSG_EXEMPLO),
   PROFESSOR_INVITE_CODE: z.string().min(8).optional(),
   APP_URL: z.string().default("http://localhost:5173"),

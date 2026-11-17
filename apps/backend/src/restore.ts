@@ -16,9 +16,14 @@ try {
   if (!existsSync(origem)) throw new Error(`Arquivo de backup não encontrado: ${origem}`);
   const dados = descriptografarBackup(readFileSync(origem));
   await migrar(db);
-  const contagens = await restaurarBanco(db, dados);
+  const { contagens, credenciaisARedefinir } = await restaurarBanco(db, dados);
   console.log("Restauração concluída.");
   for (const [tabela, total] of Object.entries(contagens)) console.log(`  ${tabela}: ${total}`);
+  if (credenciaisARedefinir > 0) {
+    console.warn(
+      `Atenção: ${credenciaisARedefinir} usuário(s) estão sem senha válida e precisam usar "Esqueci minha senha". Professores também precisam redefinir o PIN.`,
+    );
+  }
 } catch (err) {
   console.error(`Falha na restauração: ${err instanceof Error ? err.message : String(err)}`);
   console.error("O banco atual foi mantido.");

@@ -120,7 +120,7 @@ O banco é um PostgreSQL no **Supabase**. O backend se conecta pelo **pooler de 
 
 As tabelas são criadas automaticamente na subida do servidor, e também por `pnpm db:migrate`. A migração é idempotente e ativa o Row Level Security em todas as tabelas, sem políticas, de modo que a API REST pública do Supabase (chaves `anon` e `authenticated`) não enxerga os dados. O backend se conecta como o dono do banco e não é afetado.
 
-O backend não grava arquivos em disco em produção - o filesystem é efêmero no plano gratuito do Render, e o banco vive no Supabase. Defina as variáveis de ambiente do serviço, incluindo `DATABASE_URL`, `JWT_SECRET`, `RESET_TOKEN_SECRET` e `BACKUP_KEY`
+O backend não grava arquivos em disco em produção - o filesystem é efêmero no plano gratuito do Render, e o banco vive no Supabase. Defina as variáveis de ambiente do serviço, incluindo `DATABASE_URL`, `JWT_SECRET`, `RESET_TOKEN_SECRET`, `BACKUP_KEY` e `ADMIN_EMAILS` (sem ela, ninguém baixa o backup)
 
 ## Política de Retenção de Dados
 
@@ -132,7 +132,7 @@ O backend não grava arquivos em disco em produção - o filesystem é efêmero 
 
 ## Backup e Restauração
 
-O backup é uma exportação lógica de todas as tabelas (JSON gerado por consultas, em uma transação de leitura consistente), criptografada com **AES-256-GCM** (chave de 32 bytes derivada de `BACKUP_KEY` via scrypt). O formato do arquivo `.json.enc` é `[IV: 12 bytes][AUTH_TAG: 16 bytes][dados cifrados]`. Não depende do `pg_dump` nem de acesso direto ao servidor do banco.
+O backup é uma exportação lógica das tabelas de dados de negócio (prontuários, seções, usuários, auditoria etc.; JSON gerado por consultas, em uma transação de leitura consistente), **sem credenciais** (veja "O que o backup não contém"), criptografada com **AES-256-GCM** (chave de 32 bytes derivada de `BACKUP_KEY` via scrypt). O formato do arquivo `.json.enc` é `[IV: 12 bytes][AUTH_TAG: 16 bytes][dados cifrados]`. Não depende do `pg_dump` nem de acesso direto ao servidor do banco.
 
 ### Configurar a chave
 
@@ -144,9 +144,17 @@ node -e "console.log(require('crypto').randomBytes(32).toString('hex'))"
 
 Guarde a `BACKUP_KEY` em um cofre de senhas **separado do servidor**. Sem ela, nenhum backup pode ser restaurado. Trocar a chave torna os backups antigos ilegíveis.
 
+### O que o backup não contém
+
+Por necessidade e minimização de dados (LGPD, art. 6º, III), o dump **não inclui credenciais**: `Usuario.senhaHash`, `pinHash`, `pinHashClient`, `saltClient` e `saltServer` são removidos, e a tabela `PasswordResetToken` é exportada vazia. O backup serve para recuperar dados de negócio, não para restaurar logins. As credenciais são recuperadas por outros meios, descritos em "Restaurar".
+
 ### Fazer backup
 
-Pelo endpoint administrativo, disponível apenas para professores:
+O endpoint administrativo exige duas condições: o usuário ser **professor** e ter o e-mail listado em `ADMIN_EMAILS` (variável de ambiente, e-mails separados por vírgula, sem diferenciar maiúsculas de minúsculas). Com `ADMIN_EMAILS` vazio, ninguém consegue baixar o backup. Em produção, defina-a no dashboard do Render junto com as demais variáveis:
+
+```bash
+ADMIN_EMAILS=coordenador@servidor.uepb.edu.br
+```
 
 ```bash
 TOKEN=$(curl -s -X POST "$API_URL/auth/login" \
@@ -159,7 +167,7 @@ curl -f -H "Authorization: Bearer $TOKEN" \
   "$API_URL/admin/backup"
 ```
 
-Cada download é registrado no `AuditLog` como `backup-baixado`. Alunos recebem `403`.
+Cada download é registrado no `AuditLog` como `backup-baixado`. Alunos recebem `403`, e professores que não estão em `ADMIN_EMAILS` recebem `403` com `codigo: "NAO_ADMIN"`.
 
 O Supabase também mantém backups automáticos do banco conforme o plano contratado. Eles complementam, mas não substituem, o backup criptografado acima.
 
@@ -176,7 +184,10 @@ O script:
 1. Descriptografa o backup. Com `BACKUP_KEY` errada ou arquivo corrompido, falha com "Backup corrompido ou chave incorreta" e o banco não é alterado.
 2. Garante que as tabelas existem e confirma que o backup contém ao menos 1 registro em `Usuario`.
 3. Em uma única transação, esvazia todas as tabelas e reinsere os dados do backup. Qualquer falha desfaz a transação e mantém o banco atual intacto.
-4. Exibe a contagem de registros de cada tabela.
+4. Como o backup não traz credenciais, antes de esvaziar o banco o script guarda a senha e o PIN atuais de cada usuário, pelo `id`, e os devolve após a reinserção.
+5. Exibe a contagem de registros de cada tabela e, se houver usuários sem senha válida, um aviso com a quantidade.
+
+Após restaurar em um banco novo, os usuários precisam **redefinir a senha** (opção "Esqueci minha senha" na tela de login, que depende de `BREVO_API_KEY` e `MAIL_FROM_EMAIL` configurados) e os professores precisam **definir o PIN novamente** no perfil. Restaurando sobre o banco em uso, as credenciais atuais são mantidas e nada precisa ser redefinido. Tokens de redefinição de senha pendentes não sobrevivem à restauração.
 
 A restauração **substitui todos os dados** do banco apontado por `DATABASE_URL`. Para testar um backup sem tocar nos dados reais (teste de restauração periódico), aponte `DATABASE_URL` para outro banco ou projeto Supabase:
 
@@ -187,7 +198,7 @@ DATABASE_URL="postgresql://..." pnpm --filter @prontuario/backend restore ./back
 ### Frequência recomendada
 
 - Backup manual antes de cada deploy em produção.
-- Backup automático diário. O agendamento não faz parte do código; configure em um serviço externo (GitHub Actions com `cron`, ou cron numa máquina administrativa). Exemplo de crontab, rodando todo dia às 03:00 um script que executa os comandos de login e download acima:
+- Backup automático diário. O agendamento não faz parte do código; configure em um serviço externo (GitHub Actions com `cron`, ou cron numa máquina administrativa). O login do script deve ser de um professor listado em `ADMIN_EMAILS`. Exemplo de crontab, rodando todo dia às 03:00 um script que executa os comandos de login e download acima:
 
 ```cron
 0 3 * * * /usr/local/bin/backup-prontuario.sh >> /var/log/backup-prontuario.log 2>&1
