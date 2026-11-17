@@ -27,6 +27,7 @@ export const TABELAS = [
   "Notificacao",
   "Configuracao",
   "LiberacaoOffline",
+  "AutorizacaoAssinada",
 ] as const;
 
 const SCHEMA = `
@@ -210,6 +211,33 @@ export async function migrar(db: Db): Promise<void> {
        )`,
     );
     await tx.query(`CREATE INDEX IF NOT EXISTS idx_liberacao_offline_pront ON "LiberacaoOffline"("prontuarioId")`);
+    await tx.query(
+      `ALTER TABLE "Usuario"
+         ADD COLUMN IF NOT EXISTS "publicKey" TEXT NULL,
+         ADD COLUMN IF NOT EXISTS "encryptedPrivateKey" TEXT NULL,
+         ADD COLUMN IF NOT EXISTS "keySalt" TEXT NULL,
+         ADD COLUMN IF NOT EXISTS "keyIv" TEXT NULL,
+         ADD COLUMN IF NOT EXISTS "keyIter" INTEGER NULL`,
+    );
+    await tx.query(
+      `CREATE TABLE IF NOT EXISTS "AutorizacaoAssinada" (
+         "id"           TEXT PRIMARY KEY,
+         "professorId"  TEXT NOT NULL REFERENCES "Usuario"("id"),
+         "alunoId"      TEXT NOT NULL REFERENCES "Usuario"("id"),
+         "prontuarioId" TEXT NOT NULL REFERENCES "Prontuario"("id") ON DELETE CASCADE,
+         "operations"   JSONB NOT NULL,
+         "issuedAt"     TIMESTAMPTZ NOT NULL,
+         "expiresAt"    TIMESTAMPTZ NOT NULL,
+         "nonce"        TEXT NOT NULL,
+         "signature"    TEXT NOT NULL,
+         "publicKeyPem" TEXT NOT NULL,
+         "revokedAt"    TIMESTAMPTZ,
+         "operationId"  TEXT UNIQUE,
+         "criadoEm"     TIMESTAMPTZ NOT NULL DEFAULT now()
+       )`,
+    );
+    await tx.query(`CREATE INDEX IF NOT EXISTS idx_autorizacao_aluno ON "AutorizacaoAssinada"("alunoId")`);
+    await tx.query(`CREATE INDEX IF NOT EXISTS idx_autorizacao_pront ON "AutorizacaoAssinada"("prontuarioId")`);
     await tx.query(
       `CREATE TABLE IF NOT EXISTS "TermosVersao" (
          "id"          TEXT PRIMARY KEY,

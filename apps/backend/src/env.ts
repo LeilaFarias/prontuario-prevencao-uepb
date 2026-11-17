@@ -45,6 +45,11 @@ const envSchema = z.object({
     ),
   BACKUP_KEY: z.string().min(32, "BACKUP_KEY deve ter 32+ caracteres").refine(semValorDeExemplo, MSG_EXEMPLO),
   PROFESSOR_INVITE_CODE: z.string().min(8).optional(),
+  PROFESSOR_KEY_PASSPHRASE: z
+    .string()
+    .min(32, "PROFESSOR_KEY_PASSPHRASE deve ter 32+ caracteres")
+    .refine(semValorDeExemplo, MSG_EXEMPLO),
+  AUTORIZACAO_TTL_DIAS: z.coerce.number().int().min(1).max(365).default(30),
   APP_URL: z.string().default("http://localhost:5173"),
 
   CORS_ORIGIN: z.string().default("http://localhost:5173"),

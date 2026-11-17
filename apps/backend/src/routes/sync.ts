@@ -12,6 +12,7 @@ import { comSavepoint, executar, todas, transacao, uma, type Executor } from "..
 import { ACESSO_DURACAO_MS, acessoCobreOperacaoOuLiberacao, type AcessoRow } from "../lib/acesso";
 import { enviarProntuario } from "../lib/envio";
 import { reabrirProntuario } from "../lib/reabertura";
+import { verificarAutorizacao, type AutorizacaoPersistida } from "../lib/signature";
 
 const TS_TOLERANCIA_FUTURO_MS = 5 * 60 * 1000;
 
@@ -61,6 +62,16 @@ interface UsuarioSync {
   perfil: "aluno" | "professor";
 }
 
+type RejeicaoAutorizacao = { entity: string; op: string; entityId: string; motivo: string };
+type SyncResponseComRejeicoes = SyncResponse & { rejeitadas: RejeicaoAutorizacao[] };
+
+function lerReferenciaAutorizacao(payload: unknown): { autorizacaoId: unknown; nonce: unknown } | null {
+  if (typeof payload !== "object" || payload === null) return null;
+  const { autorizacaoId, nonce } = payload as { autorizacaoId?: unknown; nonce?: unknown };
+  if (autorizacaoId === undefined) return null;
+  return { autorizacaoId, nonce };
+}
+
 const editaFicha = (op: SyncOperation): boolean =>
   op.entity === "secao" || (op.entity === "prontuario" && (op.op === "create" || op.op === "update"));
 
@@ -103,6 +114,27 @@ export const syncRoutes: FastifyPluginAsync = async (app) => {
   const buscarLiberacaoOffline = `SELECT "id", "alunoId" FROM "LiberacaoOffline" WHERE "id" = $1`;
   const inserirLiberacaoOffline = `INSERT INTO "LiberacaoOffline" ("id", "alunoId", "professorId", "prontuarioId", "liberadoEm", "expiresAt", "sincronizado")
      VALUES ($1, $2, $3, $4, $5, $6, TRUE)`;
+
+  const buscarAutorizacao = `SELECT "id", "professorId", "alunoId", "prontuarioId", "operations", "issuedAt", "expiresAt",
+            "nonce", "signature", "publicKeyPem", "revokedAt"
+      FROM "AutorizacaoAssinada" WHERE "id" = $1`;
+
+  async function motivoDaAutorizacao(
+    tx: Executor,
+    op: SyncOperation,
+    ref: { autorizacaoId: unknown; nonce: unknown },
+    usuario: UsuarioSync,
+  ): Promise<string | null> {
+    if (typeof ref.autorizacaoId !== "string" || ref.autorizacaoId === "") return "referência de autorização inválida";
+    const auth = await uma<AutorizacaoPersistida>(tx, buscarAutorizacao, [ref.autorizacaoId]);
+    if (!auth) return "autorização não encontrada";
+    const resultado = verificarAutorizacao(
+      auth,
+      { entity: op.entity, op: op.op, prontuarioId: op.prontuarioId, alunoId: usuario.id, nonce: ref.nonce },
+      op.ts,
+    );
+    return resultado.ok ? null : resultado.motivo;
+  }
 
   async function registrarLiberacaoOffline(
     tx: Executor,
@@ -233,12 +265,13 @@ export const syncRoutes: FastifyPluginAsync = async (app) => {
     return todas<ProfessorLiberacaoRow>(db, buscarProfessoresLiberacao, [req.user.sub]);
   });
 
-  app.post("/sync", { preHandler: app.autenticar }, async (req) => {
+  app.post("/sync", { preHandler: app.autenticar }, async (req, reply) => {
     const { operations } = syncBatchSchema.parse(req.body);
     let aplicadas = 0;
     let descartadas = 0;
     const envios: EnvioSincronizado[] = [];
     const acessoExpirado = new Set<string>();
+    const rejeitadas: RejeicaoAutorizacao[] = [];
     const usuario: UsuarioSync = { id: req.user.sub, perfil: req.user.perfil };
 
     const temPermissao = (pront: ProntRow): boolean =>
@@ -265,11 +298,23 @@ export const syncRoutes: FastifyPluginAsync = async (app) => {
           );
         }
 
+        let autorizacaoCobre = false;
+        const referencia = lerReferenciaAutorizacao(op.payload);
+        if (referencia && !descartar) {
+          const motivo = await motivoDaAutorizacao(tx, op, referencia, usuario);
+          if (motivo) {
+            descartar = true;
+            rejeitadas.push({ entity: op.entity, op: op.op, entityId: op.entityId, motivo });
+          } else {
+            autorizacaoCobre = true;
+          }
+        }
+
         if (pront && !descartar && editaFicha(op)) {
           if (transferido) {
             descartar = true;
           } else if (assinado) {
-            if (await acessoCobreOperacaoOuLiberacao(tx, pront, op.ts)) {
+            if (autorizacaoCobre || (await acessoCobreOperacaoOuLiberacao(tx, pront, op.ts))) {
               const agora = new Date().toISOString();
               await executar(tx, invalidarAssinatura, [agora, pront.id]);
               await executar(tx, registrar, [
@@ -282,7 +327,9 @@ export const syncRoutes: FastifyPluginAsync = async (app) => {
             }
           } else if (enviado) {
             descartar = true;
-            if (!(await acessoCobreOperacaoOuLiberacao(tx, pront, op.ts))) acessoExpirado.add(op.prontuarioId);
+            if (!autorizacaoCobre && !(await acessoCobreOperacaoOuLiberacao(tx, pront, op.ts))) {
+              acessoExpirado.add(op.prontuarioId);
+            }
           }
         }
 
@@ -338,6 +385,10 @@ export const syncRoutes: FastifyPluginAsync = async (app) => {
       envios,
       acessoExpirado: [...acessoExpirado],
     };
+    if (rejeitadas.length > 0) {
+      const comRejeicoes: SyncResponseComRejeicoes = { ...resposta, rejeitadas };
+      return reply.status(207).send(comRejeicoes);
+    }
     return resposta;
   });
 };
