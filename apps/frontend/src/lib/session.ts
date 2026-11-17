@@ -1,5 +1,5 @@
 import type { SessionUser } from "@prontuario/shared";
-import { db } from "../db/dexie";
+import { lock } from "./localAuth";
 
 export interface Session {
   accessToken: string;
@@ -31,15 +31,7 @@ export function updateSessionUser(user: SessionUser): void {
 
 export async function clearSession(): Promise<void> {
   localStorage.removeItem(KEY);
-  try {
-    await db.transaction("rw", db.prontuarios, db.syncQueue, db.planosProfessor, async () => {
-      await db.prontuarios.clear();
-      await db.syncQueue.clear();
-      await db.planosProfessor.clear();
-    });
-  } catch (err) {
-    console.warn("[session] falha ao limpar Dexie no logout", err);
-  }
+  lock();
 }
 
 export function sessionExpiresAt(session: Session): number | null {
