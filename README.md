@@ -227,3 +227,11 @@ Faça periodicamente um teste de restauração, como descrito acima.
 **Responsável pelo tratamento:** coordenação da clínica.
 
 **Contato para exercer direitos:** e-mail institucional da coordenação da clínica.
+
+**Política de acesso a prontuários.** O acervo clínico é compartilhado entre
+professores supervisores para garantir continuidade do cuidado em caso de
+ausência. O acesso é restrito ao papel de professor (alunos só acessam os
+próprios prontuários) e toda leitura é registrada em `AuditLog` (ver
+"Auditoria de leitura"). A política é justificada pela finalidade de ensino
+e supervisão e pelo art. 6º, III da LGPD (princípio da necessidade, atendido
+porque o acesso é limitado a quem tem função docente ativa).
