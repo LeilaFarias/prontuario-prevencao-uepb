@@ -10,7 +10,7 @@ export interface LocalProntuario {
   pacienteNome: string;
   pacienteDataNascimento?: string;
   status: LocalStatus;
-  secoes: Record<string, any>;
+  secoes: Record<string, Record<string, unknown>>;
   criadoEm: number;
   atualizadoEm: number;
   sincronizado: boolean;
@@ -91,8 +91,14 @@ export interface LocalAutorizacaoOffline {
   ownerId: string;
 }
 
+export type LocalSyncStatus = "pending" | "in_flight" | "done" | "failed";
+
 export interface LocalSyncOp {
   id?: number;
+  operationId: string;
+  ownerId: string;
+  status: LocalSyncStatus;
+  retryCount: number;
   prontuarioId: string;
   op: "create" | "update" | "delete" | "enviar" | "reabrir" | "descartar";
   entity: "prontuario" | "secao" | "procedimento" | "anexo";
@@ -110,9 +116,9 @@ class ProntuarioDB extends Dexie {
   liberacoesOffline!: Table<LocalLiberacaoOffline, string>;
   autorizacoesOffline!: Table<LocalAutorizacaoOffline, string>;
   localCredentials!: Table<LocalCredential, string>;
-  prontuarios_legacy!: Table<any, string>;
-  syncQueue_legacy!: Table<any, number>;
-  planosProfessor_legacy!: Table<any, string>;
+  prontuarios_legacy!: Table<LocalProntuario, string>;
+  syncQueue_legacy!: Table<LocalSyncOp, number>;
+  planosProfessor_legacy!: Table<LocalPlanoProfessor, string>;
 
   constructor() {
     super("prontuario-digital");
@@ -120,12 +126,8 @@ class ProntuarioDB extends Dexie {
       prontuarios: "id, status, atualizadoEm, sincronizado",
       syncQueue: "++id, prontuarioId, ts",
     });
-    this.version(2).stores({
-      planosProfessor: "prontuarioId, atualizadoEm",
-    });
-    this.version(3).stores({
-      professores: "id, matricula",
-    });
+    this.version(2).stores({ planosProfessor: "prontuarioId, atualizadoEm" });
+    this.version(3).stores({ professores: "id, matricula" });
     this.version(4).stores({
       professoresLiberacao: "professorId",
       liberacoesOffline: "id, alunoId, prontuarioId",
@@ -136,6 +138,9 @@ class ProntuarioDB extends Dexie {
       prontuarios_legacy: "id",
       syncQueue_legacy: "id",
       planosProfessor_legacy: "prontuarioId",
+    });
+    this.version(6).stores({
+      syncQueue: "++id, prontuarioId, ts, operationId, ownerId, status",
     });
     this.use({ stack: "dbcore", name: "campos-cifrados", create: criarDbCoreCifrado });
   }
@@ -172,7 +177,9 @@ export async function liberacaoOfflineVigente(
     db.liberacoesOffline.where("prontuarioId").equals(prontuarioId).toArray(),
     db.prontuarios.get(prontuarioId),
   ]);
-  const revogadoEm = pront?.acessoRevogadoEm ? new Date(pront.acessoRevogadoEm).getTime() : null;
+  const revogadoEm = pront?.acessoRevogadoEm
+    ? new Date(pront.acessoRevogadoEm).getTime()
+    : null;
   return liberacoes
     .filter((l) => l.expiresAt > agora && (revogadoEm === null || l.liberadoEm > revogadoEm))
     .sort((a, b) => b.expiresAt - a.expiresAt)[0];
@@ -206,7 +213,9 @@ function camposEmClaro(tabela: DBCoreTable): Set<string> {
   const campos = new Set<string>();
   const incluir = (keyPath: string | string[] | null | undefined) => {
     if (keyPath == null) return;
-    for (const caminho of Array.isArray(keyPath) ? keyPath : [keyPath]) campos.add(caminho.split(".")[0]!);
+    for (const caminho of Array.isArray(keyPath) ? keyPath : [keyPath]) {
+      campos.add(caminho.split(".")[0]!);
+    }
   };
   incluir(tabela.schema.primaryKey.keyPath);
   for (const indice of tabela.schema.indexes) incluir(indice.keyPath);
@@ -226,7 +235,11 @@ async function cifrarLinha(key: CryptoKey, linha: Linha, emClaro: Set<string>): 
   return visivel;
 }
 
-async function lerLinha(key: CryptoKey, linha: Linha | undefined, tabela: DBCoreTable): Promise<Linha | undefined> {
+async function lerLinha(
+  key: CryptoKey,
+  linha: Linha | undefined,
+  tabela: DBCoreTable,
+): Promise<Linha | undefined> {
   if (linha === null || linha === undefined || typeof linha !== "object") return linha;
   const envelope = linha[CHAVE_ENVELOPE] as EncryptedField | undefined;
   if (!envelope) {
@@ -248,14 +261,20 @@ async function lerLinha(key: CryptoKey, linha: Linha | undefined, tabela: DBCore
   }
 }
 
-const esperar = <T>(promessa: Promise<T>): Promise<T> => Dexie.waitFor(promessa) as unknown as Promise<T>;
+const esperar = <T>(promessa: Promise<T>): Promise<T> =>
+  Dexie.waitFor(promessa) as unknown as Promise<T>;
+
 const bloqueado = () => Dexie.Promise.reject(new LockedError()) as any;
 
-function envolverCursor(interno: DBCoreCursor, key: CryptoKey, tabela: DBCoreTable): DBCoreCursor {
+function envolverCursor(
+  interno: DBCoreCursor,
+  key: CryptoKey,
+  tabela: DBCoreTable,
+): DBCoreCursor {
   const externo = Object.create(interno) as DBCoreCursor;
   let valor: Linha | undefined;
   Object.defineProperty(externo, "value", { get: () => valor, configurable: true });
-  (externo as any).start = (onNext: () => void) =>
+  (externo as any).start = (onNext: () => void) => {
     interno.start(() => {
       esperar(lerLinha(key, interno.value, tabela)).then(
         (linha) => {
@@ -273,6 +292,7 @@ function envolverCursor(interno: DBCoreCursor, key: CryptoKey, tabela: DBCoreTab
         (err) => interno.fail(err),
       );
     });
+  };
   return externo;
 }
 
@@ -283,7 +303,6 @@ function criarDbCoreCifrado(down: DBCore): DBCore {
       const t = down.table(nome);
       if (!TABELAS_CIFRADAS.has(nome)) return t;
       const emClaro = camposEmClaro(t);
-
       return {
         ...t,
         get: (req) => {
@@ -294,31 +313,34 @@ function criarDbCoreCifrado(down: DBCore): DBCore {
         getMany: (req) => {
           const key = keyring.get();
           if (!key) return bloqueado();
-          return t.getMany(req).then((linhas) => esperar(Promise.all(linhas.map((l) => lerLinha(key, l, t)))));
+          return t
+            .getMany(req)
+            .then((linhas) => esperar(Promise.all(linhas.map((l) => lerLinha(key, l, t)))));
         },
         query: (req) => {
           if (!req.values) return t.query(req);
           const key = keyring.get();
           if (!key) return bloqueado();
           return t.query(req).then((res) =>
-            esperar(Promise.all(res.result.map((l: Linha) => lerLinha(key, l, t)))).then((linhas) => ({
-              ...res,
-              result: linhas.filter((l) => l !== undefined),
-            })),
+            esperar(Promise.all(res.result.map((l: Linha) => lerLinha(key, l, t)))).then(
+              (linhas) => ({ ...res, result: linhas.filter((l) => l !== undefined) }),
+            ),
           );
         },
         openCursor: (req) => {
           if (!req.values) return t.openCursor(req);
           const key = keyring.get();
           if (!key) return bloqueado();
-          return t.openCursor(req).then((cursor) => (cursor ? envolverCursor(cursor, key, t) : cursor));
+          return t
+            .openCursor(req)
+            .then((cursor) => (cursor ? envolverCursor(cursor, key, t) : cursor));
         },
         mutate: (req) => {
           if (req.type !== "add" && req.type !== "put") return t.mutate(req);
           const key = keyring.get();
           if (!key) return bloqueado();
-          return esperar(Promise.all(req.values.map((v: Linha) => cifrarLinha(key, v, emClaro)))).then((values) =>
-            t.mutate({ ...req, values }),
+          return esperar(Promise.all(req.values.map((v: Linha) => cifrarLinha(key, v, emClaro)))).then(
+            (values) => t.mutate({ ...req, values }),
           );
         },
       };
@@ -334,12 +356,10 @@ export interface ResultadoMigracaoLegado {
 export async function migrarLegado(): Promise<ResultadoMigracaoLegado> {
   if (!keyring.get()) throw new LockedError();
   const resultado: ResultadoMigracaoLegado = { cifradas: 0, movidas: 0 };
-
   for (const nome of TABELAS_COM_LEGADO) {
     const tabela = db.table(nome);
     const legada = db.table(`${nome}_legacy`);
     const pk = tabela.schema.primKey.keyPath as string;
-
     await db.transaction("rw", tabela, legada, async () => {
       const linhas = (await tabela.toArray()) as Linha[];
       for (const linha of linhas) {
@@ -349,11 +369,14 @@ export async function migrarLegado(): Promise<ResultadoMigracaoLegado> {
           await tabela.put(copia);
           resultado.cifradas++;
         } catch (err) {
-          console.error("[dexie] falha ao cifrar linha legada; movendo para tabela _legacy", {
-            tabela: nome,
-            chave: copia[pk],
-            erro: err instanceof Error ? err.name : "desconhecido",
-          });
+          console.error(
+            "[dexie] falha ao cifrar linha legada; movendo para tabela _legacy",
+            {
+              tabela: nome,
+              chave: copia[pk],
+              erro: err instanceof Error ? err.name : "desconhecido",
+            },
+          );
           await legada.put(copia);
           await tabela.delete(copia[pk]);
           resultado.movidas++;

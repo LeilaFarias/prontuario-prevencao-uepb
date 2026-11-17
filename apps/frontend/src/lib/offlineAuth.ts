@@ -87,7 +87,7 @@ async function assinaturaValida(auth: OfflineAuth, operations: string[]): Promis
     return await crypto.subtle.verify(
       { name: "ECDSA", hash: "SHA-256" },
       key,
-      b64ToBytes(auth.signature),
+      b64ToBytes(auth.signature) as unknown as BufferSource,
       new TextEncoder().encode(canonicalize(payload)),
     );
   } catch {

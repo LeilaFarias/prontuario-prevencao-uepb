@@ -6,6 +6,7 @@ import { getSession } from "../lib/session";
 import { flushAtivoDesde, notifyChanged } from "./queue";
 
 export const ULTIMO_SYNC_DOWN_KEY = "prontuario:ultimoSyncDown";
+export const ULTIMO_SYNC_AUTORIZACOES_KEY = "prontuario:ultimoSyncAutorizacoes";
 
 export interface ProntuarioRemotoResumo {
   id: string;
@@ -38,6 +39,20 @@ export interface ProntuarioRemoto extends ProntuarioRemotoResumo {
   motivoDevolucao: string | null;
   comentarioDevolucao: string | null;
   historico?: HistoricoProntuario | null;
+}
+
+interface AutorizacaoRemota {
+  id: string;
+  professorId: string;
+  alunoId: string;
+  prontuarioId: string;
+  operations: string[];
+  issuedAt: string;
+  expiresAt: string;
+  nonce: string;
+  signature: string;
+  publicKeyPem: string;
+  revokedAt: string | null;
 }
 
 const STATUS_VALIDOS: ReadonlySet<string> = new Set<LocalStatus>([
@@ -110,6 +125,59 @@ async function sincronizarProfessoresLiberacao(): Promise<void> {
   }
 }
 
+async function sincronizarAutorizacoesOffline(): Promise<boolean> {
+  const session = getSession();
+  if (!session || session.user.perfil !== "aluno") return false;
+  const ownerId = session.user.id;
+
+  let cursor: string | null = null;
+  try {
+    cursor = localStorage.getItem(ULTIMO_SYNC_AUTORIZACOES_KEY);
+  } catch {
+  }
+
+  const url = cursor
+    ? `/acessos/autorizacoes?since=${encodeURIComponent(cursor)}`
+    : "/acessos/autorizacoes";
+
+  try {
+    const lista = await api.get<AutorizacaoRemota[]>(url, { timeoutMs: TIMEOUT_SYNC_MS });
+    if (lista.length === 0) return false;
+
+    await db.autorizacoesOffline.bulkPut(
+      lista.map((a) => ({
+        id: a.id,
+        professorId: a.professorId,
+        alunoId: a.alunoId,
+        prontuarioId: a.prontuarioId,
+        operations: a.operations,
+        issuedAt: a.issuedAt,
+        expiresAt: a.expiresAt,
+        nonce: a.nonce,
+        signature: a.signature,
+        publicKeyPem: a.publicKeyPem,
+        revokedAt: a.revokedAt,
+        ownerId,
+      })),
+    );
+
+    const novoCursor = lista
+      .map((a) => a.issuedAt)
+      .sort()
+      .pop();
+    if (novoCursor) {
+      try {
+        localStorage.setItem(ULTIMO_SYNC_AUTORIZACOES_KEY, novoCursor);
+      } catch {
+      }
+    }
+    return true;
+  } catch (e) {
+    console.warn("[syncDown] falha ao buscar autorizações offline:", e);
+    return false;
+  }
+}
+
 export function estaOnline(): boolean {
   return navigator.onLine;
 }
@@ -145,7 +213,7 @@ export async function aplicarRemoto(remoto: ProntuarioRemoto): Promise<boolean> 
         ...camposDeTransferencia(remoto),
         acessoRecusadoEm: remoto.acessoRecusadoEm ?? undefined,
         vistoPeloAluno: visto,
-        secoes: remoto.secoes ?? {},
+        secoes: (remoto.secoes ?? {}) as Record<string, Record<string, unknown>>,
         criadoEm: paraTimestamp(remoto.criadoEm),
         atualizadoEm: remotoEm,
         sincronizado: true,
@@ -201,7 +269,7 @@ export async function aplicarRemoto(remoto: ProntuarioRemoto): Promise<boolean> 
       ...camposDeTransferencia(remoto, local),
       acessoRecusadoEm: remoto.acessoRecusadoEm ?? undefined,
       vistoPeloAluno: novoStatus === local.status ? local.vistoPeloAluno : false,
-      secoes: { ...local.secoes, ...(remoto.secoes ?? {}) },
+      secoes: { ...local.secoes, ...(remoto.secoes ?? {}) } as Record<string, Record<string, unknown>>,
       atualizadoEm: remotoEm,
       sincronizado: true,
       alunoTitularId: remoto.alunoTitularId,
@@ -236,6 +304,7 @@ export async function sincronizarParaBaixo(): Promise<void> {
   const inicio = Date.now();
   const resumos = await buscarResumos();
   await sincronizarProfessoresLiberacao();
+  const autorizacoesAtualizadas = await sincronizarAutorizacoesOffline();
   const alvos: ProntuarioRemotoResumo[] = [];
   for (const r of resumos) {
     if (await precisaAtualizar(r)) alvos.push(r);
@@ -258,5 +327,5 @@ export async function sincronizarParaBaixo(): Promise<void> {
     localStorage.setItem(ULTIMO_SYNC_DOWN_KEY, String(Date.now()));
   } catch {
   }
-  if (alterou) notifyChanged();
+  if (alterou || autorizacoesAtualizadas) notifyChanged();
 }
