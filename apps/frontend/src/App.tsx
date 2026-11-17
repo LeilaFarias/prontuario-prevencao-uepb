@@ -1,5 +1,7 @@
-import { useEffect, type ReactElement } from "react";
+import { useCallback, useEffect, useState, type ReactElement } from "react";
 import { Navigate, Route, Routes, useLocation } from "react-router-dom";
+import type { UsuarioMe } from "@prontuario/shared";
+import { api, EVENTO_TERMOS_NAO_ACEITOS } from "./lib/api";
 import { getSession } from "./lib/session";
 import { atualizarCacheProfessores } from "./sync/professores";
 import { rotaInicial } from "./lib/rotas";
@@ -14,7 +16,9 @@ import RevisaoProntuario from "./routes/RevisaoProntuario";
 import Perfil from "./routes/Perfil";
 import RecuperarSenha from "./routes/RecuperarSenha";
 import RedefinirSenha from "./routes/RedefinirSenha";
+import Termos from "./routes/Termos";
 import SessaoAviso from "./components/SessaoAviso";
+import ModalTermos from "./components/ModalTermos";
 import ErrorBoundary from "./components/ErrorBoundary";
 
 function Protegida({ children }: { children: ReactElement }) {
@@ -38,6 +42,44 @@ function SomenteAluno({ children }: { children: ReactElement }) {
   return sessao.user.perfil === "professor" ? <Navigate to="/fila" replace /> : children;
 }
 
+function GateTermos({ onAceito }: { onAceito: () => void }) {
+  const { pathname } = useLocation();
+  const token = getSession()?.accessToken;
+  const [usuario, setUsuario] = useState<UsuarioMe | null>(null);
+
+  const carregar = useCallback(async () => {
+    try {
+      setUsuario(await api.get<UsuarioMe>("/users/me"));
+    } catch {
+      setUsuario(null);
+    }
+  }, []);
+
+  useEffect(() => {
+    setUsuario(null);
+    if (!token) return;
+    void carregar();
+    const aoNegar = () => void carregar();
+    window.addEventListener(EVENTO_TERMOS_NAO_ACEITOS, aoNegar);
+    return () => window.removeEventListener(EVENTO_TERMOS_NAO_ACEITOS, aoNegar);
+  }, [token, carregar]);
+
+  if (!token || !usuario || pathname.startsWith("/termos")) return null;
+  const { versaoAtual } = usuario;
+  if (!versaoAtual || (usuario.termosAceitosEm && usuario.termosVersao === versaoAtual)) return null;
+
+  return (
+    <ModalTermos
+      perfil={usuario.perfil}
+      versao={versaoAtual}
+      onAceito={async () => {
+        await carregar();
+        onAceito();
+      }}
+    />
+  );
+}
+
 function Inicio() {
   return <Navigate to={rotaInicial(getSession()?.user.perfil)} replace />;
 }
@@ -45,6 +87,7 @@ function Inicio() {
 export default function App() {
   useLocation();
   const token = getSession()?.accessToken;
+  const [recarga, setRecarga] = useState(0);
 
   useEffect(() => {
     void atualizarCacheProfessores();
@@ -63,11 +106,13 @@ export default function App() {
   return (
     <div className="device">
       <SessaoAviso />
-      <Routes>
+      <GateTermos onAceito={() => setRecarga((n) => n + 1)} />
+      <Routes key={recarga}>
         <Route path="/login" element={<SomenteVisitante><Login /></SomenteVisitante>} />
         <Route path="/cadastro" element={<SomenteVisitante><Cadastro /></SomenteVisitante>} />
         <Route path="/recuperar" element={<SomenteVisitante><RecuperarSenha /></SomenteVisitante>} />
         <Route path="/redefinir-senha" element={<RedefinirSenha />} />
+        <Route path="/termos" element={<Termos />} />
         <Route path="/prontuarios" element={<SomenteAluno><ListaProntuarios /></SomenteAluno>} />
         <Route path="/fila" element={<SomenteProfessor><Fila /></SomenteProfessor>} />
         <Route path="/acessos" element={<SomenteProfessor><Acessos /></SomenteProfessor>} />

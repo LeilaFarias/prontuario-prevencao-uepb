@@ -1,9 +1,9 @@
 import { useEffect, useState } from "react";
-import { useNavigate } from "react-router-dom";
+import { Link, useNavigate } from "react-router-dom";
 import { useForm } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
 import { z } from "zod";
-import { CalendarDays, KeyRound, LogOut, TriangleAlert } from "lucide-react";
+import { CalendarDays, Info, KeyRound, LogOut, TriangleAlert } from "lucide-react";
 import {
   alterarMatriculaSchema,
   alterarSenhaBaseSchema,
@@ -14,6 +14,7 @@ import {
 import BottomSheet from "../components/BottomSheet";
 import PerfilLinha from "../components/PerfilLinha";
 import Topbar from "../components/Topbar";
+import VersaoApp from "../components/VersaoApp";
 import { api, ApiError } from "../lib/api";
 import { clearSession, getSession, updateSessionUser } from "../lib/session";
 import { rotaInicial } from "../lib/rotas";
@@ -383,6 +384,24 @@ function PinLiberacaoOffline({ tema }: { tema: Tema }) {
   );
 }
 
+function SobreApp({ tema }: { tema: Tema }) {
+  return (
+    <section className="mt-4 rounded-card border border-line-soft bg-raised p-4">
+      <div className="flex items-center gap-2">
+        <Info size={16} className={tema.texto} />
+        <h2 className="font-display text-[15px] font-semibold text-ink">Sobre</h2>
+      </div>
+      <div className="mt-1.5">
+        <VersaoApp />
+      </div>
+      <div className="mt-3 flex flex-col gap-2 text-[13px] font-medium">
+        <Link to="/termos" className={tema.texto}>Termos de Uso e Política de Privacidade</Link>
+        <Link to="/termos#seguranca" className={tema.texto}>Como protegemos seus dados</Link>
+      </div>
+    </section>
+  );
+}
+
 export default function Perfil() {
   const navigate = useNavigate();
   const sessao = getSession();
@@ -434,6 +453,7 @@ export default function Perfil() {
 
         {professor && <SemestreVigente tema={tema} />}
         {professor && <PinLiberacaoOffline tema={tema} />}
+        <SobreApp tema={tema} />
 
         <div className="mt-auto flex flex-col gap-2.5 pt-8">
           <button type="button" onClick={sair} className="btn bg-alt-tint text-alt">
