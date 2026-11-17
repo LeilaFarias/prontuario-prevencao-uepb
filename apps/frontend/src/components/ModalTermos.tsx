@@ -1,11 +1,11 @@
-import { useEffect, useRef, useState, type ComponentType } from "react";
-import { Eye, HardDrive, KeyRound, Lock, ScrollText, ShieldCheck } from "lucide-react";
+import { useEffect, useRef, useState } from "react";
+import { Eye, HardDrive, KeyRound, Lock, ScrollText, ShieldCheck, LucideIcon } from "lucide-react";
 import { api } from "../lib/api";
 
 type Perfil = "aluno" | "professor";
 
 interface Item {
-  Icone: ComponentType<{ size?: number; className?: string }>;
+  Icone: LucideIcon;
   texto: string;
 }
 
