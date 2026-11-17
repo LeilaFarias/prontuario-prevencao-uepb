@@ -41,6 +41,34 @@ interface AutorizacaoRow {
   revokedAt: string | null;
 }
 
+interface AutorizacaoCompletaRow {
+  id: string;
+  professorId: string;
+  alunoId: string;
+  prontuarioId: string;
+  operations: string[];
+  issuedAt: string | Date;
+  expiresAt: string | Date;
+  nonce: string;
+  signature: string;
+  publicKeyPem: string;
+  revokedAt: string | Date | null;
+}
+
+interface AutorizacaoDto {
+  id: string;
+  professorId: string;
+  alunoId: string;
+  prontuarioId: string;
+  operations: string[];
+  issuedAt: string;
+  expiresAt: string;
+  nonce: string;
+  signature: string;
+  publicKeyPem: string;
+  revokedAt: string | null;
+}
+
 type Falha = { falha: 403 | 404 | 500; error: string };
 
 const autorizarSchema = z.object({
@@ -50,6 +78,10 @@ const autorizarSchema = z.object({
 });
 
 const revogarSchema = z.object({ autorizacaoId: z.string().trim().min(1) });
+
+const listarAutorizacoesQuerySchema = z.object({
+  since: z.string().datetime({ offset: true }).optional(),
+});
 
 const NAO_ENCONTRADO: Falha = { falha: 404, error: "Prontuário não encontrado." };
 const NAO_SUPERVISOR: Falha = { falha: 403, error: "Apenas o professor supervisor pode realizar esta ação." };
@@ -70,8 +102,29 @@ const inserirAutorizacao = `INSERT INTO "AutorizacaoAssinada"
       VALUES ($1, $2, $3, $4, $5::jsonb, $6, $7, $8, $9, $10)`;
 const buscarAutorizacao = `SELECT "id", "professorId", "revokedAt" FROM "AutorizacaoAssinada" WHERE "id" = $1 FOR UPDATE`;
 const gravarRevogacao = `UPDATE "AutorizacaoAssinada" SET "revokedAt" = $1 WHERE "id" = $2 AND "revokedAt" IS NULL`;
+const selecionarAutorizacoes = `SELECT "id", "professorId", "alunoId", "prontuarioId", "operations",
+       "issuedAt", "expiresAt", "nonce", "signature", "publicKeyPem", "revokedAt"
+      FROM "AutorizacaoAssinada"`;
 
 const DIA_MS = 24 * 3600 * 1000;
+
+const iso = (valor: string | Date): string => new Date(valor).toISOString();
+
+function paraDto(r: AutorizacaoCompletaRow): AutorizacaoDto {
+  return {
+    id: r.id,
+    professorId: r.professorId,
+    alunoId: r.alunoId,
+    prontuarioId: r.prontuarioId,
+    operations: r.operations,
+    issuedAt: iso(r.issuedAt),
+    expiresAt: iso(r.expiresAt),
+    nonce: r.nonce,
+    signature: r.signature,
+    publicKeyPem: r.publicKeyPem,
+    revokedAt: r.revokedAt ? iso(r.revokedAt) : null,
+  };
+}
 
 interface ParDeChaves {
   publicKeyPem: string;
@@ -236,5 +289,37 @@ export const acessosRoutes: FastifyPluginAsync = async (app) => {
     if ("falha" in resultado) return reply.status(resultado.falha).send({ error: resultado.error });
     req.log.info({ autorizacaoId, professorId: req.user.sub }, "autorização revogada");
     return resultado;
+  });
+
+  app.get("/acessos/autorizacoes", { preHandler: app.autenticar }, async (req, reply): Promise<AutorizacaoDto[] | void> => {
+    const perfil = req.user.perfil.toLowerCase();
+    if (perfil !== "aluno" && perfil !== "professor") {
+      return reply.status(403).send({ error: "Perfil sem permissão para consultar autorizações." });
+    }
+
+    const query = listarAutorizacoesQuerySchema.safeParse(req.query);
+    if (!query.success) {
+      return reply.status(400).send({ error: "Parâmetro 'since' inválido. Use um timestamp ISO 8601." });
+    }
+
+    const condicoes: string[] = [];
+    const params: unknown[] = [];
+    if (perfil === "aluno") {
+      params.push(req.user.sub);
+      condicoes.push(`"alunoId" = $${params.length}`);
+    } else if (perfil === "professor") {
+      params.push(req.user.sub);
+      condicoes.push(`"professorId" = $${params.length}`);
+    }
+    if (query.data.since) {
+      params.push(query.data.since);
+      condicoes.push(`"issuedAt" > $${params.length}::timestamptz`);
+    }
+
+    const where = condicoes.length > 0 ? `WHERE ${condicoes.join(" AND ")}` : "";
+    const sql = `${selecionarAutorizacoes} ${where} ORDER BY "issuedAt" DESC, "id" ASC`;
+
+    const linhas = await todas<AutorizacaoCompletaRow>(db, sql, params);
+    return linhas.map(paraDto);
   });
 };

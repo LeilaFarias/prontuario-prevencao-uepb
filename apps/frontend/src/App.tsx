@@ -20,6 +20,7 @@ import Termos from "./routes/Termos";
 import SessaoAviso from "./components/SessaoAviso";
 import ModalTermos from "./components/ModalTermos";
 import ErrorBoundary from "./components/ErrorBoundary";
+import { PinGate } from "./components/PinGate";
 
 function Protegida({ children }: { children: ReactElement }) {
   return getSession() ? children : <Navigate to="/login" replace />;
@@ -107,21 +108,23 @@ export default function App() {
     <div className="device">
       <SessaoAviso />
       <GateTermos onAceito={() => setRecarga((n) => n + 1)} />
-      <Routes key={recarga}>
-        <Route path="/login" element={<SomenteVisitante><Login /></SomenteVisitante>} />
-        <Route path="/cadastro" element={<SomenteVisitante><Cadastro /></SomenteVisitante>} />
-        <Route path="/recuperar" element={<SomenteVisitante><RecuperarSenha /></SomenteVisitante>} />
-        <Route path="/redefinir-senha" element={<RedefinirSenha />} />
-        <Route path="/termos" element={<Termos />} />
-        <Route path="/prontuarios" element={<SomenteAluno><ListaProntuarios /></SomenteAluno>} />
-        <Route path="/fila" element={<SomenteProfessor><Fila /></SomenteProfessor>} />
-        <Route path="/acessos" element={<SomenteProfessor><Acessos /></SomenteProfessor>} />
-        <Route path="/encaminhamentos" element={<SomenteProfessor><Encaminhamentos /></SomenteProfessor>} />
-        <Route path="/fila/:id" element={<SomenteProfessor><RevisaoProntuario /></SomenteProfessor>} />
-        <Route path="/perfil" element={<Protegida><Perfil /></Protegida>} />
-        <Route path="/prontuario/:id" element={<Protegida><ErrorBoundary><Prontuario /></ErrorBoundary></Protegida>} />
-        <Route path="*" element={<Inicio />} />
-      </Routes>
+      <PinGate>
+        <Routes key={recarga}>
+          <Route path="/login" element={<SomenteVisitante><Login /></SomenteVisitante>} />
+          <Route path="/cadastro" element={<SomenteVisitante><Cadastro /></SomenteVisitante>} />
+          <Route path="/recuperar" element={<SomenteVisitante><RecuperarSenha /></SomenteVisitante>} />
+          <Route path="/redefinir-senha" element={<RedefinirSenha />} />
+          <Route path="/termos" element={<Termos />} />
+          <Route path="/prontuarios" element={<SomenteAluno><ListaProntuarios /></SomenteAluno>} />
+          <Route path="/fila" element={<SomenteProfessor><Fila /></SomenteProfessor>} />
+          <Route path="/acessos" element={<SomenteProfessor><Acessos /></SomenteProfessor>} />
+          <Route path="/encaminhamentos" element={<SomenteProfessor><Encaminhamentos /></SomenteProfessor>} />
+          <Route path="/fila/:id" element={<SomenteProfessor><RevisaoProntuario /></SomenteProfessor>} />
+          <Route path="/perfil" element={<Protegida><Perfil /></Protegida>} />
+          <Route path="/prontuario/:id" element={<Protegida><ErrorBoundary><Prontuario /></ErrorBoundary></Protegida>} />
+          <Route path="*" element={<Inicio />} />
+        </Routes>
+      </PinGate>
     </div>
   );
 }
