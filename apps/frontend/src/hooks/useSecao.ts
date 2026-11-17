@@ -2,7 +2,7 @@ import { useCallback, useEffect, useReducer, useRef, useState } from "react";
 import { useForm, type DefaultValues, type FieldValues, type UseFormReturn } from "react-hook-form";
 import type { z } from "zod";
 import type { SecaoId } from "@prontuario/shared";
-import { db, type LocalProntuario } from "../db/dexie";
+import { lerProntuarioDecifrado, type LocalProntuario } from "../db/dexie";
 import { acessoVigente } from "../lib/acesso";
 import { confirmarInvalidacaoAssinatura } from "../lib/invalidacaoAssinatura";
 import { AcessoExpiradoError, salvarSecaoLocal, type CabecalhoPaciente } from "../sync/queue";
@@ -157,7 +157,7 @@ export function useSecao<T extends SchemaSecao>(
       return;
     }
     let ativo = true;
-    void db.prontuarios.get(prontuario.id).then((p) => {
+    void lerProntuarioDecifrado(prontuario.id).then((p) => {
       if (!ativo || !p || !montado.current) return;
       if (timer.current !== undefined || emAndamento.current > 0) return;
       if (JSON.stringify(getValues()) !== ultimoSalvo.current) return;

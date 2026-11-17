@@ -24,15 +24,16 @@ import TelaBloqueio from "../components/TelaBloqueio";
 import TimerAcesso from "../components/TimerAcesso";
 import Topbar from "../components/Topbar";
 import LiberacaoManualModal from "../components/LiberacaoManualModal";
-import { aplicarLiberacaoOffline, db, type LocalProntuario, type LocalStatus } from "../db/dexie";
+import { aplicarLiberacaoOffline, lerProntuarioDecifrado, type LocalProntuario, type LocalStatus } from "../db/dexie";
 import { useProntuarioSync } from "../hooks/useProntuarioSync";
 import { usePuxarParaAtualizar } from "../hooks/usePuxarParaAtualizar";
 import { salvarSecoesPendentes } from "../hooks/useSecao";
 import { ACESSO_EXPIRADO_EVENT, acessoVigente, pedidoPendente, pedidoRecusado } from "../lib/acesso";
+import { getChave } from "../lib/chaveLocal";
 import { confirmarInvalidacaoAssinatura, registrarConfirmadorInvalidacao } from "../lib/invalidacaoAssinatura";
 import { tempoRelativo } from "../lib/tempo";
 import { formatarDataHoraCompleta } from "../components/ficha/revisao/rotulos";
-import { marcarComoVisto, reabrirParaCorrecao, salvarSecaoLocal } from "../sync/queue";
+import { AppBloqueadoError, marcarComoVisto, reabrirParaCorrecao, salvarSecaoLocal } from "../sync/queue";
 
 const DEBOUNCE_MS = 800;
 const POLLING_ACESSO_MS = 15_000;
@@ -87,7 +88,7 @@ export default function Prontuario() {
   const [pront, setPront] = useState<LocalProntuario | null>(null);
   const prontRef = useRef<LocalProntuario | null>(null);
   const [indice, setIndice] = useState(0);
-  const vivo = useLiveQuery(async () => (id ? await db.prontuarios.get(id) : undefined), [id]);
+  const vivo = useLiveQuery(async () => (id ? await lerProntuarioDecifrado(id) : undefined), [id]);
   const nomeAoVivo = vivo?.pacienteNome;
   statusRef.current = vivo?.status;
   const [paraEnvio, setParaEnvio] = useState<LocalProntuario | null>(null);
@@ -109,7 +110,7 @@ export default function Prontuario() {
       setEstado("carregando");
     }
     void aplicarLiberacaoOffline(id)
-      .then(() => db.prontuarios.get(id))
+      .then(() => lerProntuarioDecifrado(id))
       .then((p) => {
         if (!ativo) return;
         if (p?.descartadoEm) return setEstado("nao-encontrado");
@@ -141,11 +142,15 @@ export default function Prontuario() {
     if (!p || !id) return;
     pendente.current = null;
     if (statusRef.current === "assinado" && !(await confirmarInvalidacaoAssinatura())) {
-      const salvo = (await db.prontuarios.get(id))?.secoes[p.secaoId];
+      const salvo = (await lerProntuarioDecifrado(id))?.secoes[p.secaoId];
       setValores((v) => ({ ...v, [p.secaoId]: String(salvo?.texto ?? "") }));
       return;
     }
-    await salvarSecaoLocal(id, p.secaoId, { texto: p.texto });
+    try {
+      await salvarSecaoLocal(id, p.secaoId, { texto: p.texto });
+    } catch (erro) {
+      if (!(erro instanceof AppBloqueadoError)) throw erro;
+    }
   }, [id]);
 
   useEffect(() => {
@@ -284,7 +289,7 @@ export default function Prontuario() {
     if (!id) return;
     await salvarPendente();
     await salvarSecoesPendentes();
-    const fresco = await db.prontuarios.get(id);
+    const fresco = await lerProntuarioDecifrado(id);
     if (fresco) setParaEnvio(fresco);
   }, [id, salvarPendente]);
 
@@ -294,6 +299,15 @@ export default function Prontuario() {
     pendente.current = { secaoId: secao.id, texto };
     window.clearTimeout(timer.current);
     timer.current = window.setTimeout(() => void salvarPendente(), DEBOUNCE_MS);
+  }
+
+  if (!getChave()) {
+    return (
+      <div className="flex flex-1 flex-col">
+        <Topbar titulo="Prontuário" onVoltar={() => navigate("/prontuarios")} />
+        <p role="status" className="px-6 pt-4 text-[14px] text-ink-soft">Desbloqueie para ver as seções.</p>
+      </div>
+    );
   }
 
   if (estado === "carregando" || (estado === "nao-encontrado" && sincronizando)) {

@@ -1,7 +1,8 @@
 import type { HistoricoProntuario } from "@prontuario/shared";
-import { db, type LocalProntuario, type LocalStatus } from "../db/dexie";
+import { cifrarSecoes, db, type LocalProntuario, type LocalStatus } from "../db/dexie";
 import { api, TIMEOUT_SYNC_MS } from "../lib/api";
 import { avisoJaVisto, marcadorDeAviso } from "../lib/avisosVistos";
+import { getChave } from "../lib/chaveLocal";
 import { getSession } from "../lib/session";
 import { flushAtivoDesde, notifyChanged } from "./queue";
 
@@ -124,6 +125,9 @@ export function buscarDetalhe(id: string): Promise<ProntuarioRemoto> {
 
 export async function aplicarRemoto(remoto: ProntuarioRemoto): Promise<boolean> {
   const remotoEm = paraTimestamp(remoto.atualizadoEm);
+  const chave = getChave();
+  const secoesCifradas = chave ? await cifrarSecoes(chave, remoto.secoes ?? {}) : null;
+  const secoesPendentes = secoesCifradas === null;
 
   return db.transaction("rw", db.prontuarios, db.syncQueue, async () => {
     const local = await db.prontuarios.get(remoto.id);
@@ -145,7 +149,8 @@ export async function aplicarRemoto(remoto: ProntuarioRemoto): Promise<boolean> 
         ...camposDeTransferencia(remoto),
         acessoRecusadoEm: remoto.acessoRecusadoEm ?? undefined,
         vistoPeloAluno: visto,
-        secoes: remoto.secoes ?? {},
+        secoes: secoesCifradas ?? {},
+        secoesPendentes,
         criadoEm: paraTimestamp(remoto.criadoEm),
         atualizadoEm: remotoEm,
         sincronizado: true,
@@ -190,7 +195,7 @@ export async function aplicarRemoto(remoto: ProntuarioRemoto): Promise<boolean> 
       return true;
     }
 
-    if (remotoEm <= local.atualizadoEm && !acessoMudou) return false;
+    if (remotoEm <= local.atualizadoEm && !acessoMudou && !(local.secoesPendentes && chave)) return false;
 
     await db.prontuarios.put({
       ...local,
@@ -201,7 +206,8 @@ export async function aplicarRemoto(remoto: ProntuarioRemoto): Promise<boolean> 
       ...camposDeTransferencia(remoto, local),
       acessoRecusadoEm: remoto.acessoRecusadoEm ?? undefined,
       vistoPeloAluno: novoStatus === local.status ? local.vistoPeloAluno : false,
-      secoes: { ...local.secoes, ...(remoto.secoes ?? {}) },
+      secoes: { ...local.secoes, ...(secoesCifradas ?? {}) },
+      secoesPendentes,
       atualizadoEm: remotoEm,
       sincronizado: true,
       alunoTitularId: remoto.alunoTitularId,
@@ -215,6 +221,7 @@ export async function aplicarRemoto(remoto: ProntuarioRemoto): Promise<boolean> 
 async function precisaAtualizar(resumo: ProntuarioRemotoResumo): Promise<boolean> {
   const local = await db.prontuarios.get(resumo.id);
   if (!local) return true;
+  if (local.secoesPendentes && getChave()) return true;
   return paraTimestamp(resumo.atualizadoEm) > local.atualizadoEm;
 }
 

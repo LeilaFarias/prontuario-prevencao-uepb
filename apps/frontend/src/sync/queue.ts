@@ -7,15 +7,17 @@ import {
   type SyncResponse,
 } from "@prontuario/shared";
 import { db } from "../db/dexie";
-import type { LocalProntuario } from "../db/dexie";
+import type { LocalProntuario, LocalSyncOp } from "../db/dexie";
 import { ApiError, api, TIMEOUT_FLUSH_MS } from "../lib/api";
 import { ACESSO_EXPIRADO_EVENT, acessoVigente } from "../lib/acesso";
 import { marcadorDeAviso, registrarAvisoVisto } from "../lib/avisosVistos";
+import { cifrar, decifrar, getChave } from "../lib/chaveLocal";
 import { getSession } from "../lib/session";
 import { uuid } from "../lib/uuid";
 
 export const SYNC_EVENT = "sync:changed";
 export const ULTIMO_SALVAMENTO_KEY = "prontuario:ultimoSalvamento";
+export const APP_BLOQUEADO_EVENT = "app:bloqueado";
 const INTERVALO_MS = 30_000;
 const DEBOUNCE_ONLINE_MS = 2_000;
 const LOTE = 200;
@@ -81,6 +83,12 @@ export class AcessoExpiradoError extends Error {
   }
 }
 
+export class AppBloqueadoError extends Error {
+  constructor() {
+    super("Desbloqueie o app primeiro.");
+  }
+}
+
 export interface CabecalhoPaciente {
   pacienteNome?: string;
   pacienteDataNascimento?: string;
@@ -93,6 +101,13 @@ export async function salvarSecaoLocal(
   cabecalho?: CabecalhoPaciente,
 ): Promise<void> {
   const dados = salvarSecaoSchema.parse({ prontuarioId, secaoId, conteudo });
+  const chave = getChave();
+  if (!chave) {
+    window.dispatchEvent(new CustomEvent(APP_BLOQUEADO_EVENT));
+    throw new AppBloqueadoError();
+  }
+  const conteudoCifrado = await cifrar(chave, JSON.stringify(dados.conteudo));
+  const valorLocal = secoesVazias([dados.conteudo]) ? {} : conteudoCifrado;
   const agora = Date.now();
 
   await db.transaction("rw", db.prontuarios, db.syncQueue, async () => {
@@ -123,7 +138,7 @@ export async function salvarSecaoLocal(
         : {}),
       ...(novoNome ? { pacienteNome: novoNome } : {}),
       ...(novoNascimento ? { pacienteDataNascimento: novoNascimento } : {}),
-      secoes: { ...atual.secoes, [dados.secaoId]: dados.conteudo },
+      secoes: { ...atual.secoes, [dados.secaoId]: valorLocal },
       atualizadoEm: agora,
       sincronizado: false,
     });
@@ -155,7 +170,7 @@ export async function salvarSecaoLocal(
       op: "update",
       entity: "secao",
       entityId: entityIdSecao,
-      payload: { secaoId: dados.secaoId, conteudo: dados.conteudo },
+      payload: { secaoId: dados.secaoId, conteudoCifrado },
       ts: agora,
     });
   });
@@ -163,6 +178,18 @@ export async function salvarSecaoLocal(
   registrarSalvamento(agora);
   notifyChanged();
   void flush();
+}
+
+async function prepararParaEnvio(op: LocalSyncOp, chave: CryptoKey | null): Promise<LocalSyncOp | null> {
+  const cifrado = op.entity === "secao" ? op.payload.conteudoCifrado : undefined;
+  if (typeof cifrado !== "string") return op;
+  if (!chave) return null;
+  try {
+    const { conteudoCifrado: _cifrado, ...resto } = op.payload;
+    return { ...op, payload: { ...resto, conteudo: JSON.parse(await decifrar(chave, cifrado)) } };
+  } catch {
+    return null;
+  }
 }
 
 let emVoo: Promise<void> | null = null;
@@ -199,16 +226,16 @@ async function executarFlush(): Promise<void> {
         return p;
       };
 
+      const chave = getChave();
+      const retidos = new Set<string>();
       const enviar: typeof lote = [];
       for (const op of lote) {
+        if (retidos.has(op.prontuarioId)) continue;
         const p = await getPront(op.prontuarioId);
-        if (!p) {
-          enviar.push(op);
-          continue;
-        }
-        const bloqueado =
-          (p.status === "enviado" || p.status === "assinado") && !acessoVigente(p, op.ts);
-        if (!bloqueado) enviar.push(op);
+        if (p && (p.status === "enviado" || p.status === "assinado") && !acessoVigente(p, op.ts)) continue;
+        const pronta = await prepararParaEnvio(op, chave);
+        if (pronta) enviar.push(pronta);
+        else retidos.add(op.prontuarioId);
       }
 
       if (enviar.length === 0 && liberacoes.length === 0) break;

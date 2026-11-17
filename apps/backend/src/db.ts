@@ -196,7 +196,9 @@ export async function migrar(db: Db): Promise<void> {
          ADD COLUMN IF NOT EXISTS "saltClient" TEXT NULL,
          ADD COLUMN IF NOT EXISTS "saltServer" TEXT NULL,
          ADD COLUMN IF NOT EXISTS "termosAceitosEm" TIMESTAMPTZ NULL,
-         ADD COLUMN IF NOT EXISTS "termosVersao" TEXT NULL`,
+         ADD COLUMN IF NOT EXISTS "termosVersao" TEXT NULL,
+         ADD COLUMN IF NOT EXISTS "pinCriptografiaHash" TEXT NULL,
+         ADD COLUMN IF NOT EXISTS "saltCriptografia" TEXT NULL`,
     );
     await tx.query(
       `CREATE TABLE IF NOT EXISTS "LiberacaoOffline" (

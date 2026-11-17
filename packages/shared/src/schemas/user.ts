@@ -43,6 +43,8 @@ export interface UsuarioMe {
   termosAceitosEm: string | null;
   termosVersao: string | null;
   versaoAtual: string | null;
+  temPinCriptografia: boolean;
+  saltCriptografia: string | null;
 }
 
 export interface TermosResposta {

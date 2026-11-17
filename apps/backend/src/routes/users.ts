@@ -22,6 +22,10 @@ const definirPinSchema = z.object({
   pin: z.string().regex(/^\d{8}$/, "PIN deve ter 8 dígitos"),
 });
 
+const resetPinCriptografiaSchema = z.object({
+  senha: z.string().min(1, "Informe a senha"),
+});
+
 const excluirContaComMotivoSchema = excluirContaSchema.extend({
   motivo: z.string().trim().max(500).optional(),
 });
@@ -36,6 +40,8 @@ interface UsuarioRow {
   termosAceitosEm: string | null;
   termosVersao: string | null;
   versaoAtual: string | null;
+  temPinCriptografia: boolean;
+  saltCriptografia: string | null;
 }
 
 interface AlunoRow {
@@ -51,7 +57,8 @@ export const userRoutes: FastifyPluginAsync = async (app) => {
     const u = (await uma<UsuarioRow>(
       db,
       `SELECT "id", "nome", "email", "perfil", "matricula", "criadoEm", "termosAceitosEm", "termosVersao",
-              ${SQL_VERSAO_ATUAL} AS "versaoAtual"
+              ${SQL_VERSAO_ATUAL} AS "versaoAtual",
+              ("pinCriptografiaHash" IS NOT NULL) AS "temPinCriptografia", "saltCriptografia"
          FROM "Usuario" WHERE "id" = $1`,
       [id],
     )) as UsuarioRow;
@@ -155,6 +162,36 @@ export const userRoutes: FastifyPluginAsync = async (app) => {
     );
     return reply.status(204).send();
   });
+
+  app.put("/users/me/pin-criptografia", protegida, async (req, reply) => {
+    const { pin } = definirPinSchema.parse(req.body);
+    const salt = randomBytes(16).toString("hex");
+    const pinCriptografiaHash = ((await scryptAsync(pin, salt, 64)) as Buffer).toString("hex");
+
+    await executar(db, `UPDATE "Usuario" SET "pinCriptografiaHash" = $1, "saltCriptografia" = $2 WHERE "id" = $3`, [
+      pinCriptografiaHash,
+      salt,
+      req.user.sub,
+    ]);
+    return reply.status(204).send();
+  });
+
+  app.post(
+    "/users/me/pin-criptografia/reset",
+    { ...protegida, config: { rateLimit: { max: 5, timeWindow: "15 minutes" } } },
+    async (req, reply) => {
+      const id = req.user.sub;
+      const { senha } = resetPinCriptografiaSchema.parse(req.body);
+
+      const hash = await buscarHash(id);
+      if (!hash || !(await verificarSenha(senha, hash))) {
+        return reply.status(401).send({ message: "Senha incorreta." });
+      }
+
+      await executar(db, `UPDATE "Usuario" SET "pinCriptografiaHash" = NULL, "saltCriptografia" = NULL WHERE "id" = $1`, [id]);
+      return reply.status(204).send();
+    },
+  );
 
   app.put("/users/me/matricula", protegida, async (req, reply) => {
     const id = req.user.sub;

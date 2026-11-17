@@ -7,7 +7,7 @@ import {
   type Consentimento as ConsentimentoValores,
   type DadosPessoais as DadosPessoaisValores,
 } from "@prontuario/shared";
-import { db, type LocalProntuario } from "../../db/dexie";
+import { lerProntuarioDecifrado, type LocalProntuario } from "../../db/dexie";
 import { useSecao } from "../../hooks/useSecao";
 import { useSyncStatus } from "../../hooks/useSyncStatus";
 import { hojeISO, formatarDataHora } from "../../lib/data";
@@ -317,7 +317,7 @@ export default function Consentimento({
   prontuarioId: string;
   onIrParaDadosPessoais: () => void;
 }) {
-  const prontuario = useLiveQuery(() => db.prontuarios.get(prontuarioId), [prontuarioId]);
+  const prontuario = useLiveQuery(() => lerProntuarioDecifrado(prontuarioId), [prontuarioId]);
   if (!prontuario) return null;
   return <FormularioConsentimento prontuario={prontuario} onIrParaDadosPessoais={onIrParaDadosPessoais} />;
 }

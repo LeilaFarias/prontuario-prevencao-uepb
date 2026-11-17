@@ -1,8 +1,13 @@
 import { useCallback, useEffect, useState, type ReactElement } from "react";
+import { useLiveQuery } from "dexie-react-hooks";
 import { Navigate, Route, Routes, useLocation } from "react-router-dom";
 import type { UsuarioMe } from "@prontuario/shared";
+import { db } from "./db/dexie";
 import { api, EVENTO_TERMOS_NAO_ACEITOS } from "./lib/api";
+import { getChave } from "./lib/chaveLocal";
+import { atualizarMetaPin, lerMetaPin, type MetaPin } from "./lib/pinCriptografia";
 import { getSession } from "./lib/session";
+import { APP_BLOQUEADO_EVENT } from "./sync/queue";
 import { atualizarCacheProfessores } from "./sync/professores";
 import { rotaInicial } from "./lib/rotas";
 import Login from "./routes/Login";
@@ -19,6 +24,7 @@ import RedefinirSenha from "./routes/RedefinirSenha";
 import Termos from "./routes/Termos";
 import SessaoAviso from "./components/SessaoAviso";
 import ModalTermos from "./components/ModalTermos";
+import UnlockPin from "./components/UnlockPin";
 import ErrorBoundary from "./components/ErrorBoundary";
 
 function Protegida({ children }: { children: ReactElement }) {
@@ -80,6 +86,57 @@ function GateTermos({ onAceito }: { onAceito: () => void }) {
   );
 }
 
+function GateCriptografia({ onDesbloqueado }: { onDesbloqueado: () => void }) {
+  const sessao = getSession();
+  const userId = sessao?.user.id;
+  const token = sessao?.accessToken;
+  const [meta, setMeta] = useState<MetaPin | null>(null);
+  const totalLocal = useLiveQuery(() => db.prontuarios.count(), []);
+
+  useEffect(() => {
+    if (!userId) {
+      setMeta(null);
+      return;
+    }
+    setMeta(lerMetaPin(userId));
+    if (!navigator.onLine) return;
+    let ativo = true;
+    atualizarMetaPin(userId)
+      .then((m) => ativo && setMeta(m))
+      .catch(() => undefined);
+    return () => {
+      ativo = false;
+    };
+  }, [userId, token]);
+
+  if (!userId || !meta || getChave()) return null;
+  if (!meta.tem && !totalLocal) return null;
+  return <UnlockPin temPin={meta.tem} onDesbloqueado={onDesbloqueado} />;
+}
+
+function AvisoBloqueio() {
+  const [visivel, setVisivel] = useState(false);
+
+  useEffect(() => {
+    const mostrar = () => setVisivel(true);
+    window.addEventListener(APP_BLOQUEADO_EVENT, mostrar);
+    return () => window.removeEventListener(APP_BLOQUEADO_EVENT, mostrar);
+  }, []);
+
+  useEffect(() => {
+    if (!visivel) return;
+    const t = window.setTimeout(() => setVisivel(false), 4_000);
+    return () => window.clearTimeout(t);
+  }, [visivel]);
+
+  if (!visivel) return null;
+  return (
+    <div role="alert" className="fixed inset-x-4 top-4 z-50 rounded-lg bg-alt-tint px-4 py-2.5 text-[13px] text-alt shadow-lg">
+      Desbloqueie o app primeiro.
+    </div>
+  );
+}
+
 function Inicio() {
   return <Navigate to={rotaInicial(getSession()?.user.perfil)} replace />;
 }
@@ -107,6 +164,8 @@ export default function App() {
     <div className="device">
       <SessaoAviso />
       <GateTermos onAceito={() => setRecarga((n) => n + 1)} />
+      <GateCriptografia onDesbloqueado={() => setRecarga((n) => n + 1)} />
+      <AvisoBloqueio />
       <Routes key={recarga}>
         <Route path="/login" element={<SomenteVisitante><Login /></SomenteVisitante>} />
         <Route path="/cadastro" element={<SomenteVisitante><Cadastro /></SomenteVisitante>} />

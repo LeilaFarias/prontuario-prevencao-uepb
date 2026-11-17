@@ -3,7 +3,7 @@ import { Controller, useWatch } from "react-hook-form";
 import { useLiveQuery } from "dexie-react-hooks";
 import { Plus, X } from "lucide-react";
 import { conclusaoSchema, type FotoAnexo } from "@prontuario/shared";
-import { db, type LocalProntuario } from "../../db/dexie";
+import { lerProntuarioDecifrado, type LocalProntuario } from "../../db/dexie";
 import { useSecao } from "../../hooks/useSecao";
 import { useSyncStatus } from "../../hooks/useSyncStatus";
 import { comprimirImagem, ErroImagem } from "../../lib/imagem";
@@ -295,7 +295,7 @@ function FormularioConclusao({ prontuario }: { prontuario: LocalProntuario }) {
 }
 
 export default function Conclusao({ prontuarioId }: { prontuarioId: string }) {
-  const prontuario = useLiveQuery(() => db.prontuarios.get(prontuarioId), [prontuarioId]);
+  const prontuario = useLiveQuery(() => lerProntuarioDecifrado(prontuarioId), [prontuarioId]);
   if (!prontuario) return null;
   return <FormularioConclusao prontuario={prontuario} />;
 }
