@@ -1,6 +1,7 @@
 import { RotateCcw } from "lucide-react";
 import { ROTULO_MOTIVO_DEVOLUCAO, type MotivoDevolucao } from "@prontuario/shared";
 import type { LocalProntuario } from "../db/dexie";
+import { usePacienteDecifrado } from "../hooks/usePacienteDecifrado";
 import BottomSheet from "./BottomSheet";
 import { formatarDataHoraCompleta } from "./ficha/revisao/rotulos";
 import { Detalhes, IconeModal } from "./revisao/ModalPartes";
@@ -14,6 +15,7 @@ interface Props {
 }
 
 export default function DevolucaoAlunoModal({ open, onClose, prontuario, onCorrigir, onVerFicha }: Props) {
+  const { pacienteNome, bloqueado } = usePacienteDecifrado(prontuario);
   const motivo = prontuario.motivoDevolucao
     ? (ROTULO_MOTIVO_DEVOLUCAO[prontuario.motivoDevolucao as MotivoDevolucao] ?? prontuario.motivoDevolucao)
     : "";
@@ -35,7 +37,7 @@ export default function DevolucaoAlunoModal({ open, onClose, prontuario, onCorri
       <div className="flex flex-col gap-3">
         <Detalhes
           linhas={[
-            ["Paciente", prontuario.pacienteNome.trim()],
+            ["Paciente", bloqueado ? "Desbloqueie para ver" : pacienteNome.trim()],
             ["Devolvido por", prontuario.devolvidoPorNome ?? ""],
             ["Em", formatarDataHoraCompleta(prontuario.devolvidoEm)],
             ["Motivo", motivo],

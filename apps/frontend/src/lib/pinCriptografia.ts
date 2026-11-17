@@ -2,7 +2,17 @@ import type { UsuarioMe } from "@prontuario/shared";
 import { db, limparDexieLocal, recifrarDadosLocais } from "../db/dexie";
 import { sincronizarParaBaixo } from "../sync/down";
 import { api } from "./api";
-import { PREFIXO_META_PIN, cifrar, decifrar, derivarChave, getChave, setChave } from "./chaveLocal";
+import {
+  PREFIXO_META_PIN,
+  cifrar,
+  cifrarCamposPaciente,
+  decifrar,
+  derivarChave,
+  getChave,
+  pacientePrecisaCifrar,
+  setChave,
+} from "./chaveLocal";
+import { getSession } from "./session";
 
 export interface MetaPin {
   tem: boolean;
@@ -11,6 +21,8 @@ export interface MetaPin {
 }
 
 const CANARIO = "prontuario-pin-ok";
+const MARCADOR_MIGRACAO_NOMES = "migracaoNomesCifrados";
+const VERSAO_MIGRACAO_NOMES = "v1";
 
 const chaveMeta = (userId: string) => `${PREFIXO_META_PIN}${userId}`;
 
@@ -86,6 +98,62 @@ export async function desbloquear(userId: string, pin: string): Promise<boolean>
   return true;
 }
 
+function migracaoNomesConcluida(): boolean {
+  try {
+    return sessionStorage.getItem(MARCADOR_MIGRACAO_NOMES) === VERSAO_MIGRACAO_NOMES;
+  } catch {
+    return false;
+  }
+}
+
+function marcarMigracaoNomes(): void {
+  try {
+    sessionStorage.setItem(MARCADOR_MIGRACAO_NOMES, VERSAO_MIGRACAO_NOMES);
+  } catch {
+  }
+}
+
+export async function migrarNomesCifrados(): Promise<void> {
+  const userId = getSession()?.user.id;
+  const chave = getChave();
+  if (!userId || !chave || !lerMetaPin(userId)?.tem || migracaoNomesConcluida()) return;
+
+  const legados = await db.prontuarios.filter(pacientePrecisaCifrar).toArray();
+  for (const p of legados) {
+    const { pacienteNome, pacienteDataNascimento } = await cifrarCamposPaciente(chave, p);
+    await db.transaction("rw", db.prontuarios, async () => {
+      const atual = await db.prontuarios.get(p.id);
+      if (!atual || atual.pacienteNome !== p.pacienteNome || atual.pacienteDataNascimento !== p.pacienteDataNascimento) {
+        return;
+      }
+      await db.prontuarios.update(p.id, { pacienteNome, pacienteDataNascimento });
+    });
+  }
+
+  const opsLegadas = await db.syncQueue
+    .filter(
+      (o) =>
+        o.entity === "prontuario" &&
+        o.payloadCifrado === undefined &&
+        pacientePrecisaCifrar({
+          pacienteNome: String(o.payload?.pacienteNome ?? ""),
+          pacienteDataNascimento: o.payload?.pacienteDataNascimento as string | undefined,
+        }),
+    )
+    .toArray();
+  for (const op of opsLegadas) {
+    if (op.id === undefined) continue;
+    const payloadCifrado = await cifrar(chave, JSON.stringify(op.payload));
+    await db.transaction("rw", db.syncQueue, async () => {
+      const atual = await db.syncQueue.get(op.id!);
+      if (!atual || atual.payloadCifrado !== undefined) return;
+      await db.syncQueue.update(op.id!, { payloadCifrado, payload: undefined });
+    });
+  }
+
+  marcarMigracaoNomes();
+}
+
 export async function definirPin(userId: string, pin: string, opcoes: { limparLocal: boolean }): Promise<void> {
   await api.put<void>("/users/me/pin-criptografia", { pin });
   const meta = await atualizarMetaPin(userId);
@@ -95,6 +163,7 @@ export async function definirPin(userId: string, pin: string, opcoes: { limparLo
   if (opcoes.limparLocal) await limparDexieLocal();
   setChave(chave);
   if (opcoes.limparLocal) await sincronizarParaBaixo().catch(() => undefined);
+  else await migrarNomesCifrados().catch(() => undefined);
 }
 
 export async function alterarPin(userId: string, pinAtual: string, pinNovo: string): Promise<void> {

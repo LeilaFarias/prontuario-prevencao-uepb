@@ -183,14 +183,16 @@ export default function ListaProntuarios() {
         </p>
         <div className="flex items-center justify-between gap-3">
           <h1 className="font-display text-[28px] font-semibold leading-tight text-ink">Prontuários</h1>
-          <button
-            type="button"
-            onClick={() => navigate("/perfil")}
-            aria-label="Perfil"
-            className="flex h-10 w-10 shrink-0 items-center justify-center rounded-full bg-primary-tint text-[14px] font-semibold text-primary"
-          >
-            {iniciais(usuario?.nome)}
-          </button>
+          <div className="flex items-center gap-2">
+            <button
+              type="button"
+              onClick={() => navigate("/perfil")}
+              aria-label="Perfil"
+              className="flex h-10 w-10 shrink-0 items-center justify-center rounded-full bg-primary-tint text-[14px] font-semibold text-primary"
+            >
+              {iniciais(usuario?.nome)}
+            </button>
+          </div>
         </div>
       </header>
 

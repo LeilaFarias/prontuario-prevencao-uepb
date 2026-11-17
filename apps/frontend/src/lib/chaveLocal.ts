@@ -68,3 +68,56 @@ export async function decifrar(chave: CryptoKey, b64: string): Promise<string> {
   );
   return decodificador.decode(claro);
 }
+
+const PREFIXO_CAMPO_CIFRADO = "enc:";
+
+export interface CamposPaciente {
+  pacienteNome: string;
+  pacienteDataNascimento?: string;
+}
+
+export function campoPacienteCifrado(valor: string | undefined): boolean {
+  return valor?.startsWith(PREFIXO_CAMPO_CIFRADO) ?? false;
+}
+
+export function pacientePrecisaCifrar(p: CamposPaciente): boolean {
+  return (
+    (Boolean(p.pacienteNome) && !campoPacienteCifrado(p.pacienteNome)) ||
+    (Boolean(p.pacienteDataNascimento) && !campoPacienteCifrado(p.pacienteDataNascimento))
+  );
+}
+
+async function cifrarCampo(chave: CryptoKey, valor: string): Promise<string> {
+  if (!valor || campoPacienteCifrado(valor)) return valor;
+  return PREFIXO_CAMPO_CIFRADO + (await cifrar(chave, valor));
+}
+
+async function decifrarCampo(chave: CryptoKey, valor: string): Promise<string> {
+  return valor && campoPacienteCifrado(valor) ? decifrar(chave, valor.slice(PREFIXO_CAMPO_CIFRADO.length)) : valor;
+}
+
+export async function cifrarCamposPaciente<T extends CamposPaciente>(chave: CryptoKey, prontuario: T): Promise<T> {
+  const nascimento = prontuario.pacienteDataNascimento;
+  const [pacienteNome, pacienteDataNascimento] = await Promise.all([
+    cifrarCampo(chave, prontuario.pacienteNome),
+    nascimento ? cifrarCampo(chave, nascimento) : Promise.resolve(nascimento),
+  ]);
+  return { ...prontuario, pacienteNome, pacienteDataNascimento };
+}
+
+export async function decifrarCamposPaciente<T extends CamposPaciente>(chave: CryptoKey, prontuario: T): Promise<T> {
+  const nascimento = prontuario.pacienteDataNascimento;
+  const [pacienteNome, pacienteDataNascimento] = await Promise.all([
+    decifrarCampo(chave, prontuario.pacienteNome),
+    nascimento ? decifrarCampo(chave, nascimento) : Promise.resolve(nascimento),
+  ]);
+  return { ...prontuario, pacienteNome, pacienteDataNascimento };
+}
+
+export function ocultarCamposPaciente<T extends CamposPaciente>(prontuario: T): T {
+  return {
+    ...prontuario,
+    pacienteNome: campoPacienteCifrado(prontuario.pacienteNome) ? "" : prontuario.pacienteNome,
+    pacienteDataNascimento: campoPacienteCifrado(prontuario.pacienteDataNascimento) ? undefined : prontuario.pacienteDataNascimento,
+  };
+}

@@ -12,6 +12,7 @@ import {
   type LucideIcon,
 } from "lucide-react";
 import type { LocalProntuario } from "../db/dexie";
+import { usePacienteDecifrado } from "../hooks/usePacienteDecifrado";
 import { acessoVigente, pedidoPendente, pedidoRecusado, prontuarioBloqueado } from "../lib/acesso";
 import { formatarIdade } from "../lib/idade";
 import { tempoRelativo } from "../lib/tempo";
@@ -49,7 +50,8 @@ function timestamp(iso: string | undefined, padrao: number): number {
 }
 
 export default function ProntuarioCard({ prontuario: p, onAbrir, onSolicitarAcesso, onCorrigir, onDescartar }: Props) {
-  const semNome = p.pacienteNome.trim() === "";
+  const { pacienteNome, pacienteDataNascimento, bloqueado: dadosBloqueados, carregando } = usePacienteDecifrado(p);
+  const semNome = !dadosBloqueados && !carregando && pacienteNome.trim() === "";
   const vigente = acessoVigente(p);
   const recusado = pedidoRecusado(p);
   const bloqueado = prontuarioBloqueado(p) && !recusado;
@@ -77,7 +79,7 @@ export default function ProntuarioCard({ prontuario: p, onAbrir, onSolicitarAces
                 : BADGES.assinado;
   const Icone = badge.icone;
 
-  const idade = p.pacienteDataNascimento ? formatarIdade(p.pacienteDataNascimento) : "";
+  const idade = pacienteDataNascimento ? formatarIdade(pacienteDataNascimento) : "";
   const tempo = tempoRelativo(timestamp(p.status === "devolvido" ? p.devolvidoEm : undefined, p.atualizadoEm));
   const marco = transferido
     ? p.transferidoParaNome
@@ -158,9 +160,11 @@ export default function ProntuarioCard({ prontuario: p, onAbrir, onSolicitarAces
       <div className="flex items-start justify-between gap-2">
         <div className="flex min-w-0 flex-1 items-start gap-1.5">
           <span
-            className={`font-display text-[16px] font-semibold leading-tight ${semNome ? "text-ink-soft" : "text-ink"}`}
+            className={`font-display text-[16px] font-semibold leading-tight ${
+              semNome || dadosBloqueados ? "text-ink-soft" : "text-ink"
+            }`}
           >
-            {semNome ? "Novo prontuário" : p.pacienteNome}
+            {dadosBloqueados ? "Desbloqueie para ver" : carregando ? "…" : semNome ? "Novo prontuário" : pacienteNome}
           </span>
           {mostrarCadeado &&
             (recusado ? (

@@ -1,6 +1,13 @@
 import Dexie, { type Table } from "dexie";
 import { secoesVazias, type HistoricoProntuario } from "@prontuario/shared";
-import { cifrar, decifrar, getChave } from "../lib/chaveLocal";
+import {
+  cifrar,
+  cifrarCamposPaciente,
+  decifrar,
+  decifrarCamposPaciente,
+  getChave,
+  ocultarCamposPaciente,
+} from "../lib/chaveLocal";
 
 export type LocalStatus = "em_andamento" | "enviado" | "assinado" | "devolvido" | "transferido";
 
@@ -74,7 +81,8 @@ export interface LocalSyncOp {
   op: "create" | "update" | "delete" | "enviar" | "reabrir" | "descartar";
   entity: "prontuario" | "secao" | "procedimento" | "anexo";
   entityId: string;
-  payload: Record<string, unknown>;
+  payload?: Record<string, unknown>;
+  payloadCifrado?: string;
   ts: number;
 }
 
@@ -137,8 +145,9 @@ async function decifrarSecoes(chave: CryptoKey, secoes: Record<string, unknown>)
 
 export async function decifrarProntuario(p: LocalProntuario): Promise<LocalProntuario> {
   const chave = getChave();
-  if (!chave) return { ...p, secoes: {} };
-  return { ...p, secoes: await decifrarSecoes(chave, p.secoes) };
+  if (!chave) return { ...ocultarCamposPaciente(p), secoes: {} };
+  const [comCampos, secoes] = await Promise.all([decifrarCamposPaciente(chave, p), decifrarSecoes(chave, p.secoes)]);
+  return { ...comCampos, secoes };
 }
 
 export async function lerProntuarioDecifrado(id: string): Promise<LocalProntuario | undefined> {
@@ -150,23 +159,31 @@ export async function recifrarDadosLocais(antiga: CryptoKey, nova: CryptoKey): P
   for (;;) {
     const [prontuarios, fila] = await Promise.all([db.prontuarios.toArray(), db.syncQueue.toArray()]);
 
-    const secoesNovas = new Map<string, Record<string, unknown>>();
+    const prontuariosNovos = new Map<string, Pick<LocalProntuario, "secoes" | "pacienteNome" | "pacienteDataNascimento">>();
     for (const p of prontuarios) {
       const claras = await decifrarSecoes(antiga, p.secoes);
       const recifradas: Record<string, unknown> = {};
       for (const [id, valor] of Object.entries(p.secoes)) {
         recifradas[id] = typeof valor === "string" ? await cifrar(nova, JSON.stringify(claras[id])) : valor;
       }
-      secoesNovas.set(p.id, recifradas);
+      const { pacienteNome, pacienteDataNascimento } = await cifrarCamposPaciente(
+        nova,
+        await decifrarCamposPaciente(antiga, p),
+      );
+      prontuariosNovos.set(p.id, { secoes: recifradas, pacienteNome, pacienteDataNascimento });
     }
 
-    const payloadsNovos = new Map<number, Record<string, unknown>>();
+    const opsNovas = new Map<number, Pick<LocalSyncOp, "payload" | "payloadCifrado">>();
     for (const op of fila) {
-      const cifrado = op.payload.conteudoCifrado;
-      if (op.id === undefined || typeof cifrado !== "string") continue;
-      payloadsNovos.set(op.id, {
-        ...op.payload,
-        conteudoCifrado: await cifrar(nova, await decifrar(antiga, cifrado)),
+      if (op.id === undefined) continue;
+      if (typeof op.payloadCifrado === "string") {
+        opsNovas.set(op.id, { payloadCifrado: await cifrar(nova, await decifrar(antiga, op.payloadCifrado)) });
+        continue;
+      }
+      const cifrado = op.payload?.conteudoCifrado;
+      if (typeof cifrado !== "string") continue;
+      opsNovas.set(op.id, {
+        payload: { ...op.payload, conteudoCifrado: await cifrar(nova, await decifrar(antiga, cifrado)) },
       });
     }
 
@@ -176,8 +193,8 @@ export async function recifrarDadosLocais(antiga: CryptoKey, nova: CryptoKey): P
     const aplicado = await db.transaction("rw", db.prontuarios, db.syncQueue, async () => {
       const [prontuariosAgora, filaAgora] = await Promise.all([db.prontuarios.toArray(), db.syncQueue.toArray()]);
       if (assinatura(prontuariosAgora, filaAgora) !== assinatura(prontuarios, fila)) return false;
-      for (const [id, secoes] of secoesNovas) await db.prontuarios.update(id, { secoes });
-      for (const [id, payload] of payloadsNovos) await db.syncQueue.update(id, { payload });
+      for (const [id, campos] of prontuariosNovos) await db.prontuarios.update(id, campos);
+      for (const [id, campos] of opsNovas) await db.syncQueue.update(id, campos);
       return true;
     });
     if (aplicado) return;

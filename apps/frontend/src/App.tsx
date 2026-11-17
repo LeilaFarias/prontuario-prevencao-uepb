@@ -5,7 +5,7 @@ import type { UsuarioMe } from "@prontuario/shared";
 import { db } from "./db/dexie";
 import { api, EVENTO_TERMOS_NAO_ACEITOS } from "./lib/api";
 import { getChave } from "./lib/chaveLocal";
-import { atualizarMetaPin, lerMetaPin, type MetaPin } from "./lib/pinCriptografia";
+import { atualizarMetaPin, lerMetaPin, migrarNomesCifrados, type MetaPin } from "./lib/pinCriptografia";
 import { getSession } from "./lib/session";
 import { APP_BLOQUEADO_EVENT } from "./sync/queue";
 import { atualizarCacheProfessores } from "./sync/professores";
@@ -145,6 +145,10 @@ export default function App() {
   useLocation();
   const token = getSession()?.accessToken;
   const [recarga, setRecarga] = useState(0);
+
+  useEffect(() => {
+    migrarNomesCifrados().catch((erro: unknown) => console.warn("[migracao] nomes de pacientes:", erro));
+  }, [token, recarga]);
 
   useEffect(() => {
     void atualizarCacheProfessores();

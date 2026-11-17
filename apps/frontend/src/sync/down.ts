@@ -2,7 +2,7 @@ import type { HistoricoProntuario } from "@prontuario/shared";
 import { cifrarSecoes, db, type LocalProntuario, type LocalStatus } from "../db/dexie";
 import { api, TIMEOUT_SYNC_MS } from "../lib/api";
 import { avisoJaVisto, marcadorDeAviso } from "../lib/avisosVistos";
-import { getChave } from "../lib/chaveLocal";
+import { cifrarCamposPaciente, getChave } from "../lib/chaveLocal";
 import { getSession } from "../lib/session";
 import { flushAtivoDesde, notifyChanged } from "./queue";
 
@@ -124,10 +124,16 @@ export function buscarDetalhe(id: string): Promise<ProntuarioRemoto> {
 }
 
 export async function aplicarRemoto(remoto: ProntuarioRemoto): Promise<boolean> {
-  const remotoEm = paraTimestamp(remoto.atualizadoEm);
   const chave = getChave();
-  const secoesCifradas = chave ? await cifrarSecoes(chave, remoto.secoes ?? {}) : null;
-  const secoesPendentes = secoesCifradas === null;
+  if (!chave) return false;
+  const remotoEm = paraTimestamp(remoto.atualizadoEm);
+  const [secoesCifradas, paciente] = await Promise.all([
+    cifrarSecoes(chave, remoto.secoes ?? {}),
+    cifrarCamposPaciente(chave, {
+      pacienteNome: remoto.pacienteNome,
+      pacienteDataNascimento: remoto.pacienteDataNascimento ?? undefined,
+    }),
+  ]);
 
   return db.transaction("rw", db.prontuarios, db.syncQueue, async () => {
     const local = await db.prontuarios.get(remoto.id);
@@ -142,15 +148,15 @@ export async function aplicarRemoto(remoto: ProntuarioRemoto): Promise<boolean> 
       );
       await db.prontuarios.add({
         id: remoto.id,
-        pacienteNome: remoto.pacienteNome,
-        pacienteDataNascimento: remoto.pacienteDataNascimento ?? undefined,
+        pacienteNome: paciente.pacienteNome,
+        pacienteDataNascimento: paciente.pacienteDataNascimento,
         status,
         ...camposDeRevisao(remoto),
         ...camposDeTransferencia(remoto),
         acessoRecusadoEm: remoto.acessoRecusadoEm ?? undefined,
         vistoPeloAluno: visto,
-        secoes: secoesCifradas ?? {},
-        secoesPendentes,
+        secoes: secoesCifradas,
+        secoesPendentes: false,
         criadoEm: paraTimestamp(remoto.criadoEm),
         atualizadoEm: remotoEm,
         sincronizado: true,
@@ -195,19 +201,19 @@ export async function aplicarRemoto(remoto: ProntuarioRemoto): Promise<boolean> 
       return true;
     }
 
-    if (remotoEm <= local.atualizadoEm && !acessoMudou && !(local.secoesPendentes && chave)) return false;
+    if (remotoEm <= local.atualizadoEm && !acessoMudou && !local.secoesPendentes) return false;
 
     await db.prontuarios.put({
       ...local,
-      pacienteNome: remoto.pacienteNome,
-      pacienteDataNascimento: remoto.pacienteDataNascimento ?? local.pacienteDataNascimento,
+      pacienteNome: paciente.pacienteNome,
+      pacienteDataNascimento: paciente.pacienteDataNascimento ?? local.pacienteDataNascimento,
       status: novoStatus,
       ...camposDeRevisao(remoto),
       ...camposDeTransferencia(remoto, local),
       acessoRecusadoEm: remoto.acessoRecusadoEm ?? undefined,
       vistoPeloAluno: novoStatus === local.status ? local.vistoPeloAluno : false,
-      secoes: { ...local.secoes, ...(secoesCifradas ?? {}) },
-      secoesPendentes,
+      secoes: { ...local.secoes, ...secoesCifradas },
+      secoesPendentes: false,
       atualizadoEm: remotoEm,
       sincronizado: true,
       alunoTitularId: remoto.alunoTitularId,
@@ -243,9 +249,12 @@ export async function sincronizarParaBaixo(): Promise<void> {
   const inicio = Date.now();
   const resumos = await buscarResumos();
   await sincronizarProfessoresLiberacao();
+  const desbloqueado = getChave() !== null;
   const alvos: ProntuarioRemotoResumo[] = [];
-  for (const r of resumos) {
-    if (await precisaAtualizar(r)) alvos.push(r);
+  if (desbloqueado) {
+    for (const r of resumos) {
+      if (await precisaAtualizar(r)) alvos.push(r);
+    }
   }
 
   let alterou = flushAtivoDesde(inicio) ? false : await removerTransferidos(resumos);
@@ -261,9 +270,11 @@ export async function sincronizarParaBaixo(): Promise<void> {
     if (resultados.every((res) => res.status === "rejected")) break;
   }
 
-  try {
-    localStorage.setItem(ULTIMO_SYNC_DOWN_KEY, String(Date.now()));
-  } catch {
+  if (desbloqueado) {
+    try {
+      localStorage.setItem(ULTIMO_SYNC_DOWN_KEY, String(Date.now()));
+    } catch {
+    }
   }
   if (alterou) notifyChanged();
 }
