@@ -1,6 +1,7 @@
 import type { HistoricoProntuario } from "@prontuario/shared";
 import { cifrarSecoes, db, type LocalProntuario, type LocalStatus } from "../db/dexie";
 import { api, TIMEOUT_SYNC_MS } from "../lib/api";
+import { acessoVigente } from "../lib/acesso";
 import { avisoJaVisto, marcadorDeAviso } from "../lib/avisosVistos";
 import { cifrarCamposPaciente, getChave } from "../lib/chaveLocal";
 import { getSession } from "../lib/session";
@@ -80,6 +81,36 @@ function camposDeTransferencia(remoto: ProntuarioRemoto, local?: LocalProntuario
   };
 }
 
+type CamposAcessoLocal = Pick<
+  LocalProntuario,
+  "acessoSolicitadoEm" | "acessoExpiraEm" | "acessoRevogadoEm" | "acessoRecusadoEm"
+>;
+
+async function acessoEfetivo(remoto: ProntuarioRemoto): Promise<CamposAcessoLocal> {
+  const doServidor: CamposAcessoLocal = {
+    acessoSolicitadoEm: remoto.acessoSolicitadoEm ?? undefined,
+    acessoExpiraEm: remoto.acessoExpiraEm ?? undefined,
+    acessoRevogadoEm: remoto.acessoRevogadoEm ?? undefined,
+    acessoRecusadoEm: remoto.acessoRecusadoEm ?? undefined,
+  };
+  const agora = Date.now();
+  if (acessoVigente(doServidor, agora)) return doServidor;
+
+  const revogadoEm = doServidor.acessoRevogadoEm ? new Date(doServidor.acessoRevogadoEm).getTime() : null;
+  const liberacoes = await db.liberacoesOffline.where("prontuarioId").equals(remoto.id).toArray();
+  const liberacao = liberacoes
+    .filter((l) => l.expiresAt > agora && (revogadoEm === null || l.liberadoEm > revogadoEm))
+    .sort((a, b) => b.expiresAt - a.expiresAt)[0];
+  if (!liberacao) return doServidor;
+
+  return {
+    acessoSolicitadoEm: undefined,
+    acessoExpiraEm: new Date(liberacao.expiresAt).toISOString(),
+    acessoRevogadoEm: undefined,
+    acessoRecusadoEm: undefined,
+  };
+}
+
 function paraTimestamp(iso: string): number {
   const t = new Date(iso).getTime();
   return Number.isFinite(t) ? t : 0;
@@ -135,9 +166,10 @@ export async function aplicarRemoto(remoto: ProntuarioRemoto): Promise<boolean> 
     }),
   ]);
 
-  return db.transaction("rw", db.prontuarios, db.syncQueue, async () => {
+  return db.transaction("rw", db.prontuarios, db.syncQueue, db.liberacoesOffline, async () => {
     const local = await db.prontuarios.get(remoto.id);
     if (local?.descartadoEm) return false;
+    const acesso = await acessoEfetivo(remoto);
 
     if (!local) {
       const status = normalizarStatus(remoto.status);
@@ -153,7 +185,7 @@ export async function aplicarRemoto(remoto: ProntuarioRemoto): Promise<boolean> 
         status,
         ...camposDeRevisao(remoto),
         ...camposDeTransferencia(remoto),
-        acessoRecusadoEm: remoto.acessoRecusadoEm ?? undefined,
+        ...acesso,
         vistoPeloAluno: visto,
         secoes: secoesCifradas,
         secoesPendentes: false,
@@ -170,10 +202,10 @@ export async function aplicarRemoto(remoto: ProntuarioRemoto): Promise<boolean> 
     const novoStatus = normalizarStatus(remoto.status);
 
     const acessoMudou =
-      remoto.acessoSolicitadoEm !== (local.acessoSolicitadoEm ?? null) ||
-      remoto.acessoExpiraEm !== (local.acessoExpiraEm ?? null) ||
-      remoto.acessoRevogadoEm !== (local.acessoRevogadoEm ?? null) ||
-      remoto.acessoRecusadoEm !== (local.acessoRecusadoEm ?? null) ||
+      (acesso.acessoSolicitadoEm ?? null) !== (local.acessoSolicitadoEm ?? null) ||
+      (acesso.acessoExpiraEm ?? null) !== (local.acessoExpiraEm ?? null) ||
+      (acesso.acessoRevogadoEm ?? null) !== (local.acessoRevogadoEm ?? null) ||
+      (acesso.acessoRecusadoEm ?? null) !== (local.acessoRecusadoEm ?? null) ||
       novoStatus !== local.status ||
       (remoto.sinalizadoDuplicidade === 1) !== Boolean(local.sinalizadoDuplicidade) ||
       (remoto.duplicidadeEmAnalise === 1) !== Boolean(local.duplicidadeEmAnalise) ||
@@ -187,10 +219,7 @@ export async function aplicarRemoto(remoto: ProntuarioRemoto): Promise<boolean> 
       await db.prontuarios.put({
         ...local,
         status: novoStatus,
-        acessoSolicitadoEm: remoto.acessoSolicitadoEm ?? undefined,
-        acessoExpiraEm: remoto.acessoExpiraEm ?? undefined,
-        acessoRevogadoEm: remoto.acessoRevogadoEm ?? undefined,
-        acessoRecusadoEm: remoto.acessoRecusadoEm ?? undefined,
+        ...acesso,
         professorSupervisorId: remoto.professorSupervisorId ?? undefined,
         professorSupervisorNome: remoto.professorSupervisorNome ?? undefined,
         sinalizadoDuplicidade: remoto.sinalizadoDuplicidade === 1,
@@ -210,7 +239,7 @@ export async function aplicarRemoto(remoto: ProntuarioRemoto): Promise<boolean> 
       status: novoStatus,
       ...camposDeRevisao(remoto),
       ...camposDeTransferencia(remoto, local),
-      acessoRecusadoEm: remoto.acessoRecusadoEm ?? undefined,
+      ...acesso,
       vistoPeloAluno: novoStatus === local.status ? local.vistoPeloAluno : false,
       secoes: { ...local.secoes, ...secoesCifradas },
       secoesPendentes: false,

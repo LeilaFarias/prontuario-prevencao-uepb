@@ -87,6 +87,7 @@ function GateTermos({ onAceito }: { onAceito: () => void }) {
 }
 
 function GateCriptografia({ onDesbloqueado }: { onDesbloqueado: () => void }) {
+  const { pathname } = useLocation();
   const sessao = getSession();
   const userId = sessao?.user.id;
   const token = sessao?.accessToken;
@@ -109,6 +110,9 @@ function GateCriptografia({ onDesbloqueado }: { onDesbloqueado: () => void }) {
     };
   }, [userId, token]);
 
+  // A redefinição de senha é um fluxo de recuperação da conta e não precisa
+  // desbloquear os prontuários locais para ser concluída.
+  if (pathname === "/redefinir-senha") return null;
   if (!userId || !meta || getChave()) return null;
   if (!meta.tem && !totalLocal) return null;
   return <UnlockPin temPin={meta.tem} onDesbloqueado={onDesbloqueado} />;
