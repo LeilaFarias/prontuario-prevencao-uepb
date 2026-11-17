@@ -1,5 +1,6 @@
 import { randomUUID } from "node:crypto";
 import type { FastifyPluginAsync } from "fastify";
+import { z } from "zod";
 import { loginSchema, signupSchema, type LoginResponse } from "@prontuario/shared";
 import { executar, uma } from "../db";
 import { env } from "../env";
@@ -32,6 +33,13 @@ app.post("/auth/signup", async (req, reply) => {
     });
   }
 
+  if (dados.perfil === "professor") {
+    const { inviteCode } = z.object({ inviteCode: z.string().optional() }).parse(req.body);
+    if (!env.PROFESSOR_INVITE_CODE || inviteCode !== env.PROFESSOR_INVITE_CODE) {
+      return reply.status(400).send({ message: "Código de convite inválido.", codigo: "CONVITE_INVALIDO" });
+    }
+  }
+
   const matricula = dados.perfil === "professor" ? dados.matricula || null : null;
 
   const existente = await uma<{ id: string; ativo: boolean }>(
@@ -40,8 +48,14 @@ app.post("/auth/signup", async (req, reply) => {
     [dados.email],
   );
 
-  if (existente && existente.ativo) {
-    return reply.status(409).send({ message: "Já existe uma conta com este e-mail." });
+  if (existente) {
+    if (existente.ativo) {
+      return reply.status(409).send({ message: "Já existe uma conta com este e-mail." });
+    }
+    return reply.status(400).send({
+      message: "Não foi possível criar a conta com este e-mail.",
+      codigo: "EMAIL_INDISPONIVEL",
+    });
   }
 
   if (matricula) {
@@ -51,28 +65,12 @@ app.post("/auth/signup", async (req, reply) => {
       [matricula],
     );
 
-    if (matriculaExistente && matriculaExistente.id !== existente?.id) {
+    if (matriculaExistente) {
       return reply.status(409).send({ message: "Esta matrícula já está cadastrada." });
     }
   }
 
   const senhaHash = await hashSenha(dados.senha);
-
-  if (existente) {
-    await executar(
-      db,
-      `UPDATE "Usuario"
-       SET "ativo" = TRUE,
-           "nome" = $1,
-           "senhaHash" = $2,
-           "perfil" = $3,
-           "matricula" = $4
-       WHERE "id" = $5`,
-      [dados.nome, senhaHash, dados.perfil.toUpperCase(), matricula, existente.id],
-    );
-
-    return reply.status(200).send({ id: existente.id, reativada: true });
-  }
 
   const id = randomUUID();
   await executar(

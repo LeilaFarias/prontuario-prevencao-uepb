@@ -48,10 +48,28 @@ export interface LocalProfessor {
   matricula: string;
 }
 
+export interface LocalProfessorLiberacao {
+  professorId: string;
+  nome: string;
+  pinHashClient: string;
+  saltClient: string;
+  sincronizadoEm: number;
+}
+
+export interface LocalLiberacaoOffline {
+  id: string;
+  alunoId: string;
+  professorId: string;
+  prontuarioId: string;
+  liberadoEm: number;
+  expiresAt: number;
+  sincronizado: boolean;
+}
+
 export interface LocalSyncOp {
   id?: number;
   prontuarioId: string;
-  op: "create" | "update" | "delete" | "enviar" | "reabrir" | "liberacao-manual" | "descartar";
+  op: "create" | "update" | "delete" | "enviar" | "reabrir" | "descartar";
   entity: "prontuario" | "secao" | "procedimento" | "anexo";
   entityId: string;
   payload: Record<string, unknown>;
@@ -63,6 +81,8 @@ class ProntuarioDB extends Dexie {
   syncQueue!: Table<LocalSyncOp, number>;
   planosProfessor!: Table<LocalPlanoProfessor, string>;
   professores!: Table<LocalProfessor, string>;
+  professoresLiberacao!: Table<LocalProfessorLiberacao, string>;
+  liberacoesOffline!: Table<LocalLiberacaoOffline, string>;
 
   constructor() {
     super("prontuario-digital");
@@ -75,6 +95,10 @@ class ProntuarioDB extends Dexie {
     });
     this.version(3).stores({
       professores: "id, matricula",
+    });
+    this.version(4).stores({
+      professoresLiberacao: "professorId",
+      liberacoesOffline: "id, alunoId, prontuarioId",
     });
   }
 }
@@ -100,4 +124,30 @@ export function podeEnviarNaFila(
 ): boolean {
   if (p.status !== "enviado" && p.status !== "assinado") return true;
   return temAcessoVigente(p);
+}
+
+export async function liberacaoOfflineVigente(
+  prontuarioId: string,
+  agora: number = Date.now(),
+): Promise<LocalLiberacaoOffline | undefined> {
+  const [liberacoes, pront] = await Promise.all([
+    db.liberacoesOffline.where("prontuarioId").equals(prontuarioId).toArray(),
+    db.prontuarios.get(prontuarioId),
+  ]);
+  const revogadoEm = pront?.acessoRevogadoEm ? new Date(pront.acessoRevogadoEm).getTime() : null;
+  return liberacoes
+    .filter((l) => l.expiresAt > agora && (revogadoEm === null || l.liberadoEm > revogadoEm))
+    .sort((a, b) => b.expiresAt - a.expiresAt)[0];
+}
+
+export async function aplicarLiberacaoOffline(prontuarioId: string): Promise<void> {
+  const liberacao = await liberacaoOfflineVigente(prontuarioId);
+  if (!liberacao) return;
+  const pront = await db.prontuarios.get(prontuarioId);
+  if (!pront || temAcessoVigente(pront)) return;
+  await db.prontuarios.update(prontuarioId, {
+    acessoExpiraEm: new Date(liberacao.expiresAt).toISOString(),
+    acessoRevogadoEm: undefined,
+    acessoRecusadoEm: undefined,
+  });
 }

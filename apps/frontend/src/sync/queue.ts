@@ -8,7 +8,7 @@ import {
 } from "@prontuario/shared";
 import { db } from "../db/dexie";
 import type { LocalProntuario } from "../db/dexie";
-import { ApiError, api } from "../lib/api";
+import { ApiError, api, TIMEOUT_FLUSH_MS } from "../lib/api";
 import { ACESSO_EXPIRADO_EVENT, acessoVigente } from "../lib/acesso";
 import { marcadorDeAviso, registrarAvisoVisto } from "../lib/avisosVistos";
 import { getSession } from "../lib/session";
@@ -17,7 +17,9 @@ import { uuid } from "../lib/uuid";
 export const SYNC_EVENT = "sync:changed";
 export const ULTIMO_SALVAMENTO_KEY = "prontuario:ultimoSalvamento";
 const INTERVALO_MS = 30_000;
+const DEBOUNCE_ONLINE_MS = 2_000;
 const LOTE = 200;
+const OPS_SUPORTADAS: ReadonlySet<string> = new Set(["create", "update", "delete", "enviar", "reabrir", "descartar"]);
 const ACESSO_DURACAO_MS = 4 * 60 * 60 * 1000;
 
 function registrarSalvamento(ts: number): void {
@@ -117,8 +119,6 @@ export async function salvarSecaoLocal(
             assinadoEm: undefined,
             assinadoPorNome: undefined,
             acessoSolicitadoEm: undefined,
-            acessoExpiraEm: undefined,
-            acessoRevogadoEm: undefined,
           }
         : {}),
       ...(novoNome ? { pacienteNome: novoNome } : {}),
@@ -166,21 +166,29 @@ export async function salvarSecaoLocal(
 }
 
 let emVoo: Promise<void> | null = null;
+let ultimoFlushConcluidoEm = 0;
+
+export function flushAtivoDesde(ts: number): boolean {
+  return emVoo !== null || ultimoFlushConcluidoEm >= ts;
+}
 
 export function flush(): Promise<void> {
   if (!navigator.onLine) return Promise.resolve();
   if (emVoo) return emVoo;
   emVoo = executarFlush().finally(() => {
     emVoo = null;
+    ultimoFlushConcluidoEm = Date.now();
   });
   return emVoo;
 }
 
 async function executarFlush(): Promise<void> {
   try {
-    for (;;) {
+    await db.syncQueue.filter((o) => !OPS_SUPORTADAS.has(o.op)).delete();
+    for (let primeira = true; ; primeira = false) {
       const lote = await db.syncQueue.toCollection().limit(LOTE).toArray();
-      if (lote.length === 0) break;
+      const liberacoes = primeira ? await db.liberacoesOffline.filter((l) => !l.sincronizado).toArray() : [];
+      if (lote.length === 0 && liberacoes.length === 0) break;
 
       const prontCache = new Map<string, LocalProntuario | undefined>();
 
@@ -203,11 +211,30 @@ async function executarFlush(): Promise<void> {
         if (!bloqueado) enviar.push(op);
       }
 
-      if (enviar.length === 0) break; 
+      if (enviar.length === 0 && liberacoes.length === 0) break;
 
       const resposta = await api.post<SyncResponse>("/sync", {
-        operations: enviar.map(({ id: _id, ...op }) => op),
-      });
+        operations: [
+          ...enviar.map(({ id: _id, ...op }) => op),
+          ...liberacoes.map((l) => ({
+            prontuarioId: l.prontuarioId,
+            op: "liberacao-offline" as const,
+            entity: "prontuario" as const,
+            entityId: l.id,
+            payload: {
+              professorId: l.professorId,
+              prontuarioId: l.prontuarioId,
+              liberadoEm: l.liberadoEm,
+              expiresAt: l.expiresAt,
+            },
+            ts: l.liberadoEm,
+          })),
+        ],
+      }, { timeoutMs: TIMEOUT_FLUSH_MS });
+
+      if (liberacoes.length > 0) {
+        await Promise.all(liberacoes.map((l) => db.liberacoesOffline.update(l.id, { sincronizado: true })));
+      }
 
       const bloqueadasBackend = new Set(resposta.acessoExpirado ?? []);
       const apagar = enviar.filter((op) => !bloqueadasBackend.has(op.prontuarioId));
@@ -417,24 +444,28 @@ export async function descartarRascunhoLocal(prontuarioId: string): Promise<bool
   return descartado;
 }
 
-export async function liberarAcessoManual(prontuarioId: string, matricula: string): Promise<string> {
-  const agora = Date.now();
-  const acessoExpiraEm = new Date(agora + ACESSO_DURACAO_MS).toISOString();
+export async function liberarAcessoOffline(prontuarioId: string, professorId: string): Promise<string> {
+  const alunoId = getSession()?.user.id;
+  if (!alunoId) throw new Error("Sessão não encontrada");
 
-  await db.transaction("rw", db.prontuarios, db.syncQueue, async () => {
+  const agora = Date.now();
+  const expiresAt = agora + ACESSO_DURACAO_MS;
+  const acessoExpiraEm = new Date(expiresAt).toISOString();
+
+  await db.transaction("rw", db.prontuarios, db.liberacoesOffline, async () => {
+    await db.liberacoesOffline.add({
+      id: crypto.randomUUID(),
+      alunoId,
+      professorId,
+      prontuarioId,
+      liberadoEm: agora,
+      expiresAt,
+      sincronizado: false,
+    });
     await db.prontuarios.update(prontuarioId, {
       acessoExpiraEm,
       acessoRevogadoEm: undefined,
       acessoRecusadoEm: undefined,
-      sincronizado: false,
-    });
-    await db.syncQueue.add({
-      prontuarioId,
-      op: "liberacao-manual",
-      entity: "prontuario",
-      entityId: prontuarioId,
-      payload: { matricula, acessoExpiraEm },
-      ts: agora,
     });
   });
 
@@ -451,11 +482,15 @@ export async function marcarComoVisto(prontuarioId: string): Promise<void> {
 }
 
 let iniciado = false;
+let agendadoOnline: number | undefined;
 
 export function startSyncLoop(): void {
   if (iniciado) return;
   iniciado = true;
   window.setInterval(() => void flush(), INTERVALO_MS);
-  window.addEventListener("online", () => void flush());
+  window.addEventListener("online", () => {
+    window.clearTimeout(agendadoOnline);
+    agendadoOnline = window.setTimeout(() => void flush(), DEBOUNCE_ONLINE_MS);
+  });
   void flush();
 }

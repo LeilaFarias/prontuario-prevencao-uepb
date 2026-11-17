@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useReducer, useRef, useState } from "react";
 import { useLiveQuery } from "dexie-react-hooks";
 import { useNavigate, useParams, useSearchParams } from "react-router-dom";
-import { ArrowRightLeft, Check, Clock, RotateCcw, Send, Unlock, X } from "lucide-react";
+import { ArrowRightLeft, Check, Clock, RefreshCw, RotateCcw, Send, Unlock, X } from "lucide-react";
 import { SECOES, type SecaoId } from "@prontuario/shared";
 import Consentimento from "../components/ficha/Consentimento";
 import Conclusao from "../components/ficha/Conclusao";
@@ -24,8 +24,9 @@ import TelaBloqueio from "../components/TelaBloqueio";
 import TimerAcesso from "../components/TimerAcesso";
 import Topbar from "../components/Topbar";
 import LiberacaoManualModal from "../components/LiberacaoManualModal";
-import { db, type LocalProntuario, type LocalStatus } from "../db/dexie";
+import { aplicarLiberacaoOffline, db, type LocalProntuario, type LocalStatus } from "../db/dexie";
 import { useProntuarioSync } from "../hooks/useProntuarioSync";
+import { usePuxarParaAtualizar } from "../hooks/usePuxarParaAtualizar";
 import { salvarSecoesPendentes } from "../hooks/useSecao";
 import { ACESSO_EXPIRADO_EVENT, acessoVigente, pedidoPendente, pedidoRecusado } from "../lib/acesso";
 import { confirmarInvalidacaoAssinatura, registrarConfirmadorInvalidacao } from "../lib/invalidacaoAssinatura";
@@ -46,12 +47,30 @@ function TempoDesde({ iso }: { iso: string }) {
   return <>{tempoRelativo(new Date(iso).getTime(), agora)}</>;
 }
 
+function EsqueletoProntuario({ onVoltar }: { onVoltar: () => void }) {
+  return (
+    <div className="flex flex-1 flex-col" aria-busy="true">
+      <Topbar titulo="Prontuário" onVoltar={onVoltar} />
+      <div className="mx-5 mt-2 flex gap-2 overflow-hidden">
+        {[0, 1, 2, 3].map((i) => (
+          <div key={i} className="h-8 w-24 shrink-0 animate-pulse rounded-pill bg-line-soft" />
+        ))}
+      </div>
+      <div className="mx-5 mt-4 flex flex-col gap-3">
+        <div className="h-24 animate-pulse rounded-card bg-line-soft" />
+        <div className="h-24 animate-pulse rounded-card bg-line-soft" />
+      </div>
+    </div>
+  );
+}
+
 export default function Prontuario() {
   const { id } = useParams<{ id: string }>();
   const navigate = useNavigate();
   const [params] = useSearchParams();
   const modoLeitura = params.get("modo") === "leitura";
-  const { carregando: sincronizando, versao, recarregar } = useProntuarioSync(id);
+  const { carregando: sincronizando, semConexao, versao, recarregar } = useProntuarioSync(id);
+  const { puxando, atualizando } = usePuxarParaAtualizar(recarregar);
   const [verDevolucao, setVerDevolucao] = useState(false);
   const [modalSolicitar, setModalSolicitar] = useState(false);
   const [confirmacaoAberta, setConfirmacaoAberta] = useState(false);
@@ -66,6 +85,7 @@ export default function Prontuario() {
 
   const [estado, setEstado] = useState<"carregando" | "ok" | "nao-encontrado">("carregando");
   const [pront, setPront] = useState<LocalProntuario | null>(null);
+  const prontRef = useRef<LocalProntuario | null>(null);
   const [indice, setIndice] = useState(0);
   const vivo = useLiveQuery(async () => (id ? await db.prontuarios.get(id) : undefined), [id]);
   const nomeAoVivo = vivo?.pacienteNome;
@@ -82,17 +102,34 @@ export default function Prontuario() {
   useEffect(() => {
     let ativo = true;
     if (!id) return;
-    void db.prontuarios.get(id).then((p) => {
-      if (!ativo) return;
-      if (!p || p.descartadoEm) return setEstado("nao-encontrado");
-      setPront(p);
-      const doBanco = Object.fromEntries(
-        Object.entries(p.secoes).map(([secao, c]) => [secao, String(c?.texto ?? "")]),
-      );
-      const digitando = pendente.current;
-      setValores(digitando ? { ...doBanco, [digitando.secaoId]: digitando.texto } : doBanco);
-      setEstado("ok");
-    });
+    if (prontRef.current && prontRef.current.id !== id) {
+      prontRef.current = null;
+      setPront(null);
+      setValores({});
+      setEstado("carregando");
+    }
+    void aplicarLiberacaoOffline(id)
+      .then(() => db.prontuarios.get(id))
+      .then((p) => {
+        if (!ativo) return;
+        if (p?.descartadoEm) return setEstado("nao-encontrado");
+        if (!p) {
+          if (prontRef.current?.id !== id) setEstado("nao-encontrado");
+          return;
+        }
+        prontRef.current = p;
+        setPront(p);
+        const doBanco = Object.fromEntries(
+          Object.entries(p.secoes).map(([secao, c]) => [secao, String(c?.texto ?? "")]),
+        );
+        const digitando = pendente.current;
+        setValores(digitando ? { ...doBanco, [digitando.secaoId]: digitando.texto } : doBanco);
+        setEstado("ok");
+      })
+      .catch((erro: unknown) => {
+        console.warn("[prontuario] falha ao ler dados locais:", erro);
+        if (ativo && prontRef.current?.id !== id) setEstado("nao-encontrado");
+      });
     return () => {
       ativo = false;
     };
@@ -260,7 +297,7 @@ export default function Prontuario() {
   }
 
   if (estado === "carregando" || (estado === "nao-encontrado" && sincronizando)) {
-    return <div className="flex-1" />;
+    return <EsqueletoProntuario onVoltar={() => navigate("/prontuarios")} />;
   }
 
   if (estado === "nao-encontrado" || !pront) {
@@ -344,6 +381,7 @@ export default function Prontuario() {
             open
             onClose={() => setModalManual(false)}
             prontuarioId={atual.id}
+            professorSupervisorId={atual.professorSupervisorId}
             pacienteNome={nomeExibido}
             onLiberado={() => {
               setModalManual(false);
@@ -424,6 +462,21 @@ export default function Prontuario() {
         onVoltar={() => navigate("/prontuarios")}
       />
       <StatusBar className="mx-5 mb-2" />
+
+      {semConexao && (
+        <p role="status" className="mx-5 mb-2 rounded-lg bg-alt-tint px-3 py-1.5 text-[12.5px] text-alt">
+          Sem conexão — dados locais
+        </p>
+      )}
+
+      {(puxando || atualizando) && (
+        <div role="status" className="pointer-events-none fixed inset-x-0 top-3 z-40 flex justify-center">
+          <span className="inline-flex items-center gap-1.5 rounded-pill bg-sync-tint px-3 py-1 text-[12px] font-semibold text-sync shadow">
+            <RefreshCw size={12} className={atualizando ? "animate-spin" : ""} aria-hidden="true" />
+            {atualizando ? "Atualizando…" : "Solte para atualizar"}
+          </span>
+        </div>
+      )}
 
       {bannerStatus && <div className="mx-5 mb-2">{bannerStatus}</div>}
 

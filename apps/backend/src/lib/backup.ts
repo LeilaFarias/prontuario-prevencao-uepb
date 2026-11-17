@@ -8,6 +8,17 @@ const TAG_BYTES = 16;
 const ERRO_BACKUP = "Backup corrompido ou chave incorreta";
 const VERSAO_BACKUP = 1;
 
+export const SENHA_INVALIDA = "senha-invalida";
+
+const COLUNAS_SENSIVEIS_USUARIO = ["senhaHash", "pinHash", "pinHashClient", "saltClient", "saltServer"] as const;
+const COLUNAS_SENSIVEIS: Record<string, readonly string[]> = { Usuario: COLUNAS_SENSIVEIS_USUARIO };
+const TABELAS_SEM_CONTEUDO: ReadonlySet<string> = new Set(["PasswordResetToken"]);
+
+export interface ResultadoRestauracao {
+  contagens: Record<string, number>;
+  credenciaisARedefinir: number;
+}
+
 type Linha = Record<string, unknown>;
 
 interface Snapshot {
@@ -47,7 +58,13 @@ export async function exportarBanco(db: Db): Promise<Buffer> {
     await tx.query("SET TRANSACTION ISOLATION LEVEL REPEATABLE READ READ ONLY");
     const resultado: Record<string, Linha[]> = {};
     for (const tabela of TABELAS) {
-      const { rows } = await tx.query(`SELECT to_jsonb(t)::text AS linha FROM "${tabela}" t`);
+      if (TABELAS_SEM_CONTEUDO.has(tabela)) {
+        resultado[tabela] = [];
+        continue;
+      }
+      const { rows } = await tx.query(`SELECT (to_jsonb(t) - $1::text[])::text AS linha FROM "${tabela}" t`, [
+        COLUNAS_SENSIVEIS[tabela] ?? [],
+      ]);
       resultado[tabela] = rows.map((r) => JSON.parse(r.linha as string) as Linha);
     }
     return resultado;
@@ -56,7 +73,7 @@ export async function exportarBanco(db: Db): Promise<Buffer> {
   return Buffer.from(JSON.stringify(snapshot), "utf8");
 }
 
-export async function restaurarBanco(db: Db, dados: Buffer): Promise<Record<string, number>> {
+export async function restaurarBanco(db: Db, dados: Buffer): Promise<ResultadoRestauracao> {
   let snapshot: Snapshot;
   try {
     snapshot = JSON.parse(dados.toString("utf8")) as Snapshot;
@@ -71,10 +88,27 @@ export async function restaurarBanco(db: Db, dados: Buffer): Promise<Record<stri
   }
 
   return transacao(db, async (tx) => {
+    const colunas = COLUNAS_SENSIVEIS_USUARIO.map((c) => `"${c}"`).join(", ");
+    const { rows: atuais } = await tx.query(`SELECT "id", ${colunas} FROM "Usuario"`);
+    const credenciaisAtuais = new Map<string, Linha>(atuais.map((r) => [String(r.id), r as Linha]));
+
     await tx.query(`TRUNCATE ${TABELAS.map((t) => `"${t}"`).join(", ")}`);
     const contagens: Record<string, number> = {};
+    let credenciaisARedefinir = 0;
     for (const tabela of TABELAS) {
-      const linhas = snapshot.tabelas[tabela] ?? [];
+      let linhas = snapshot.tabelas[tabela] ?? [];
+      if (tabela === "Usuario") {
+        linhas = linhas.map((linha) => {
+          const completa = { ...linha };
+          const atual = credenciaisAtuais.get(String(linha.id));
+          for (const coluna of COLUNAS_SENSIVEIS_USUARIO) {
+            if (completa[coluna] !== undefined) continue;
+            completa[coluna] = atual?.[coluna] ?? (coluna === "senhaHash" ? SENHA_INVALIDA : null);
+          }
+          if (completa.senhaHash === SENHA_INVALIDA) credenciaisARedefinir++;
+          return completa;
+        });
+      }
       if (linhas.length > 0) {
         await tx.query(
           `INSERT INTO "${tabela}" SELECT * FROM jsonb_populate_recordset(NULL::"${tabela}", $1::jsonb)`,
@@ -83,6 +117,6 @@ export async function restaurarBanco(db: Db, dados: Buffer): Promise<Record<stri
       }
       contagens[tabela] = linhas.length;
     }
-    return contagens;
+    return { contagens, credenciaisARedefinir };
   });
 }

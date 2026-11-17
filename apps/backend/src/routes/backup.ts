@@ -1,6 +1,7 @@
 import { randomUUID } from "node:crypto";
 import type { FastifyPluginAsync } from "fastify";
-import { executar } from "../db";
+import { executar, uma } from "../db";
+import { env } from "../env";
 import { criptografarBackup, exportarBanco } from "../lib/backup";
 
 export const backupRoutes: FastifyPluginAsync = async (app) => {
@@ -9,6 +10,11 @@ export const backupRoutes: FastifyPluginAsync = async (app) => {
   app.get("/admin/backup", { preHandler: app.autenticar }, async (req, reply) => {
     if (req.user.perfil !== "professor") {
       return reply.status(403).send({ message: "Apenas professores podem baixar o backup." });
+    }
+
+    const usuario = await uma<{ email: string }>(db, `SELECT "email" FROM "Usuario" WHERE "id" = $1`, [req.user.sub]);
+    if (!usuario || !env.ADMIN_EMAILS.includes(usuario.email.trim().toLowerCase())) {
+      return reply.status(403).send({ message: "Acesso restrito a administradores.", codigo: "NAO_ADMIN" });
     }
 
     const buffer = criptografarBackup(await exportarBanco(db));

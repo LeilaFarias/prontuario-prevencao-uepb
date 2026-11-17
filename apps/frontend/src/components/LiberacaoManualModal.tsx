@@ -1,70 +1,64 @@
 import { useEffect, useState } from "react";
-import { CheckCircle2, Eye, EyeOff, ShieldAlert } from "lucide-react";
-import { db, type LocalProfessor } from "../db/dexie";
-import { atualizarCacheProfessores, buscarProfessorPorMatricula } from "../sync/professores";
-import { liberarAcessoManual } from "../sync/queue";
+import { useLiveQuery } from "dexie-react-hooks";
+import { ShieldAlert } from "lucide-react";
+import { db } from "../db/dexie";
+import { verificarPinOffline } from "../lib/pinOffline";
+import { liberarAcessoOffline } from "../sync/queue";
 import BottomSheet from "./BottomSheet";
 
 interface Props {
   open: boolean;
   onClose: () => void;
   prontuarioId: string;
+  professorSupervisorId?: string;
   pacienteNome?: string;
   onLiberado: (expiraEm: string) => void;
 }
 
-
-export default function LiberacaoManualModal({ open, onClose, prontuarioId, pacienteNome, onLiberado }: Props) {
-  const [matricula, setMatricula] = useState("");
-  const [professor, setProfessor] = useState<LocalProfessor | null>(null);
+export default function LiberacaoManualModal({
+  open,
+  onClose,
+  prontuarioId,
+  professorSupervisorId,
+  pacienteNome,
+  onLiberado,
+}: Props) {
+  const [professorId, setProfessorId] = useState("");
+  const [pin, setPin] = useState("");
   const [erro, setErro] = useState<string | null>(null);
   const [liberando, setLiberando] = useState(false);
-  const [mostrarMatricula, setMostrarMatricula] = useState(false);
+
+  const professores = useLiveQuery(async () => {
+    const lista = await db.professoresLiberacao.toArray();
+    return lista
+      .filter((p) => !professorSupervisorId || p.professorId === professorSupervisorId)
+      .sort((a, b) => a.nome.localeCompare(b.nome));
+  }, [professorSupervisorId]);
 
   useEffect(() => {
     if (!open) {
-      setMatricula("");
-      setProfessor(null);
+      setProfessorId("");
+      setPin("");
       setErro(null);
-      setMostrarMatricula(false);
     }
   }, [open]);
 
   useEffect(() => {
-    if (!open) return;
-    void (async () => {
-      if ((await db.professores.count()) > 0) return;
-      await atualizarCacheProfessores();
-    })();
-  }, [open]);
-
-  useEffect(() => {
-    let ativo = true;
-    const valor = matricula.replace(/\D/g, "");
-    setProfessor(null);
-    setErro(null);
-    if (!valor) return;
-
-    void buscarProfessorPorMatricula(valor)
-      .then((prof) => {
-        if (!ativo) return;
-        if (prof) setProfessor(prof);
-        else setErro("Matrícula não encontrada neste aparelho");
-      })
-      .catch(() => {
-        if (ativo) setErro("Não foi possível consultar os professores neste aparelho");
-      });
-
-    return () => {
-      ativo = false;
-    };
-  }, [matricula]);
+    if (professores?.length === 1) setProfessorId(professores[0]!.professorId);
+  }, [professores]);
 
   async function liberar() {
+    const professor = professores?.find((p) => p.professorId === professorId);
     if (!professor || liberando) return;
     setLiberando(true);
+    setErro(null);
     try {
-      const expiraEm = await liberarAcessoManual(prontuarioId, professor.matricula);
+      const valido = await verificarPinOffline(pin, professor.saltClient, professor.pinHashClient);
+      if (!valido) {
+        setErro("PIN inválido");
+        return;
+      }
+      const expiraEm = await liberarAcessoOffline(prontuarioId, professor.professorId);
       onLiberado(expiraEm);
       onClose();
     } catch {
@@ -74,12 +68,14 @@ export default function LiberacaoManualModal({ open, onClose, prontuarioId, paci
     }
   }
 
+  const semProfessores = professores !== undefined && professores.length === 0;
+
   return (
     <BottomSheet
       open={open}
       onClose={onClose}
-      title="Liberação manual"
-      subtitle="O professor libera o acesso diretamente neste aparelho."
+      title="Liberar acesso offline"
+      subtitle="O professor libera o acesso digitando o PIN neste aparelho."
     >
       <div className="mb-3 flex items-center justify-between gap-3 rounded-lg border border-line-soft bg-paper px-3 py-2.5">
         <span className="text-[12.5px] text-ink-soft">Paciente</span>
@@ -90,41 +86,50 @@ export default function LiberacaoManualModal({ open, onClose, prontuarioId, paci
         <ShieldAlert size={16} className="mt-0.5 shrink-0 text-alt" aria-hidden="true" />
         <p className="text-[12.5px] leading-relaxed text-ink-soft">
           <strong className="font-semibold text-ink">Ação restrita ao professor.</strong> Somente o professor
-          responsável deve digitar a matrícula.
+          responsável deve digitar o PIN.
         </p>
       </div>
 
-      <label htmlFor="matricula-professor" className="label mt-4">
-        Matrícula do professor
-      </label>
-      <div className="relative">
-        <input
-          id="matricula-professor"
-          type={mostrarMatricula ? "text" : "password"}
-          inputMode="numeric"
-          autoComplete="off"
-          className="input pr-12"
-          value={matricula}
-          onChange={(e) => setMatricula(e.target.value.replace(/\D/g, ""))}
-          placeholder="Digite a matrícula"
-        />
-        <button
-          type="button"
-          onClick={() => setMostrarMatricula((v) => !v)}
-          className="absolute right-2 top-1/2 -translate-y-1/2 flex h-8 w-8 items-center justify-center rounded-full text-ink-faint transition hover:bg-paper hover:text-ink-soft"
-          aria-label={mostrarMatricula ? "Ocultar matrícula" : "Mostrar matrícula"}
-          aria-pressed={mostrarMatricula}
-        >
-          {mostrarMatricula ? <EyeOff size={16} aria-hidden="true" /> : <Eye size={16} aria-hidden="true" />}
-        </button>
-      </div>
-
-      {professor && (
-        <p role="status" className="mt-2 flex items-center gap-1.5 text-[13px] font-medium text-primary">
-          <CheckCircle2 size={16} className="shrink-0 text-green-600" aria-hidden="true" />
-          {professor.nome}
+      {semProfessores ? (
+        <p role="alert" className="banner-erro mt-4">
+          Nenhum professor disponível neste aparelho. Conecte-se à internet ao menos uma vez para baixar os dados de liberação.
         </p>
+      ) : (
+        <>
+          <label htmlFor="professor-liberacao" className="label mt-4">Professor</label>
+          <select
+            id="professor-liberacao"
+            className="input"
+            value={professorId}
+            onChange={(e) => {
+              setProfessorId(e.target.value);
+              setErro(null);
+            }}
+          >
+            <option value="">Selecione o professor</option>
+            {professores?.map((p) => (
+              <option key={p.professorId} value={p.professorId}>{p.nome}</option>
+            ))}
+          </select>
+
+          <label htmlFor="pin-liberacao" className="label mt-4">PIN do professor</label>
+          <input
+            id="pin-liberacao"
+            type="password"
+            inputMode="numeric"
+            maxLength={8}
+            autoComplete="off"
+            className="input"
+            value={pin}
+            onChange={(e) => {
+              setPin(e.target.value.replace(/\D/g, "").slice(0, 8));
+              setErro(null);
+            }}
+            placeholder="8 dígitos"
+          />
+        </>
       )}
+
       {erro && (
         <p role="alert" className="banner-erro mt-2">
           {erro}
@@ -134,10 +139,10 @@ export default function LiberacaoManualModal({ open, onClose, prontuarioId, paci
       <button
         type="button"
         className="btn-primary mt-4"
-        disabled={!professor || liberando}
+        disabled={!professorId || pin.length !== 8 || liberando}
         onClick={() => void liberar()}
       >
-        Liberar acesso por 4 horas
+        {liberando ? "Verificando…" : "Liberar"}
       </button>
       <button type="button" className="btn-ghost mt-2" onClick={onClose}>
         Cancelar

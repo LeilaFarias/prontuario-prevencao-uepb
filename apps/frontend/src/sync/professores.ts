@@ -1,5 +1,5 @@
 import { db, type LocalProfessor } from "../db/dexie";
-import { api } from "../lib/api";
+import { api, TIMEOUT_SYNC_MS } from "../lib/api";
 import { getSession } from "../lib/session";
 
 interface ProfessorRemoto {
@@ -11,7 +11,7 @@ interface ProfessorRemoto {
 export async function atualizarCacheProfessores(): Promise<void> {
   if (!navigator.onLine || !getSession()) return;
   try {
-    const lista = await api.get<ProfessorRemoto[]>("/professores");
+    const lista = await api.get<ProfessorRemoto[]>("/professores", { timeoutMs: TIMEOUT_SYNC_MS });
     const professores: LocalProfessor[] = lista.flatMap((p) =>
       p.matricula ? [{ id: p.id, nome: p.nome, matricula: String(p.matricula).trim() }] : [],
     );

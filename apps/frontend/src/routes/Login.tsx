@@ -7,6 +7,7 @@ import { loginSchema, type LoginInput, type LoginResponse } from "@prontuario/sh
 import { api } from "../lib/api";
 import { saveSession } from "../lib/session";
 import { rotaInicial } from "../lib/rotas";
+import VersaoApp from "../components/VersaoApp";
 
 function Dente() {
   return (
@@ -103,6 +104,11 @@ export default function Login() {
         <button type="submit" disabled={isSubmitting} className="btn-dark">
           {isSubmitting ? "Entrando…" : "Entrar"}
         </button>
+
+        <p className="text-center text-[12px] leading-snug text-ink-faint">
+          Ao entrar, você concorda com os{" "}
+          <Link to="/termos" className="font-medium text-primary">Termos de Uso e a Política de Privacidade</Link>
+        </p>
       </form>
 
       <div className="my-6 flex items-center gap-3 text-[12.5px] text-ink-faint">
@@ -112,6 +118,10 @@ export default function Login() {
       <p className="text-center text-[14px] text-ink-soft">
         Novo por aqui? <Link to="/cadastro" className="font-medium text-primary">Criar conta</Link>
       </p>
+
+      <div className="mt-auto pt-8 text-center">
+        <VersaoApp compacta />
+      </div>
     </main>
   );
 }

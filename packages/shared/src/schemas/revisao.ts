@@ -81,6 +81,7 @@ export interface HistoricoProntuario {
 }
 
 export type FiltroFila = "meus" | "todos";
+export type AbaFila = "enviados" | "assinados" | "devolvidos";
 
 export interface ItemFilaRevisao {
   id: string;

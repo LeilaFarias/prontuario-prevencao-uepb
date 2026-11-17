@@ -1,9 +1,9 @@
 import { useEffect, useState } from "react";
-import { useNavigate } from "react-router-dom";
+import { Link, useNavigate } from "react-router-dom";
 import { useForm } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
 import { z } from "zod";
-import { CalendarDays, LogOut, TriangleAlert } from "lucide-react";
+import { CalendarDays, Info, KeyRound, LogOut, TriangleAlert } from "lucide-react";
 import {
   alterarMatriculaSchema,
   alterarSenhaBaseSchema,
@@ -14,6 +14,7 @@ import {
 import BottomSheet from "../components/BottomSheet";
 import PerfilLinha from "../components/PerfilLinha";
 import Topbar from "../components/Topbar";
+import VersaoApp from "../components/VersaoApp";
 import { api, ApiError } from "../lib/api";
 import { clearSession, getSession, updateSessionUser } from "../lib/session";
 import { rotaInicial } from "../lib/rotas";
@@ -295,6 +296,112 @@ function SemestreVigente({ tema }: { tema: Tema }) {
   );
 }
 
+const apenasDigitos = (v: string) => v.replace(/\D/g, "").slice(0, 8);
+
+function PinLiberacaoOffline({ tema }: { tema: Tema }) {
+  const [pin, setPin] = useState("");
+  const [confirmar, setConfirmar] = useState("");
+  const [erro, setErro] = useState<string | null>(null);
+  const [salvo, setSalvo] = useState(false);
+  const [salvando, setSalvando] = useState(false);
+
+  async function enviar() {
+    setSalvo(false);
+    if (!/^\d{8}$/.test(pin)) {
+      setErro("O PIN deve ter exatamente 8 dígitos.");
+      return;
+    }
+    if (pin !== confirmar) {
+      setErro("Os PINs não coincidem.");
+      return;
+    }
+    setErro(null);
+    setSalvando(true);
+    try {
+      await api.put<void>("/users/me/pin", { pin });
+      setPin("");
+      setConfirmar("");
+      setSalvo(true);
+    } catch (e) {
+      setErro(mensagem(e));
+    } finally {
+      setSalvando(false);
+    }
+  }
+
+  return (
+    <section className="mt-4 rounded-card border border-line-soft bg-raised p-4">
+      <div className="flex items-center gap-2">
+        <KeyRound size={16} className={tema.texto} />
+        <h2 className="font-display text-[15px] font-semibold text-ink">PIN de liberação offline</h2>
+      </div>
+      <p className="mt-1 text-[12px] text-ink-soft">Usado para liberar o acesso de alunos aos prontuários sem internet.</p>
+
+      <div className="mt-3 flex flex-col gap-3">
+        <div>
+          <label htmlFor="pin" className="label">PIN</label>
+          <input
+            id="pin"
+            type="password"
+            inputMode="numeric"
+            maxLength={8}
+            autoComplete="off"
+            placeholder="8 dígitos"
+            className="input"
+            value={pin}
+            onChange={(e) => {
+              setPin(apenasDigitos(e.target.value));
+              setSalvo(false);
+            }}
+          />
+        </div>
+        <div>
+          <label htmlFor="pin-confirmar" className="label">Confirmar PIN</label>
+          <input
+            id="pin-confirmar"
+            type="password"
+            inputMode="numeric"
+            maxLength={8}
+            autoComplete="off"
+            placeholder="8 dígitos"
+            className="input"
+            value={confirmar}
+            onChange={(e) => {
+              setConfirmar(apenasDigitos(e.target.value));
+              setSalvo(false);
+            }}
+          />
+        </div>
+      </div>
+
+      {erro && <div role="alert" className="banner-erro mt-3">{erro}</div>}
+      {salvo && <div role="status" className="banner-ok mt-3">PIN salvo</div>}
+
+      <button type="button" className="btn-prof mt-3" disabled={salvando} onClick={() => void enviar()}>
+        {salvando ? "Salvando…" : "Salvar PIN"}
+      </button>
+    </section>
+  );
+}
+
+function SobreApp({ tema }: { tema: Tema }) {
+  return (
+    <section className="mt-4 rounded-card border border-line-soft bg-raised p-4">
+      <div className="flex items-center gap-2">
+        <Info size={16} className={tema.texto} />
+        <h2 className="font-display text-[15px] font-semibold text-ink">Sobre</h2>
+      </div>
+      <div className="mt-1.5">
+        <VersaoApp />
+      </div>
+      <div className="mt-3 flex flex-col gap-2 text-[13px] font-medium">
+        <Link to="/termos" className={tema.texto}>Termos de Uso e Política de Privacidade</Link>
+        <Link to="/termos#seguranca" className={tema.texto}>Como protegemos seus dados</Link>
+      </div>
+    </section>
+  );
+}
+
 export default function Perfil() {
   const navigate = useNavigate();
   const sessao = getSession();
@@ -345,6 +452,8 @@ export default function Perfil() {
         </div>
 
         {professor && <SemestreVigente tema={tema} />}
+        {professor && <PinLiberacaoOffline tema={tema} />}
+        <SobreApp tema={tema} />
 
         <div className="mt-auto flex flex-col gap-2.5 pt-8">
           <button type="button" onClick={sair} className="btn bg-alt-tint text-alt">

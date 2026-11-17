@@ -2,11 +2,13 @@ import { z } from "zod";
 
 export const syncOperationSchema = z.object({
   prontuarioId: z.string().min(1),
-  op: z.enum(["create", "update", "delete", "enviar", "reabrir", "liberacao-manual", "descartar"]),
+  op: z.enum(["create", "update", "delete", "enviar", "reabrir", "liberacao-offline", "descartar"]),
   entity: z.enum(["prontuario", "secao", "procedimento", "anexo"]),
   entityId: z.string().min(1),
   payload: z.record(z.string(), z.unknown()),
-  ts: z.number().int().nonnegative(),
+  ts: z.number()
+  .int()
+  .nonnegative()
 });
 
 export const syncBatchSchema = z.object({

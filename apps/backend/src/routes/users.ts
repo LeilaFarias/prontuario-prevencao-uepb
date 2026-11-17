@@ -1,15 +1,26 @@
-import { randomUUID } from "node:crypto";
+import { pbkdf2, randomBytes, randomUUID, scrypt } from "node:crypto";
+import { promisify } from "node:util";
 import type { FastifyPluginAsync } from "fastify";
 import { z } from "zod";
 import {
+  aceitarTermosSchema,
   alterarMatriculaSchema,
   alterarSenhaSchema,
   atualizarPerfilSchema,
   excluirContaSchema,
+  type TermosResposta,
   type UsuarioMe,
 } from "@prontuario/shared";
 import { executar, todas, transacao, uma } from "../db";
 import { hashSenha, verificarSenha } from "../lib/senha";
+import { SQL_VERSAO_ATUAL } from "../lib/termos";
+
+const scryptAsync = promisify(scrypt);
+const pbkdf2Async = promisify(pbkdf2);
+
+const definirPinSchema = z.object({
+  pin: z.string().regex(/^\d{8}$/, "PIN deve ter 8 dígitos"),
+});
 
 const excluirContaComMotivoSchema = excluirContaSchema.extend({
   motivo: z.string().trim().max(500).optional(),
@@ -22,6 +33,9 @@ interface UsuarioRow {
   perfil: string;
   matricula: string | null;
   criadoEm: string;
+  termosAceitosEm: string | null;
+  termosVersao: string | null;
+  versaoAtual: string | null;
 }
 
 interface AlunoRow {
@@ -36,7 +50,9 @@ export const userRoutes: FastifyPluginAsync = async (app) => {
   const buscarMe = async (id: string): Promise<UsuarioMe> => {
     const u = (await uma<UsuarioRow>(
       db,
-      `SELECT "id", "nome", "email", "perfil", "matricula", "criadoEm" FROM "Usuario" WHERE "id" = $1`,
+      `SELECT "id", "nome", "email", "perfil", "matricula", "criadoEm", "termosAceitosEm", "termosVersao",
+              ${SQL_VERSAO_ATUAL} AS "versaoAtual"
+         FROM "Usuario" WHERE "id" = $1`,
       [id],
     )) as UsuarioRow;
     return { ...u, perfil: u.perfil.toLowerCase() as UsuarioMe["perfil"] };
@@ -54,7 +70,36 @@ export const userRoutes: FastifyPluginAsync = async (app) => {
     return todas<AlunoRow>(db, listarAlunos);
   });
 
+  app.get("/termos", async (_req, reply) => {
+    const termos = await uma<TermosResposta>(
+      db,
+      `SELECT "versao", "conteudo", "publicadaEm" FROM "TermosVersao" ORDER BY "publicadaEm" DESC LIMIT 1`,
+    );
+    if (!termos) return reply.status(404).send({ message: "Termos não publicados.", codigo: "TERMOS_NAO_PUBLICADOS" });
+    return termos;
+  });
+
   app.get("/users/me", protegida, async (req) => buscarMe(req.user.sub));
+
+  app.post("/users/me/aceitar-termos", protegida, async (req, reply) => {
+    const id = req.user.sub;
+    const { versao } = aceitarTermosSchema.parse(req.body);
+
+    if (!(await uma(db, `SELECT "id" FROM "TermosVersao" WHERE "versao" = $1`, [versao]))) {
+      return reply.status(400).send({ message: "Versão dos termos inexistente.", codigo: "TERMOS_VERSAO_INVALIDA" });
+    }
+
+    await transacao(db, async (tx) => {
+      await executar(tx, `UPDATE "Usuario" SET "termosAceitosEm" = now(), "termosVersao" = $1 WHERE "id" = $2`, [versao, id]);
+      await executar(tx, `INSERT INTO "AuditLog" ("id", "usuarioId", "acao", "detalhe") VALUES ($1, $2, $3, $4)`, [
+        randomUUID(),
+        id,
+        "termos-aceitos",
+        JSON.stringify({ usuarioId: id, versao }),
+      ]);
+    });
+    return reply.status(204).send();
+  });
 
   app.put("/users/me", protegida, async (req, reply) => {
     const id = req.user.sub;
@@ -94,6 +139,21 @@ export const userRoutes: FastifyPluginAsync = async (app) => {
       id,
     ]);
     return { ok: true };
+  });
+
+  app.put("/users/me/pin", protegida, async (req, reply) => {
+    const { pin } = definirPinSchema.parse(req.body);
+    const saltServer = randomBytes(16).toString("hex");
+    const saltClient = randomBytes(16).toString("hex");
+    const pinHashServer = ((await scryptAsync(pin, saltServer, 64)) as Buffer).toString("hex");
+    const pinHashClient = (await pbkdf2Async(pin, saltClient, 600000, 32, "sha256")).toString("hex");
+
+    await executar(
+      db,
+      `UPDATE "Usuario" SET "pinHash" = $1, "saltServer" = $2, "pinHashClient" = $3, "saltClient" = $4 WHERE "id" = $5`,
+      [pinHashServer, saltServer, pinHashClient, saltClient, req.user.sub],
+    );
+    return reply.status(204).send();
   });
 
   app.put("/users/me/matricula", protegida, async (req, reply) => {

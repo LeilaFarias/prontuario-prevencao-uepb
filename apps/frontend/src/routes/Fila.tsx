@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useState, type KeyboardEvent } from "react";
 import { useNavigate } from "react-router-dom";
-import { AlertCircle, AlertTriangle, Clock } from "lucide-react";
-import type { FilaRevisaoResponse, FiltroFila, ItemFilaRevisao } from "@prontuario/shared";
+import { AlertCircle, AlertTriangle, Check, Clock, RotateCcw } from "lucide-react";
+import type { AbaFila, FilaRevisaoResponse, FiltroFila, ItemFilaRevisao } from "@prontuario/shared";
 import { ApiError, api } from "../lib/api";
 import { getSession } from "../lib/session";
 import TabBarProfessor from "../components/TabBarProfessor";
@@ -14,6 +14,42 @@ type Estado =
   | { situacao: "carregando" }
   | { situacao: "erro"; mensagem: string }
   | { situacao: "ok"; itens: ItemFilaRevisao[] };
+
+const ABAS: { id: AbaFila; rotulo: string }[] = [
+  { id: "enviados", rotulo: "Aguardando revisão" },
+  { id: "assinados", rotulo: "Assinados" },
+  { id: "devolvidos", rotulo: "Devolvidos" },
+];
+
+const META_ABA = {
+  enviados: {
+    Icone: Clock,
+    selo: "Pendente",
+    seloClasse: "bg-prof-tint text-prof",
+    tempo: "Enviado",
+    acao: "Revisar →",
+    vazioTitulo: "Fila vazia",
+    vazioTexto: "Os prontuários enviados pelos alunos aparecem aqui.",
+  },
+  assinados: {
+    Icone: Check,
+    selo: "Assinado",
+    seloClasse: "bg-primary-tint text-primary",
+    tempo: "Assinado",
+    acao: "Ver →",
+    vazioTitulo: "Nenhum prontuário assinado",
+    vazioTexto: "Os prontuários que você assinar aparecem aqui.",
+  },
+  devolvidos: {
+    Icone: RotateCcw,
+    selo: "Devolvido",
+    seloClasse: "bg-alt-tint text-alt",
+    tempo: "Devolvido",
+    acao: "Ver →",
+    vazioTitulo: "Nenhum prontuário devolvido",
+    vazioTexto: "Os prontuários que você devolver aos alunos aparecem aqui.",
+  },
+} as const;
 
 function LinhaDupla({ rotulo, nome, destaque = false }: { rotulo: string; nome: string; destaque?: boolean }) {
   return (
@@ -28,17 +64,20 @@ function LinhaDupla({ rotulo, nome, destaque = false }: { rotulo: string; nome: 
 
 function CardFila({
   item,
+  aba,
   meu,
   mostrarProfessor,
   onAbrir,
   onAvaliarTransferencia,
 }: {
   item: ItemFilaRevisao;
+  aba: AbaFila;
   meu: boolean;
   mostrarProfessor: boolean;
   onAbrir: () => void;
   onAvaliarTransferencia: () => void;
 }) {
+  const meta = META_ABA[aba];
   const duplicado = item.sinalizadoDuplicidade;
   const acaoBloqueada = duplicado && !meu;
   const idade = calcularIdade(item.pacienteDataNascimento ?? undefined);
@@ -81,9 +120,11 @@ function CardFila({
             Possível duplicidade
           </span>
         ) : (
-          <span className="inline-flex shrink-0 items-center gap-1 rounded-pill bg-prof-tint px-2.5 py-1 text-[11px] font-semibold text-prof">
-            <Clock size={10} aria-hidden="true" />
-            Pendente
+          <span
+            className={`inline-flex shrink-0 items-center gap-1 rounded-pill px-2.5 py-1 text-[11px] font-semibold ${meta.seloClasse}`}
+          >
+            <meta.Icone size={10} aria-hidden="true" />
+            {meta.selo}
           </span>
         )}
       </div>
@@ -115,14 +156,14 @@ function CardFila({
 
       <div className="mt-3 flex items-center justify-between gap-2.5 border-t border-line-soft pt-2.5">
         <span className="text-[11.5px] text-ink-faint">
-          Enviado {tempo}
+          {meta.tempo} {tempo}
         </span>
         <span
           className={`shrink-0 text-[12.5px] font-semibold ${duplicado ? "text-alt" : "text-prof"} ${
             acaoBloqueada ? "opacity-50" : ""
           }`}
         >
-          {duplicado ? "Avaliar transferência →" : "Revisar →"}
+          {duplicado ? "Avaliar transferência →" : meta.acao}
         </span>
       </div>
     </div>
@@ -166,16 +207,19 @@ function Chip({
 export default function Fila() {
   const navigate = useNavigate();
   const usuario = getSession()?.user;
-  const [filtro, setFiltro] = useState<FiltroFila>("meus");
-  const { data: indicador } = useIndicadorPacientes(filtro);
+  const [aba, setAba] = useState<AbaFila>("enviados");
+  const [escopo, setEscopo] = useState<FiltroFila>("meus");
+  const { data: indicador } = useIndicadorPacientes(escopo);
   const [contadores, setContadores] = useState<FilaRevisaoResponse["contadores"] | null>(null);
   const [estado, setEstado] = useState<Estado>({ situacao: "carregando" });
   const [transferindo, setTransferindo] = useState<ItemFilaRevisao | null>(null);
 
+  const filtroApi = aba === "enviados" && escopo === "todos" ? "todos" : aba;
+
   const carregar = useCallback(() => {
     setEstado({ situacao: "carregando" });
     api
-      .get<FilaRevisaoResponse>(`/fila-revisao?filtro=${filtro}`)
+      .get<FilaRevisaoResponse>(`/fila-revisao?filtro=${filtroApi}`)
       .then((r) => {
         setContadores(r.contadores);
         setEstado({ situacao: "ok", itens: r.prontuarios });
@@ -186,7 +230,7 @@ export default function Fila() {
           mensagem: err instanceof ApiError ? err.message : "Não foi possível carregar a fila.",
         }),
       );
-  }, [filtro]);
+  }, [filtroApi]);
 
   useEffect(() => {
     carregar();
@@ -207,10 +251,32 @@ export default function Fila() {
         <p className="mt-0.5 text-[12.5px] text-ink-soft">{subtitulo}</p>
       </header>
 
-      <div className="flex gap-2 px-5 py-3" role="group" aria-label="Filtrar fila">
-        <Chip ativo={filtro === "meus"} rotulo="Meus alunos" total={contadores?.meus ?? null} onClick={() => setFiltro("meus")} />
-        <Chip ativo={filtro === "todos"} rotulo="Todos" total={contadores?.todos ?? null} onClick={() => setFiltro("todos")} />
+      <div role="tablist" aria-label="Status dos prontuários" className="mx-5 flex border-b border-line">
+        {ABAS.map(({ id, rotulo }) => {
+          const ativa = aba === id;
+          return (
+            <button
+              key={id}
+              type="button"
+              role="tab"
+              aria-selected={ativa}
+              onClick={() => setAba(id)}
+              className={`-mb-px flex-1 whitespace-nowrap border-b-2 px-2 py-2.5 text-[12.5px] ${
+                ativa ? "border-prof font-semibold text-prof" : "border-transparent font-medium text-ink-soft"
+              }`}
+            >
+              {rotulo}
+            </button>
+          );
+        })}
       </div>
+
+      {aba === "enviados" && (
+        <div className="flex gap-2 px-5 py-3" role="group" aria-label="Filtrar fila">
+          <Chip ativo={escopo === "meus"} rotulo="Meus alunos" total={contadores?.meus ?? null} onClick={() => setEscopo("meus")} />
+          <Chip ativo={escopo === "todos"} rotulo="Todos" total={contadores?.todos ?? null} onClick={() => setEscopo("todos")} />
+        </div>
+      )}
 
       {indicador && (
         <div className="mx-5 mb-3 flex items-center gap-4 rounded-card border border-line bg-raised p-4">
@@ -252,8 +318,8 @@ export default function Fila() {
 
         {estado.situacao === "ok" && estado.itens.length === 0 && (
           <div className="my-auto rounded-card border border-line-soft bg-raised px-6 py-10 text-center">
-            <p className="font-display text-[18px] font-medium text-ink">Fila vazia</p>
-            <p className="mt-1.5 text-[13px] text-ink-soft">Os prontuários enviados pelos alunos aparecem aqui.</p>
+            <p className="font-display text-[18px] font-medium text-ink">{META_ABA[aba].vazioTitulo}</p>
+            <p className="mt-1.5 text-[13px] text-ink-soft">{META_ABA[aba].vazioTexto}</p>
           </div>
         )}
 
@@ -263,8 +329,9 @@ export default function Fila() {
               <li key={item.id}>
                 <CardFila
                   item={item}
+                  aba={aba}
                   meu={item.professorSupervisorId === usuario?.id}
-                  mostrarProfessor={filtro === "todos"}
+                  mostrarProfessor={aba === "enviados" && escopo === "todos"}
                   onAbrir={() => navigate(`/fila/${item.id}`)}
                   onAvaliarTransferencia={() => setTransferindo(item)}
                 />

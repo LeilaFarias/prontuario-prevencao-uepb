@@ -1,6 +1,8 @@
+import { existsSync, readFileSync } from "node:fs";
 import pg from "pg";
-import type { Pool as PgPool, PoolClient, QueryResult } from "pg";
+import type { Pool as PgPool, PoolClient, PoolConfig, QueryResult } from "pg";
 import { env } from "./env";
+import { CONTEUDO_TERMOS_V1, VERSAO_TERMOS_INICIAL } from "./lib/termos";
 
 const { Pool, types } = pg;
 
@@ -24,6 +26,7 @@ export const TABELAS = [
   "AuditLog",
   "Notificacao",
   "Configuracao",
+  "LiberacaoOffline",
 ] as const;
 
 const SCHEMA = `
@@ -142,13 +145,41 @@ CREATE TABLE IF NOT EXISTS "Configuracao" (
 
 const LOCK_MIGRACAO = 727274;
 
+const HOSTS_LOCAIS = new Set(["localhost", "127.0.0.1", "[::1]"]);
+
+function hostEhLocal(url: string): boolean {
+  try {
+    return HOSTS_LOCAIS.has(new URL(url).hostname);
+  } catch {
+    return false;
+  }
+}
+
+function configurarSsl(): PoolConfig["ssl"] {
+  if (!env.DATABASE_SSL) return false;
+
+  const caPath = env.SUPABASE_CA_PATH;
+  if (caPath) {
+    if (!existsSync(caPath)) {
+      throw new Error(`SUPABASE_CA_PATH aponta para um arquivo inexistente: ${caPath}`);
+    }
+    return { ca: readFileSync(caPath, "utf8"), rejectUnauthorized: true };
+  }
+
+  if (hostEhLocal(env.DATABASE_URL)) return false;
+
+  throw new Error(
+    "SUPABASE_CA_PATH não configurado. Baixe o CA em Supabase → Database → Settings → SSL Configuration e aponte SUPABASE_CA_PATH para o arquivo.",
+  );
+}
+
 export function criarPool(): Db {
   const pool = new Pool({
     connectionString: env.DATABASE_URL,
     max: env.DATABASE_POOL_MAX,
     idleTimeoutMillis: 30000,
     connectionTimeoutMillis: 5000,
-    ssl: env.DATABASE_SSL ? { rejectUnauthorized: false } : false,
+    ssl: configurarSsl(),
   });
   pool.on("error", (err) => console.error("[db] erro em conexão ociosa:", err));
   return pool;
@@ -158,7 +189,40 @@ export async function migrar(db: Db): Promise<void> {
   await transacao(db, async (tx) => {
     await tx.query("SELECT pg_advisory_xact_lock($1)", [LOCK_MIGRACAO]);
     await tx.query(SCHEMA);
-    for (const tabela of TABELAS) {
+    await tx.query(
+      `ALTER TABLE "Usuario"
+         ADD COLUMN IF NOT EXISTS "pinHash" TEXT NULL,
+         ADD COLUMN IF NOT EXISTS "pinHashClient" TEXT NULL,
+         ADD COLUMN IF NOT EXISTS "saltClient" TEXT NULL,
+         ADD COLUMN IF NOT EXISTS "saltServer" TEXT NULL,
+         ADD COLUMN IF NOT EXISTS "termosAceitosEm" TIMESTAMPTZ NULL,
+         ADD COLUMN IF NOT EXISTS "termosVersao" TEXT NULL`,
+    );
+    await tx.query(
+      `CREATE TABLE IF NOT EXISTS "LiberacaoOffline" (
+         "id"           TEXT PRIMARY KEY,
+         "alunoId"      TEXT NOT NULL REFERENCES "Usuario"("id"),
+         "professorId"  TEXT NOT NULL REFERENCES "Usuario"("id"),
+         "prontuarioId" TEXT NOT NULL REFERENCES "Prontuario"("id") ON DELETE CASCADE,
+         "liberadoEm"   TIMESTAMPTZ NOT NULL,
+         "expiresAt"    TIMESTAMPTZ NOT NULL,
+         "sincronizado" BOOLEAN NOT NULL DEFAULT false
+       )`,
+    );
+    await tx.query(`CREATE INDEX IF NOT EXISTS idx_liberacao_offline_pront ON "LiberacaoOffline"("prontuarioId")`);
+    await tx.query(
+      `CREATE TABLE IF NOT EXISTS "TermosVersao" (
+         "id"          TEXT PRIMARY KEY,
+         "versao"      TEXT UNIQUE NOT NULL,
+         "conteudo"    TEXT NOT NULL,
+         "publicadaEm" TIMESTAMPTZ NOT NULL DEFAULT now()
+       )`,
+    );
+    await tx.query(
+      `INSERT INTO "TermosVersao" ("id", "versao", "conteudo") VALUES ($1, $2, $3) ON CONFLICT DO NOTHING`,
+      [`termos-${VERSAO_TERMOS_INICIAL}`, VERSAO_TERMOS_INICIAL, CONTEUDO_TERMOS_V1],
+    );
+    for (const tabela of [...TABELAS, "TermosVersao"]) {
       await tx.query(`ALTER TABLE "${tabela}" ENABLE ROW LEVEL SECURITY`);
     }
   });
