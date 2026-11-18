@@ -19,7 +19,7 @@ permitindo que alunos registrem atendimentos e professores revisem e assinem.
 ## Visão geral
 
 O sistema é uma **PWA offline-first**. A ficha pode ser preenchida sem 
-conexão — os dados são gravados localmente no dispositivo (IndexedDB) e 
+conexão - os dados são gravados localmente no dispositivo (IndexedDB) e 
 enfileirados para sincronização. Assim que a internet volta, a fila é 
 enviada automaticamente para o servidor.
 
@@ -60,9 +60,9 @@ prontuários criados em um dispositivo apareçam em outro.
 
 ## Requisitos
 
-- **Node.js 22.13 ou superior** — o backend usa `process.loadEnvFile`, nativo.
+- **Node.js 22.13 ou superior** - o backend usa `process.loadEnvFile`, nativo.
 - **pnpm 9+**
-- **Um banco PostgreSQL** — projeto no Supabase (recomendado) ou Postgres local.
+- **Um banco PostgreSQL** - projeto no Supabase (recomendado) ou Postgres local.
 
 Não há dependências nativas, Prisma ou Docker.
 

@@ -62,7 +62,7 @@ export default function SessaoAviso() {
         <Clock size={16} className="mt-0.5 shrink-0" aria-hidden="true" />
         <p>
           Sua sessão termina em <strong>{formatar(restante)}</strong>. Depois disso será preciso entrar novamente.
-          {pendentes > 0 && " Há alterações aguardando sincronização — conecte-se à internet para enviá-las antes."}
+          {pendentes > 0 && " Há alterações aguardando sincronização - conecte-se à internet para enviá-las antes."}
         </p>
       </div>
       <div className="flex gap-2 pl-6">

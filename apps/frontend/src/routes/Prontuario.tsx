@@ -434,7 +434,7 @@ export default function Prontuario() {
     ) : status === "assinado" ? (
       <span className={`${PILL} bg-primary-tint text-primary`}>
         <Unlock size={12} aria-hidden="true" />
-        <TimerAcesso expiraEm={atual.acessoExpiraEm!} rotulo="Acesso liberado — expira em" />
+        <TimerAcesso expiraEm={atual.acessoExpiraEm!} rotulo="Acesso liberado - expira em" />
       </span>
     ) : status === "transferido" ? (
       <div className="flex flex-col gap-1.5">
@@ -481,7 +481,7 @@ export default function Prontuario() {
 
       {semConexao && (
         <p role="status" className="mx-5 mb-2 rounded-lg bg-alt-tint px-3 py-1.5 text-[12.5px] text-alt">
-          Sem conexão — dados locais
+          Sem conexão - dados locais
         </p>
       )}
 

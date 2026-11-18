@@ -15,7 +15,7 @@ export default function StatusBar({ className = "" }: { className?: string }) {
     const texto =
       pendentes === 0
         ? "Você está sem internet"
-        : `Sem internet — ${pendentes} ${pendentes === 1 ? "alteração" : "alterações"} pendente${pendentes === 1 ? "" : "s"}`;
+        : `Sem internet - ${pendentes} ${pendentes === 1 ? "alteração" : "alterações"} pendente${pendentes === 1 ? "" : "s"}`;
 
     return (
       <span

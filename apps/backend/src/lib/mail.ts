@@ -63,7 +63,7 @@ export async function enviarEmailRedefinicao({ para, nome, link, db, usuarioId }
       body: JSON.stringify({
         sender: { name: env.MAIL_FROM_NAME, email: env.MAIL_FROM_EMAIL },
         to: [{ email: para, name: nome }],
-        subject: "Redefinição de senha — Prontuário Digital UEPB",
+        subject: "Redefinição de senha - Prontuário Digital UEPB",
         htmlContent: htmlDoEmail(nome, link),
       }),
     });
@@ -100,7 +100,7 @@ export async function enviarEmailConfirmacao({ para, nome, link }: { para: strin
     body: JSON.stringify({
       sender: { name: env.MAIL_FROM_NAME, email: env.MAIL_FROM_EMAIL },
       to: [{ email: para, name: nome }],
-      subject: "Confirme seu e-mail — Prontuário Digital UEPB",
+      subject: "Confirme seu e-mail - Prontuário Digital UEPB",
       htmlContent: html,
     }),
   });

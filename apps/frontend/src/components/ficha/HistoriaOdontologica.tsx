@@ -261,7 +261,7 @@ function FormularioHistoriaOdontologica({ prontuario }: { prontuario: LocalPront
       <GrupoFicha
         eyebrow="2.2.2"
         titulo="Dieta 24h"
-        subtitulo="Recordatório de 24 horas — relatar quantidade e medidas"
+        subtitulo="Recordatório de 24 horas - relatar quantidade e medidas"
       >
         {textoLongo("dietaManha", "Manhã", "Descreva o que consumiu pela manhã")}
         {textoLongo("dietaTarde", "Tarde", "Descreva o que consumiu à tarde")}

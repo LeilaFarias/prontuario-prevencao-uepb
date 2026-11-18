@@ -237,8 +237,8 @@ export default function ListaProntuarios() {
             <RefreshCw size={16} className="shrink-0 animate-spin" aria-hidden="true" />
             <span className="min-w-0 flex-1">
               {pendentesSync!.prontuarios === 1
-                ? "1 prontuário salvo apenas neste aparelho — sincronizando…"
-                : `${pendentesSync!.prontuarios} prontuários salvos apenas neste aparelho — sincronizando…`}
+                ? "1 prontuário salvo apenas neste aparelho - sincronizando…"
+                : `${pendentesSync!.prontuarios} prontuários salvos apenas neste aparelho - sincronizando…`}
             </span>
           </div>
         )}
