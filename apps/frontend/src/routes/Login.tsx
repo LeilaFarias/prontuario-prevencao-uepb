@@ -4,7 +4,7 @@ import { useForm } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
 import { Eye, EyeOff } from "lucide-react";
 import { loginSchema, type LoginInput, type LoginResponse } from "@prontuario/shared";
-import { api } from "../lib/api";
+import { api, TIMEOUT_SYNC_MS } from "../lib/api";
 import { saveSession } from "../lib/session";
 import { rotaInicial } from "../lib/rotas";
 import VersaoApp from "../components/VersaoApp";
@@ -42,6 +42,24 @@ export default function Login() {
     try {
       const sessao = await api.post<LoginResponse>("/auth/login", dados);
       saveSession(sessao);
+
+      // Pré-carrega a lista usada pelo seletor de professor antes de entrar no app.
+      // Se a rede falhar, mantém o cache anterior e não impede o login.
+      if (sessao.user.perfil === "aluno" && navigator.onLine) {
+        try {
+          const professores = await api.get<Array<{ id: string; nome: string; email: string }>>(
+            "/professores",
+            { timeoutMs: TIMEOUT_SYNC_MS },
+          );
+          localStorage.setItem(
+            "prontuario:professores",
+            JSON.stringify(professores.map(({ id, nome }) => ({ id, nome, matricula: null }))),
+          );
+        } catch {
+          // O login continua disponível; o cache anterior não é apagado.
+        }
+      }
+
       navigate(rotaInicial(sessao.user.perfil), { replace: true });
     } catch (e) {
       setErro(e instanceof Error ? e.message : "Não foi possível entrar.");
