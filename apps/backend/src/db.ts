@@ -23,6 +23,7 @@ export const TABELAS = [
   "Secao",
   "SyncOperationLog",
   "PasswordResetToken",
+  "EmailVerificationToken",
   "AuditLog",
   "Notificacao",
   "Configuracao",
@@ -40,7 +41,8 @@ CREATE TABLE IF NOT EXISTS "Usuario" (
   "criadoEm"       TIMESTAMPTZ NOT NULL DEFAULT now(),
   "ativo"          BOOLEAN NOT NULL DEFAULT TRUE,
   "motivoExclusao" TEXT,
-  "tokenVersion"   INTEGER NOT NULL DEFAULT 0
+  "tokenVersion"   INTEGER NOT NULL DEFAULT 0,
+  "emailVerificadoEm" TIMESTAMPTZ DEFAULT now()
 );
 
 CREATE TABLE IF NOT EXISTS "Prontuario" (
@@ -112,6 +114,17 @@ CREATE TABLE IF NOT EXISTS "PasswordResetToken" (
 );
 CREATE INDEX IF NOT EXISTS idx_reset_userId ON "PasswordResetToken"("userId");
 CREATE INDEX IF NOT EXISTS idx_reset_expiraEm ON "PasswordResetToken"("expiraEm");
+
+CREATE TABLE IF NOT EXISTS "EmailVerificationToken" (
+  "id"        TEXT PRIMARY KEY,
+  "userId"    TEXT NOT NULL REFERENCES "Usuario"("id") ON DELETE CASCADE,
+  "tokenHash" TEXT NOT NULL UNIQUE,
+  "expiraEm"  TIMESTAMPTZ NOT NULL,
+  "usadoEm"   TIMESTAMPTZ,
+  "criadoEm"  TIMESTAMPTZ NOT NULL
+);
+CREATE INDEX IF NOT EXISTS idx_email_verification_userId ON "EmailVerificationToken"("userId");
+CREATE INDEX IF NOT EXISTS idx_email_verification_expiraEm ON "EmailVerificationToken"("expiraEm");
 
 CREATE TABLE IF NOT EXISTS "AuditLog" (
   "id"           TEXT PRIMARY KEY,
@@ -198,7 +211,8 @@ export async function migrar(db: Db): Promise<void> {
          ADD COLUMN IF NOT EXISTS "termosAceitosEm" TIMESTAMPTZ NULL,
          ADD COLUMN IF NOT EXISTS "termosVersao" TEXT NULL,
          ADD COLUMN IF NOT EXISTS "pinCriptografiaHash" TEXT NULL,
-         ADD COLUMN IF NOT EXISTS "saltCriptografia" TEXT NULL`,
+         ADD COLUMN IF NOT EXISTS "saltCriptografia" TEXT NULL,
+         ADD COLUMN IF NOT EXISTS "emailVerificadoEm" TIMESTAMPTZ DEFAULT now()`,
     );
     await tx.query(
       `CREATE TABLE IF NOT EXISTS "LiberacaoOffline" (

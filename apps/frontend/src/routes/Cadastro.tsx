@@ -16,6 +16,7 @@ export default function Cadastro() {
   const [etapa, setEtapa] = useState<Etapa>("dados");
   const [erro, setErro] = useState<string | null>(null);
   const [sucesso, setSucesso] = useState(false);
+  const [mensagemSucesso, setMensagemSucesso] = useState("Conta criada!");
   const {
     register,
     handleSubmit,
@@ -56,10 +57,13 @@ export default function Cadastro() {
   async function onSubmit({ confirmarPin: _confirmarPin, ...dados }: SignupFormInput) {
     setErro(null);
     try {
-      await api.post("/auth/signup", {
+      const resultado = await api.post<{ emailConfirmationRequired: boolean; message?: string }>("/auth/signup", {
         ...dados,
         matricula: dados.perfil === "professor" ? dados.matricula : undefined,
       });
+      setMensagemSucesso(resultado.message ?? (resultado.emailConfirmationRequired
+        ? "Cadastro realizado! Enviamos um link para confirmar seu e-mail."
+        : "Conta criada! Agora você já pode entrar."));
       setSucesso(true);
       setRedirecionar(true);
     } catch (e) {
@@ -196,7 +200,7 @@ export default function Cadastro() {
           )}
 
           {erro && <div role="alert" className="banner-erro">{erro}</div>}
-          {sucesso && <div role="status" className="banner-ok">Conta criada! Redirecionando para o login…</div>}
+          {sucesso && <div role="status" className="banner-ok">{mensagemSucesso} Redirecionando para o login…</div>}
 
           <button type="submit" disabled={isSubmitting || sucesso} className="btn-primary">
             {etapa === "dados" ? "Continuar" : isSubmitting ? "Criando…" : "Criar conta"}

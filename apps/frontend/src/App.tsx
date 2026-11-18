@@ -21,6 +21,7 @@ import RevisaoProntuario from "./routes/RevisaoProntuario";
 import Perfil from "./routes/Perfil";
 import RecuperarSenha from "./routes/RecuperarSenha";
 import RedefinirSenha from "./routes/RedefinirSenha";
+import ConfirmarEmail from "./routes/ConfirmarEmail";
 import Termos from "./routes/Termos";
 import SessaoAviso from "./components/SessaoAviso";
 import ModalTermos from "./components/ModalTermos";
@@ -179,6 +180,7 @@ export default function App() {
         <Route path="/cadastro" element={<SomenteVisitante><Cadastro /></SomenteVisitante>} />
         <Route path="/recuperar" element={<SomenteVisitante><RecuperarSenha /></SomenteVisitante>} />
         <Route path="/redefinir-senha" element={<RedefinirSenha />} />
+        <Route path="/confirmar-email" element={<ConfirmarEmail />} />
         <Route path="/termos" element={<Termos />} />
         <Route path="/prontuarios" element={<SomenteAluno><ListaProntuarios /></SomenteAluno>} />
         <Route path="/fila" element={<SomenteProfessor><Fila /></SomenteProfessor>} />

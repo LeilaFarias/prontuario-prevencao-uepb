@@ -12,7 +12,7 @@ export const SENHA_INVALIDA = "senha-invalida";
 
 const COLUNAS_SENSIVEIS_USUARIO = ["senhaHash", "pinHash", "pinHashClient", "saltClient", "saltServer"] as const;
 const COLUNAS_SENSIVEIS: Record<string, readonly string[]> = { Usuario: COLUNAS_SENSIVEIS_USUARIO };
-const TABELAS_SEM_CONTEUDO: ReadonlySet<string> = new Set(["PasswordResetToken"]);
+const TABELAS_SEM_CONTEUDO: ReadonlySet<string> = new Set(["PasswordResetToken", "EmailVerificationToken"]);
 
 export interface ResultadoRestauracao {
   contagens: Record<string, number>;
