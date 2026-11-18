@@ -76,7 +76,7 @@ export default function ComparacaoCPOD({ comparacao }: { comparacao: ComparacaoR
           className="mt-3 flex items-start gap-2 rounded-field bg-alt-tint px-3 py-2.5 text-[12.5px] font-semibold text-alt"
         >
           <AlertTriangle size={15} className="mt-0.5 shrink-0" aria-hidden="true" />
-          Divergência detectada — confira com o aluno antes de assinar
+          Divergência detectada - confira com o aluno antes de assinar
         </p>
       )}
     </div>

@@ -185,7 +185,7 @@ function FormularioConsentimento({
           Termo de Consentimento Livre e Esclarecido
         </h3>
         <p className="mb-3 mt-1 text-[12px] text-ink-faint">
-          Mesmo documento impresso da Clínica de Prevenção em Saúde Bucal — CCBS / UEPB.
+          Mesmo documento impresso da Clínica de Prevenção em Saúde Bucal - CCBS / UEPB.
         </p>
 
         <div

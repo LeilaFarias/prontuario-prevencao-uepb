@@ -25,7 +25,7 @@ export default function CampoProfessor({ value, onChange, disabled }: Props) {
       const semListaConfiavel = carregando || (falhou && professores.length === 0);
       lista.unshift({
         value: atual,
-        label: semListaConfiavel ? atual : `⚠ ${atual} (não encontrado) — selecione outro`,
+        label: semListaConfiavel ? atual : `⚠ ${atual} (não encontrado) - selecione outro`,
       });
     }
     return lista;

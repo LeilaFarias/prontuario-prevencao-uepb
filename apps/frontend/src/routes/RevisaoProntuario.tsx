@@ -193,7 +193,7 @@ function ConteudoRevisao({ prontuario, onAtualizar }: ConteudoProps) {
             {offline && podeAgir && (
               <p role="status" className="mb-2 flex items-center gap-1.5 text-[12px] text-ink-soft">
                 <WifiOff size={13} aria-hidden="true" />
-                Sem conexão — conecte-se para assinar ou devolver
+                Sem conexão - conecte-se para assinar ou devolver
               </p>
             )}
             <div className="grid grid-cols-2 gap-3">
@@ -201,7 +201,7 @@ function ConteudoRevisao({ prontuario, onAtualizar }: ConteudoProps) {
                 type="button"
                 className="btn-ghost"
                 disabled={bloqueado}
-                title={offline ? "Sem conexão — conecte-se para devolver" : undefined}
+                title={offline ? "Sem conexão - conecte-se para devolver" : undefined}
                 onClick={() => setModalDevolver(true)}
               >
                 Devolver
@@ -210,7 +210,7 @@ function ConteudoRevisao({ prontuario, onAtualizar }: ConteudoProps) {
                 type="button"
                 className="btn-prof"
                 disabled={bloqueado}
-                title={offline ? "Sem conexão — conecte-se para assinar" : undefined}
+                title={offline ? "Sem conexão - conecte-se para assinar" : undefined}
                 onClick={() => setModalAssinar(true)}
               >
                 Assinar prontuário
