@@ -1,7 +1,8 @@
 import { Controller, useWatch } from "react-hook-form";
-import { useLiveQuery } from "dexie-react-hooks";
 import { historiaMedicaSchema } from "@prontuario/shared";
-import { lerProntuarioDecifrado, type LocalProntuario } from "../../db/dexie";
+import type { LocalProntuario } from "../../db/dexie";
+import { useProntuarioLocal } from "../../hooks/useProntuarioLocal";
+import CarregandoSecao from "./CarregandoSecao";
 import { useSecao } from "../../hooks/useSecao";
 import { useSyncStatus } from "../../hooks/useSyncStatus";
 import CampoTexto from "./CampoTexto";
@@ -130,7 +131,7 @@ function FormularioHistoriaMedica({ prontuario }: { prontuario: LocalProntuario 
 }
 
 export default function HistoriaMedica({ prontuarioId }: { prontuarioId: string }) {
-  const prontuario = useLiveQuery(() => lerProntuarioDecifrado(prontuarioId), [prontuarioId]);
-  if (!prontuario) return null;
+  const { prontuario, falhou, recarregar } = useProntuarioLocal(prontuarioId);
+  if (!prontuario) return <CarregandoSecao falhou={falhou} onRecarregar={recarregar} />;
   return <FormularioHistoriaMedica prontuario={prontuario} />;
 }

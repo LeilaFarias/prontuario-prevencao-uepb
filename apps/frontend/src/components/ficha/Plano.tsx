@@ -1,8 +1,9 @@
 import { Controller, useWatch } from "react-hook-form";
-import { useLiveQuery } from "dexie-react-hooks";
 import { Plus } from "lucide-react";
 import { planoSchema, vazioPlano, type Plano as PlanoDados, type SessaoPlano } from "@prontuario/shared";
-import { lerProntuarioDecifrado, type LocalProntuario } from "../../db/dexie";
+import type { LocalProntuario } from "../../db/dexie";
+import { useProntuarioLocal } from "../../hooks/useProntuarioLocal";
+import CarregandoSecao from "./CarregandoSecao";
 import { useSecao, type OpcoesSecao } from "../../hooks/useSecao";
 import { useSyncStatus } from "../../hooks/useSyncStatus";
 import { uuid } from "../../lib/uuid";
@@ -130,7 +131,7 @@ function FormularioPlano({ prontuario }: { prontuario: LocalProntuario }) {
 }
 
 export default function Plano({ prontuarioId }: { prontuarioId: string }) {
-  const prontuario = useLiveQuery(() => lerProntuarioDecifrado(prontuarioId), [prontuarioId]);
-  if (!prontuario) return null;
+  const { prontuario, falhou, recarregar } = useProntuarioLocal(prontuarioId);
+  if (!prontuario) return <CarregandoSecao falhou={falhou} onRecarregar={recarregar} />;
   return <FormularioPlano prontuario={prontuario} />;
 }

@@ -1,8 +1,9 @@
 import { useWatch } from "react-hook-form";
-import { useLiveQuery } from "dexie-react-hooks";
 import { Plus } from "lucide-react";
 import { ihosSchema, type RegistroIHOSDados } from "@prontuario/shared";
-import { lerProntuarioDecifrado, type LocalProntuario } from "../../db/dexie";
+import type { LocalProntuario } from "../../db/dexie";
+import { useProntuarioLocal } from "../../hooks/useProntuarioLocal";
+import CarregandoSecao from "./CarregandoSecao";
 import { useSecao } from "../../hooks/useSecao";
 import { useSyncStatus } from "../../hooks/useSyncStatus";
 import { hojeISO } from "../../lib/data";
@@ -125,7 +126,7 @@ function FormularioIHOS({ prontuario }: { prontuario: LocalProntuario }) {
 }
 
 export default function IHOS({ prontuarioId }: { prontuarioId: string }) {
-  const prontuario = useLiveQuery(() => lerProntuarioDecifrado(prontuarioId), [prontuarioId]);
-  if (!prontuario) return null;
+  const { prontuario, falhou, recarregar } = useProntuarioLocal(prontuarioId);
+  if (!prontuario) return <CarregandoSecao falhou={falhou} onRecarregar={recarregar} />;
   return <FormularioIHOS prontuario={prontuario} />;
 }
