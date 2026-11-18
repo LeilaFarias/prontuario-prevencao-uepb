@@ -24,7 +24,7 @@ import TelaBloqueio from "../components/TelaBloqueio";
 import TimerAcesso from "../components/TimerAcesso";
 import Topbar from "../components/Topbar";
 import LiberacaoManualModal from "../components/LiberacaoManualModal";
-import { aplicarLiberacaoOffline, lerProntuarioDecifrado, type LocalProntuario, type LocalStatus } from "../db/dexie";
+import { aplicarLiberacaoOffline, db, lerProntuarioDecifrado, type LocalProntuario, type LocalStatus } from "../db/dexie";
 import { useProntuarioSync } from "../hooks/useProntuarioSync";
 import { usePuxarParaAtualizar } from "../hooks/usePuxarParaAtualizar";
 import { ProntuarioVivoContext } from "../hooks/useProntuarioLocal";
@@ -85,7 +85,8 @@ export default function Prontuario() {
   const statusRef = useRef<LocalStatus | undefined>(undefined);
   const [modalManual, setModalManual] = useState(false);
 
-  const [estado, setEstado] = useState<"carregando" | "ok" | "nao-encontrado">("carregando");
+  const [estado, setEstado] = useState<"carregando" | "ok" | "nao-encontrado" | "erro-carregamento">("carregando");
+  const [tentativaLeitura, setTentativaLeitura] = useState(0);
   const [pront, setPront] = useState<LocalProntuario | null>(null);
   const prontRef = useRef<LocalProntuario | null>(null);
   const [indice, setIndice] = useState(0);
@@ -111,8 +112,16 @@ export default function Prontuario() {
       setValores({});
       setEstado("carregando");
     }
-    void aplicarLiberacaoOffline(id)
-      .then(() => lerProntuarioDecifrado(id))
+    let limite: number | undefined;
+    const leitura = (async () => {
+      if (!db.isOpen()) await db.open();
+      await aplicarLiberacaoOffline(id);
+      return lerProntuarioDecifrado(id);
+    })();
+    const timeout = new Promise<never>((_, reject) => {
+      limite = window.setTimeout(() => reject(new Error("Tempo limite ao carregar prontuário local")), 8_000);
+    });
+    void Promise.race([leitura, timeout])
       .then((p) => {
         if (!ativo) return;
         if (p?.descartadoEm) return setEstado("nao-encontrado");
@@ -131,12 +140,14 @@ export default function Prontuario() {
       })
       .catch((erro: unknown) => {
         console.warn("[prontuario] falha ao ler dados locais:", erro);
-        if (ativo && prontRef.current?.id !== id) setEstado("nao-encontrado");
-      });
+        if (ativo) setEstado("erro-carregamento");
+      })
+      .finally(() => window.clearTimeout(limite));
     return () => {
       ativo = false;
+      window.clearTimeout(limite);
     };
-  }, [id, versao]);
+  }, [id, versao, tentativaLeitura]);
 
   const salvarPendente = useCallback(async () => {
     window.clearTimeout(timer.current);
@@ -314,6 +325,21 @@ export default function Prontuario() {
 
   if (estado === "carregando" || (estado === "nao-encontrado" && sincronizando)) {
     return <EsqueletoProntuario onVoltar={() => navigate("/prontuarios")} />;
+  }
+
+  if (estado === "erro-carregamento") {
+    return (
+      <div className="flex flex-1 flex-col">
+        <Topbar titulo="Prontuário" onVoltar={() => navigate("/prontuarios")} />
+        <div className="mx-6 flex flex-1 flex-col items-center justify-center text-center">
+          <p role="alert" className="text-[14px] text-ink-soft">Não foi possível carregar este prontuário do armazenamento local.</p>
+          <button type="button" className="btn-primary mt-4" onClick={() => { setEstado("carregando"); setTentativaLeitura((n) => n + 1); }}>
+            <RefreshCw size={16} /> Tentar novamente
+          </button>
+          <button type="button" className="btn-ghost mt-2" onClick={() => navigate("/prontuarios")}>Voltar para prontuários</button>
+        </div>
+      </div>
+    );
   }
 
   if (estado === "nao-encontrado" || !pront) {
