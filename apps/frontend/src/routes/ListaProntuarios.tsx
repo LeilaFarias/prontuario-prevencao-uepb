@@ -1,12 +1,11 @@
 import { useEffect, useReducer, useState, type ReactNode } from "react";
-import { useNavigate } from "react-router-dom";
 import { useLiveQuery } from "dexie-react-hooks";
+import { useNavigate } from "react-router-dom";
 import { Bell, Check, Plus, RefreshCw, RotateCcw, WifiOff, X } from "lucide-react";
 import BottomSheet from "../components/BottomSheet";
 import DevolucaoAlunoModal from "../components/DevolucaoAlunoModal";
 import ProntuarioCard from "../components/ProntuarioCard";
 import { db, type LocalProntuario } from "../db/dexie";
-import { useListaProntuariosLocal } from "../hooks/useListaProntuariosLocal";
 import { useNotificacoes } from "../hooks/useNotificacoes";
 import { useSyncDown } from "../hooks/useSyncDown";
 import { ACESSO_EXPIRADO_EVENT, acessoVigente, prontuarioBloqueado } from "../lib/acesso";
@@ -90,8 +89,6 @@ export default function ListaProntuarios() {
   const [descartando, setDescartando] = useState(false);
   const [filtro, setFiltro] = useState<Filtro>("todos");
   const [online, setOnline] = useState(() => navigator.onLine);
-  const [criando, setCriando] = useState(false);
-  const [erroCriacao, setErroCriacao] = useState(false);
   const [, renderizar] = useReducer((n: number) => n + 1, 0);
 
   useEffect(() => {
@@ -115,7 +112,13 @@ export default function ListaProntuarios() {
     return { operacoes: fila.length, prontuarios: new Set(fila.map((o) => o.prontuarioId)).size };
   }, []);
 
-  const { prontuarios, erro: erroLista, recarregar: recarregarLista } = useListaProntuariosLocal(usuario?.id);
+  const prontuarios = useLiveQuery(
+    async () => {
+      const todos = await db.prontuarios.orderBy("atualizadoEm").reverse().toArray();
+      return todos.filter((p) => (!p.alunoTitularId || p.alunoTitularId === usuario?.id) && !p.descartadoEm);
+    },
+    [usuario?.id],
+  );
 
   const visiveis = prontuarios?.filter((p) => passaNoFiltro(p, filtro)) ?? [];
   const rotuloContagem = `${visiveis.length} ${visiveis.length === 1 ? "prontuário" : "prontuários"}`;
@@ -165,18 +168,9 @@ export default function ListaProntuarios() {
   }
 
   async function novo() {
-    if (!usuario || criando) return;
-    setCriando(true);
-    setErroCriacao(false);
-    try {
-      if (!db.isOpen()) await db.open();
-      const id = await criarProntuarioLocal(usuario.id);
-      navigate(`/prontuario/${id}`);
-    } catch (erro) {
-      console.error("[ListaProntuarios] não foi possível criar prontuário local:", erro);
-      setErroCriacao(true);
-      setCriando(false);
-    }
+    if (!usuario) return;
+    const id = await criarProntuarioLocal(usuario.id);
+    navigate(`/prontuario/${id}`);
   }
 
   const temPendentes = (pendentesSync?.operacoes ?? 0) > 0;
@@ -285,22 +279,6 @@ export default function ListaProntuarios() {
           />
         )}
 
-        {prontuarios === undefined && !erroLista && (
-          <div className="flex flex-col gap-2" role="status" aria-busy="true" aria-label="Carregando prontuários">
-            <div className="h-3 w-28 animate-pulse rounded bg-line-soft" />
-            <div className="h-24 animate-pulse rounded-card bg-line-soft" />
-          </div>
-        )}
-        {erroLista && (
-          <div role="alert" className="rounded-card border border-line-soft bg-raised px-4 py-5 text-center">
-            <p className="text-[13px] text-ink-soft">Não foi possível carregar a lista de prontuários.</p>
-            <button type="button" onClick={recarregarLista} className="btn-ghost mt-3">Tentar novamente</button>
-          </div>
-        )}
-        {erroCriacao && (
-          <p role="alert" className="text-[12px] text-alt">Não foi possível criar o prontuário neste aparelho. Tente novamente.</p>
-        )}
-
         {prontuarios && prontuarios.length === 0 && (
           <div className="my-auto flex flex-col items-center rounded-card border border-line-soft bg-raised px-6 py-10 text-center">
             <div className="flex h-14 w-14 items-center justify-center rounded-full bg-primary-tint text-primary">
@@ -308,7 +286,7 @@ export default function ListaProntuarios() {
             </div>
             <p className="mt-4 font-display text-[18px] font-medium text-ink">Nenhum prontuário ainda</p>
             <p className="mt-1.5 text-[13px] text-ink-soft">Comece preenchendo a ficha de um novo paciente.</p>
-            <button type="button" onClick={() => void novo()} disabled={criando} className="btn-primary mt-5">
+            <button type="button" onClick={novo} className="btn-primary mt-5">
               <Plus size={18} /> Novo prontuário
             </button>
           </div>
@@ -340,12 +318,13 @@ export default function ListaProntuarios() {
         )}
       </main>
 
-      <footer className="sticky bottom-0 border-t border-line bg-paper px-5 py-3">
-        <button type="button" onClick={() => void novo()} disabled={!usuario || criando} className="btn-primary disabled:opacity-60">
-          {criando ? <RefreshCw size={18} className="animate-spin" /> : <Plus size={18} />}
-          {criando ? "Criando…" : "Novo prontuário"}
-        </button>
-      </footer>
+      {prontuarios && prontuarios.length > 0 && (
+        <footer className="sticky bottom-0 border-t border-line bg-paper px-5 py-3">
+          <button type="button" onClick={novo} className="btn-primary">
+            <Plus size={18} /> Novo prontuário
+          </button>
+        </footer>
+      )}
 
       <BottomSheet
         open={descartandoId !== null}

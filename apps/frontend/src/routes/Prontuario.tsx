@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useReducer, useRef, useState } from "react";
+import { useCallback, useEffect, useReducer, useRef, useState } from "react";
 import { useLiveQuery } from "dexie-react-hooks";
 import { useNavigate, useParams, useSearchParams } from "react-router-dom";
 import { ArrowRightLeft, Check, Clock, RefreshCw, RotateCcw, Send, Unlock, X } from "lucide-react";
@@ -24,10 +24,9 @@ import TelaBloqueio from "../components/TelaBloqueio";
 import TimerAcesso from "../components/TimerAcesso";
 import Topbar from "../components/Topbar";
 import LiberacaoManualModal from "../components/LiberacaoManualModal";
-import { aplicarLiberacaoOffline, db, lerProntuarioDecifrado, type LocalProntuario, type LocalStatus } from "../db/dexie";
+import { aplicarLiberacaoOffline, lerProntuarioDecifrado, type LocalProntuario, type LocalStatus } from "../db/dexie";
 import { useProntuarioSync } from "../hooks/useProntuarioSync";
 import { usePuxarParaAtualizar } from "../hooks/usePuxarParaAtualizar";
-import { ProntuarioVivoContext } from "../hooks/useProntuarioLocal";
 import { salvarSecoesPendentes } from "../hooks/useSecao";
 import { ACESSO_EXPIRADO_EVENT, acessoVigente, pedidoPendente, pedidoRecusado } from "../lib/acesso";
 import { getChave } from "../lib/chaveLocal";
@@ -85,16 +84,11 @@ export default function Prontuario() {
   const statusRef = useRef<LocalStatus | undefined>(undefined);
   const [modalManual, setModalManual] = useState(false);
 
-  const [estado, setEstado] = useState<"carregando" | "ok" | "nao-encontrado" | "erro-carregamento">("carregando");
-  const [tentativaLeitura, setTentativaLeitura] = useState(0);
+  const [estado, setEstado] = useState<"carregando" | "ok" | "nao-encontrado">("carregando");
   const [pront, setPront] = useState<LocalProntuario | null>(null);
   const prontRef = useRef<LocalProntuario | null>(null);
   const [indice, setIndice] = useState(0);
-  const [navegandoSecao, setNavegandoSecao] = useState(false);
-  const [erroSalvarSecao, setErroSalvarSecao] = useState(false);
-  const navegacaoEmAndamento = useRef(false);
   const vivo = useLiveQuery(async () => (id ? await lerProntuarioDecifrado(id) : undefined), [id]);
-  const ctxVivo = useMemo(() => ({ id: id ?? "", prontuario: vivo }), [id, vivo]);
   const nomeAoVivo = vivo?.pacienteNome;
   statusRef.current = vivo?.status;
   const [paraEnvio, setParaEnvio] = useState<LocalProntuario | null>(null);
@@ -115,16 +109,8 @@ export default function Prontuario() {
       setValores({});
       setEstado("carregando");
     }
-    let limite: number | undefined;
-    const leitura = (async () => {
-      if (!db.isOpen()) await db.open();
-      await aplicarLiberacaoOffline(id);
-      return lerProntuarioDecifrado(id);
-    })();
-    const timeout = new Promise<never>((_, reject) => {
-      limite = window.setTimeout(() => reject(new Error("Tempo limite ao carregar prontuário local")), 8_000);
-    });
-    void Promise.race([leitura, timeout])
+    void aplicarLiberacaoOffline(id)
+      .then(() => lerProntuarioDecifrado(id))
       .then((p) => {
         if (!ativo) return;
         if (p?.descartadoEm) return setEstado("nao-encontrado");
@@ -143,14 +129,12 @@ export default function Prontuario() {
       })
       .catch((erro: unknown) => {
         console.warn("[prontuario] falha ao ler dados locais:", erro);
-        if (ativo) setEstado("erro-carregamento");
-      })
-      .finally(() => window.clearTimeout(limite));
+        if (ativo && prontRef.current?.id !== id) setEstado("nao-encontrado");
+      });
     return () => {
       ativo = false;
-      window.clearTimeout(limite);
     };
-  }, [id, versao, tentativaLeitura]);
+  }, [id, versao]);
 
   const salvarPendente = useCallback(async () => {
     window.clearTimeout(timer.current);
@@ -291,30 +275,14 @@ export default function Prontuario() {
     if (id && statusAoVivo === "assinado" && !jaVisto) void marcarComoVisto(id);
   }, [id, statusAoVivo, jaVisto]);
 
-  async function irPara(i: number) {
-    if (i < 0 || i >= SECOES.length || i === indice || navegacaoEmAndamento.current) return;
-
-    // Não desmonta o formulário atual enquanto os salvamentos locais ainda estão em andamento.
-    // Isso evita que a próxima seção leia uma versão anterior do IndexedDB.
-    navegacaoEmAndamento.current = true;
-    setNavegandoSecao(true);
-    setErroSalvarSecao(false);
-    try {
-      await salvarPendente();
-      await salvarSecoesPendentes();
-      setIndice(i);
-    } catch (erro) {
-      console.error("[prontuario] não foi possível salvar antes de mudar de seção:", erro);
-      setErroSalvarSecao(true);
-    } finally {
-      navegacaoEmAndamento.current = false;
-      setNavegandoSecao(false);
-    }
+  function irPara(i: number) {
+    void salvarPendente();
+    setIndice(i);
   }
 
   function irParaSecao(secaoId: SecaoId) {
     const i = SECOES.findIndex((s) => s.id === secaoId);
-    if (i >= 0) void irPara(i);
+    if (i >= 0) irPara(i);
   }
 
   const abrirEnvio = useCallback(async () => {
@@ -344,21 +312,6 @@ export default function Prontuario() {
 
   if (estado === "carregando" || (estado === "nao-encontrado" && sincronizando)) {
     return <EsqueletoProntuario onVoltar={() => navigate("/prontuarios")} />;
-  }
-
-  if (estado === "erro-carregamento") {
-    return (
-      <div className="flex flex-1 flex-col">
-        <Topbar titulo="Prontuário" onVoltar={() => navigate("/prontuarios")} />
-        <div className="mx-6 flex flex-1 flex-col items-center justify-center text-center">
-          <p role="alert" className="text-[14px] text-ink-soft">Não foi possível carregar este prontuário do armazenamento local.</p>
-          <button type="button" className="btn-primary mt-4" onClick={() => { setEstado("carregando"); setTentativaLeitura((n) => n + 1); }}>
-            <RefreshCw size={16} /> Tentar novamente
-          </button>
-          <button type="button" className="btn-ghost mt-2" onClick={() => navigate("/prontuarios")}>Voltar para prontuários</button>
-        </div>
-      </div>
-    );
   }
 
   if (estado === "nao-encontrado" || !pront) {
@@ -573,23 +526,13 @@ export default function Prontuario() {
         </div>
       )}
 
-      {navegandoSecao && (
-        <p role="status" className="mx-5 mb-1 text-[11px] text-ink-faint">Salvando seção localmente…</p>
-      )}
-      {erroSalvarSecao && (
-        <p role="alert" className="mx-5 mb-2 rounded-lg bg-alt-tint px-3 py-2 text-[12px] text-alt">
-          Não foi possível salvar esta seção. Você continua nela para evitar perder suas alterações. Tente novamente.
-        </p>
-      )}
-
       <nav aria-label="Seções" className="flex gap-2 overflow-x-auto px-5 pb-3 pt-1 [scrollbar-width:none]">
         {SECOES.map((s, i) => (
           <button
             key={s.id}
             ref={i === indice ? chipAtivo : undefined}
             type="button"
-            onClick={() => void irPara(i)}
-            disabled={navegandoSecao}
+            onClick={() => irPara(i)}
             aria-current={i === indice}
             className={`shrink-0 rounded-pill border px-3.5 py-1.5 text-[13px] font-medium transition ${
               i === indice ? "border-primary bg-primary text-white" : "border-line bg-raised text-ink-soft"
@@ -600,10 +543,7 @@ export default function Prontuario() {
         ))}
       </nav>
 
-      <main
-        className="flex-1 px-5 pb-4 pt-2"
-        aria-busy={navegandoSecao}
-      >
+      <main className="flex-1 px-5 pb-4 pt-2">
         {atual.historico && !!atual.historico.secoes[secao.id] && (
             <div className="mb-3">
             <HistoricoSecao
@@ -617,7 +557,6 @@ export default function Prontuario() {
             />
           </div>
         )}
-        <ProntuarioVivoContext.Provider value={ctxVivo}>
         {secao.id === "consentimento" ? (
           <Consentimento
             key={pront.id}
@@ -660,19 +599,18 @@ export default function Prontuario() {
             <p className="hint">Autosave local ativo. As alterações entram na fila de sincronização.</p>
           </section>
         )}
-        </ProntuarioVivoContext.Provider>
       </main>
 
       <footer className="sticky bottom-0 mt-4 flex flex-col gap-2.5 border-t border-line bg-paper px-5 py-3">
         <div className="grid grid-cols-2 gap-3">
-          <button type="button" className="btn-ghost" disabled={indice === 0 || navegandoSecao} onClick={() => void irPara(indice - 1)}>
+          <button type="button" className="btn-ghost" disabled={indice === 0} onClick={() => irPara(indice - 1)}>
             Anterior
           </button>
           <button
             type="button"
             className="btn-primary"
-            disabled={indice === SECOES.length - 1 || navegandoSecao}
-            onClick={() => void irPara(indice + 1)}
+            disabled={indice === SECOES.length - 1}
+            onClick={() => irPara(indice + 1)}
           >
             Próxima
           </button>
