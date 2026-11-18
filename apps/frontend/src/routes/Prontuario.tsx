@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useReducer, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useReducer, useRef, useState } from "react";
 import { useLiveQuery } from "dexie-react-hooks";
 import { useNavigate, useParams, useSearchParams } from "react-router-dom";
 import { ArrowRightLeft, Check, Clock, RefreshCw, RotateCcw, Send, Unlock, X } from "lucide-react";
@@ -27,6 +27,7 @@ import LiberacaoManualModal from "../components/LiberacaoManualModal";
 import { aplicarLiberacaoOffline, lerProntuarioDecifrado, type LocalProntuario, type LocalStatus } from "../db/dexie";
 import { useProntuarioSync } from "../hooks/useProntuarioSync";
 import { usePuxarParaAtualizar } from "../hooks/usePuxarParaAtualizar";
+import { ProntuarioVivoContext } from "../hooks/useProntuarioLocal";
 import { salvarSecoesPendentes } from "../hooks/useSecao";
 import { ACESSO_EXPIRADO_EVENT, acessoVigente, pedidoPendente, pedidoRecusado } from "../lib/acesso";
 import { getChave } from "../lib/chaveLocal";
@@ -89,6 +90,7 @@ export default function Prontuario() {
   const prontRef = useRef<LocalProntuario | null>(null);
   const [indice, setIndice] = useState(0);
   const vivo = useLiveQuery(async () => (id ? await lerProntuarioDecifrado(id) : undefined), [id]);
+  const ctxVivo = useMemo(() => ({ id: id ?? "", prontuario: vivo }), [id, vivo]);
   const nomeAoVivo = vivo?.pacienteNome;
   statusRef.current = vivo?.status;
   const [paraEnvio, setParaEnvio] = useState<LocalProntuario | null>(null);
@@ -557,6 +559,7 @@ export default function Prontuario() {
             />
           </div>
         )}
+        <ProntuarioVivoContext.Provider value={ctxVivo}>
         {secao.id === "consentimento" ? (
           <Consentimento
             key={pront.id}
@@ -599,6 +602,7 @@ export default function Prontuario() {
             <p className="hint">Autosave local ativo. As alterações entram na fila de sincronização.</p>
           </section>
         )}
+        </ProntuarioVivoContext.Provider>
       </main>
 
       <footer className="sticky bottom-0 mt-4 flex flex-col gap-2.5 border-t border-line bg-paper px-5 py-3">

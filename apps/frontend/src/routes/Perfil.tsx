@@ -208,7 +208,7 @@ function ModalSair({ onClose, onSucesso }: { onClose: () => void; onSucesso: () 
         <LogOut size={22} />
       </div>
       <p className="text-[13px] leading-relaxed text-ink-soft">
-        Você será desconectado deste aparelho. Você poderá entrar novamente quando quiser.
+        Você será desconectado deste aparelho. Seus prontuários não sincronizados serão APAGADOS.
       </p>
       <div className="mt-5 flex flex-col gap-2.5">
         <button

@@ -1,10 +1,12 @@
-import { useCallback, useEffect, useRef, useState } from "react";
+import { createContext, useCallback, useContext, useEffect, useRef, useState } from "react";
 import { useLiveQuery } from "dexie-react-hooks";
 import { db, lerProntuarioDecifrado, type LocalProntuario } from "../db/dexie";
 
-const ESPERA_INICIAL_MS = 1500;
-const MAX_TENTATIVAS = 3;
+const ESPERA_INICIAL_MS = 400;
+const MAX_TENTATIVAS = 5;
 const REVALIDAR_MS = 3000;
+
+export const ProntuarioVivoContext = createContext<{ id: string; prontuario: LocalProntuario | undefined } | null>(null);
 
 export interface ProntuarioLocal {
   prontuario: LocalProntuario | undefined;
@@ -18,24 +20,15 @@ async function lerGarantindoBanco(id: string): Promise<LocalProntuario | undefin
   return lerProntuarioDecifrado(id);
 }
 
-/**
- * Lê o prontuário local (decifrado) de forma resiliente.
- *
- * O `liveQuery` do Dexie pode ficar preso em `undefined` sem emitir nada nem erro
- * (DatabaseClosedError/AbortError são engolidos, e a leitura em andamento é descartada
- * quando há escrita concorrente — ex.: troca de seção). Neste caso o hook:
- *  1. espera ~1,5 s;
- *  2. reabre o banco se preciso e lê manualmente (com novas tentativas);
- *  3. reassina o liveQuery;
- *  4. se tudo falhar, devolve `falhou: true` para a UI oferecer "Recarregar seção".
- * Ao voltar do segundo plano (Android pode reciclar a conexão do IndexedDB) tenta de novo.
- */
 export function useProntuarioLocal(id: string): ProntuarioLocal {
   const [assinatura, setAssinatura] = useState(0);
   const [ciclo, setCiclo] = useState(0);
   const vivo = useLiveQuery(() => lerProntuarioDecifrado(id), [id, assinatura]);
-  const vivoRef = useRef(vivo);
-  vivoRef.current = vivo;
+  const doPaiCtx = useContext(ProntuarioVivoContext);
+  const doPai = doPaiCtx && doPaiCtx.id === id ? doPaiCtx.prontuario : undefined;
+  const temAoVivo = vivo ?? doPai;
+  const vivoRef = useRef(temAoVivo);
+  vivoRef.current = temAoVivo;
   const [manual, setManual] = useState<LocalProntuario | undefined>(undefined);
   const [falhou, setFalhou] = useState(false);
   const manualRef = useRef<LocalProntuario | undefined>(undefined);
@@ -53,7 +46,7 @@ export function useProntuarioLocal(id: string): ProntuarioLocal {
   }, [id]);
 
   useEffect(() => {
-    if (vivo) {
+    if (temAoVivo) {
       setManual(undefined);
       setFalhou(false);
       return;
@@ -65,6 +58,7 @@ export function useProntuarioLocal(id: string): ProntuarioLocal {
 
     const tentar = async () => {
       if (!ativo) return;
+      if (tentativas === 0) console.warn("[useProntuarioLocal] liveQuery sem resposta; usando leitura manual");
       try {
         const p = await lerGarantindoBanco(id);
         if (!ativo) return;
@@ -91,10 +85,10 @@ export function useProntuarioLocal(id: string): ProntuarioLocal {
       ativo = false;
       window.clearTimeout(timer);
     };
-  }, [vivo, id, ciclo]);
+  }, [temAoVivo, id, ciclo]);
 
   useEffect(() => {
-    if (vivo || !manual) return;
+    if (temAoVivo || !manual) return;
     let ativo = true;
     const t = window.setInterval(() => {
       void lerGarantindoBanco(id)
@@ -110,7 +104,7 @@ export function useProntuarioLocal(id: string): ProntuarioLocal {
       ativo = false;
       window.clearInterval(t);
     };
-  }, [vivo, manual, id]);
+  }, [temAoVivo, manual, id]);
 
   useEffect(() => {
     const aoVoltar = () => {
@@ -126,6 +120,6 @@ export function useProntuarioLocal(id: string): ProntuarioLocal {
     };
   }, []);
 
-  const prontuario = vivo ?? manual;
+  const prontuario = vivo ?? doPai ?? manual;
   return { prontuario, carregando: !prontuario && !falhou, falhou, recarregar };
 }
