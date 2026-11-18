@@ -574,7 +574,7 @@ export default function Prontuario() {
       )}
 
       {navegandoSecao && (
-        <p role="status" className="mx-5 mb-1 text-[11px] text-ink-faint">Salvando seção…</p>
+        <p role="status" className="mx-5 mb-1 text-[11px] text-ink-faint">Salvando seção localmente…</p>
       )}
       {erroSalvarSecao && (
         <p role="alert" className="mx-5 mb-2 rounded-lg bg-alt-tint px-3 py-2 text-[12px] text-alt">
@@ -601,7 +601,7 @@ export default function Prontuario() {
       </nav>
 
       <main
-        className={`flex-1 px-5 pb-4 pt-2 ${navegandoSecao ? "pointer-events-none" : ""}`}
+        className="flex-1 px-5 pb-4 pt-2"
         aria-busy={navegandoSecao}
       >
         {atual.historico && !!atual.historico.secoes[secao.id] && (
