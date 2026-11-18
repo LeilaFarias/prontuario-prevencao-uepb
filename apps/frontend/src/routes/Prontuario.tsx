@@ -248,6 +248,17 @@ export default function Prontuario() {
   }, [monitorarAcesso, recarregar]);
 
   useEffect(() => {
+    const aoRedimensionar = () => renderizar();
+    const viewport = window.visualViewport;
+    window.addEventListener("resize", aoRedimensionar);
+    viewport?.addEventListener("resize", aoRedimensionar);
+    return () => {
+      window.removeEventListener("resize", aoRedimensionar);
+      viewport?.removeEventListener("resize", aoRedimensionar);
+    };
+  }, []);
+
+  useEffect(() => {
     const aoExpirar = () => {
       renderizar();
       void recarregar();
