@@ -43,7 +43,7 @@ export default function CampoTexto({
       {multiline ? (
         <textarea
           id={id}
-          className="input !h-auto min-h-[80px] resize-none py-3 leading-snug disabled:bg-paper disabled:text-ink-soft"
+          className="input !h-auto min-h-[120px] resize-none py-3 leading-snug disabled:bg-paper disabled:text-ink-soft"
           value={value}
           onChange={(e) => onChange(e.target.value)}
           placeholder={placeholder}

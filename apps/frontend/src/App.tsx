@@ -127,6 +127,14 @@ export default function App() {
     };
   }, [token]);
 
+  useEffect(() => {
+    const aoVoltar = () => {
+      if (document.visibilityState === "visible") window.dispatchEvent(new Event("resize"));
+    };
+    document.addEventListener("visibilitychange", aoVoltar);
+    return () => document.removeEventListener("visibilitychange", aoVoltar);
+  }, []);
+
   return (
     <div className="device">
       <SessaoAviso />
