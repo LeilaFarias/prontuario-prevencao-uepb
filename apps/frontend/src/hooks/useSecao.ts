@@ -9,10 +9,13 @@ import { AcessoExpiradoError, salvarSecaoLocal, type CabecalhoPaciente } from ".
 
 const DEBOUNCE_MS = 800;
 
-const salvadoresAtivos = new Set<() => Promise<void>>();
+const salvadoresAtivos = new Set<() => Promise<boolean>>();
 
 export async function salvarSecoesPendentes(): Promise<void> {
-  await Promise.all([...salvadoresAtivos].map((salvar) => salvar()));
+  const resultados = await Promise.all([...salvadoresAtivos].map((salvar) => salvar()));
+  if (resultados.some((salvo) => !salvo)) {
+    throw new Error("Não foi possível salvar a seção atual. A navegação foi interrompida para proteger os dados.");
+  }
 }
 
 type SchemaSecao = z.ZodType<FieldValues, z.ZodTypeDef, any>;
@@ -75,17 +78,25 @@ export function useSecao<T extends SchemaSecao>(
   const timer = useRef<number | undefined>(undefined);
   const ultimoSalvo = useRef<string>(JSON.stringify(inicial));
   const emAndamento = useRef(0);
+  const salvamentoAtual = useRef<Promise<boolean> | null>(null);
   const montado = useRef(true);
 
-  const salvar = useCallback(async () => {
+  const salvar = useCallback(async (): Promise<boolean> => {
     window.clearTimeout(timer.current);
     timer.current = undefined;
+
+    // Serializa gravações: uma segunda chamada espera a transação anterior terminar
+    // antes de ler os valores atuais e iniciar outra gravação.
+    if (salvamentoAtual.current) {
+      const resultadoAnterior = await salvamentoAtual.current;
+      if (!resultadoAnterior) return false;
+    }
 
     const valores = getValues() as V;
     const json = JSON.stringify(valores);
     if (json === ultimoSalvo.current) {
       if (montado.current && emAndamento.current === 0) setSalvando(false);
-      return;
+      return true;
     }
 
     const anterior = ultimoSalvo.current;
@@ -95,28 +106,36 @@ export function useSecao<T extends SchemaSecao>(
       ultimoSalvo.current = anterior;
       if (montado.current) reset(JSON.parse(anterior) as unknown as DefaultValues<V>);
     };
-    try {
-      if (assinadoRef.current && !(await confirmarInvalidacaoAssinatura())) {
-        restaurar();
-        return;
+    const operacao = (async (): Promise<boolean> => {
+      try {
+        if (assinadoRef.current && !(await confirmarInvalidacaoAssinatura())) {
+          restaurar();
+          return false;
+        }
+        await salvarSecaoLocal(
+          prontuario.id,
+          secaoId,
+          JSON.parse(json) as Record<string, unknown>,
+          opcoesRef.current?.cabecalho?.(valores),
+        );
+        if (montado.current) setSalvoEm(Date.now());
+        return true;
+      } catch (err) {
+        if (err instanceof AcessoExpiradoError) restaurar();
+        else {
+          console.error("[useSecao] falha ao salvar seção:", err);
+          ultimoSalvo.current = anterior;
+        }
+        return false;
+      } finally {
+        emAndamento.current -= 1;
+        if (montado.current && timer.current === undefined && emAndamento.current === 0) setSalvando(false);
       }
-      await salvarSecaoLocal(
-        prontuario.id,
-        secaoId,
-        JSON.parse(json) as Record<string, unknown>,
-        opcoesRef.current?.cabecalho?.(valores),
-      );
-      if (montado.current) setSalvoEm(Date.now());
-    } catch (err) {
-      if (err instanceof AcessoExpiradoError) restaurar();
-      else {
-        console.error("[useSecao] falha ao salvar seção:", err);
-        ultimoSalvo.current = anterior;
-      }
-    } finally {
-      emAndamento.current -= 1;
-      if (montado.current && timer.current === undefined && emAndamento.current === 0) setSalvando(false);
-    }
+    })();
+    salvamentoAtual.current = operacao;
+    const resultado = await operacao;
+    if (salvamentoAtual.current === operacao) salvamentoAtual.current = null;
+    return resultado;
   }, [getValues, reset, prontuario.id, secaoId]);
 
   const salvarRef = useRef(salvar);

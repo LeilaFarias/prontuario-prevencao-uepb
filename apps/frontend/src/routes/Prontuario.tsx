@@ -90,6 +90,9 @@ export default function Prontuario() {
   const [pront, setPront] = useState<LocalProntuario | null>(null);
   const prontRef = useRef<LocalProntuario | null>(null);
   const [indice, setIndice] = useState(0);
+  const [navegandoSecao, setNavegandoSecao] = useState(false);
+  const [erroSalvarSecao, setErroSalvarSecao] = useState(false);
+  const navegacaoEmAndamento = useRef(false);
   const vivo = useLiveQuery(async () => (id ? await lerProntuarioDecifrado(id) : undefined), [id]);
   const ctxVivo = useMemo(() => ({ id: id ?? "", prontuario: vivo }), [id, vivo]);
   const nomeAoVivo = vivo?.pacienteNome;
@@ -288,14 +291,30 @@ export default function Prontuario() {
     if (id && statusAoVivo === "assinado" && !jaVisto) void marcarComoVisto(id);
   }, [id, statusAoVivo, jaVisto]);
 
-  function irPara(i: number) {
-    void salvarPendente();
-    setIndice(i);
+  async function irPara(i: number) {
+    if (i < 0 || i >= SECOES.length || i === indice || navegacaoEmAndamento.current) return;
+
+    // Não desmonta o formulário atual enquanto os salvamentos locais ainda estão em andamento.
+    // Isso evita que a próxima seção leia uma versão anterior do IndexedDB.
+    navegacaoEmAndamento.current = true;
+    setNavegandoSecao(true);
+    setErroSalvarSecao(false);
+    try {
+      await salvarPendente();
+      await salvarSecoesPendentes();
+      setIndice(i);
+    } catch (erro) {
+      console.error("[prontuario] não foi possível salvar antes de mudar de seção:", erro);
+      setErroSalvarSecao(true);
+    } finally {
+      navegacaoEmAndamento.current = false;
+      setNavegandoSecao(false);
+    }
   }
 
   function irParaSecao(secaoId: SecaoId) {
     const i = SECOES.findIndex((s) => s.id === secaoId);
-    if (i >= 0) irPara(i);
+    if (i >= 0) void irPara(i);
   }
 
   const abrirEnvio = useCallback(async () => {
@@ -554,13 +573,23 @@ export default function Prontuario() {
         </div>
       )}
 
+      {navegandoSecao && (
+        <p role="status" className="mx-5 mb-1 text-[11px] text-ink-faint">Salvando seção…</p>
+      )}
+      {erroSalvarSecao && (
+        <p role="alert" className="mx-5 mb-2 rounded-lg bg-alt-tint px-3 py-2 text-[12px] text-alt">
+          Não foi possível salvar esta seção. Você continua nela para evitar perder suas alterações. Tente novamente.
+        </p>
+      )}
+
       <nav aria-label="Seções" className="flex gap-2 overflow-x-auto px-5 pb-3 pt-1 [scrollbar-width:none]">
         {SECOES.map((s, i) => (
           <button
             key={s.id}
             ref={i === indice ? chipAtivo : undefined}
             type="button"
-            onClick={() => irPara(i)}
+            onClick={() => void irPara(i)}
+            disabled={navegandoSecao}
             aria-current={i === indice}
             className={`shrink-0 rounded-pill border px-3.5 py-1.5 text-[13px] font-medium transition ${
               i === indice ? "border-primary bg-primary text-white" : "border-line bg-raised text-ink-soft"
@@ -571,7 +600,10 @@ export default function Prontuario() {
         ))}
       </nav>
 
-      <main className="flex-1 px-5 pb-4 pt-2">
+      <main
+        className={`flex-1 px-5 pb-4 pt-2 ${navegandoSecao ? "pointer-events-none" : ""}`}
+        aria-busy={navegandoSecao}
+      >
         {atual.historico && !!atual.historico.secoes[secao.id] && (
             <div className="mb-3">
             <HistoricoSecao
@@ -633,14 +665,14 @@ export default function Prontuario() {
 
       <footer className="sticky bottom-0 mt-4 flex flex-col gap-2.5 border-t border-line bg-paper px-5 py-3">
         <div className="grid grid-cols-2 gap-3">
-          <button type="button" className="btn-ghost" disabled={indice === 0} onClick={() => irPara(indice - 1)}>
+          <button type="button" className="btn-ghost" disabled={indice === 0 || navegandoSecao} onClick={() => void irPara(indice - 1)}>
             Anterior
           </button>
           <button
             type="button"
             className="btn-primary"
-            disabled={indice === SECOES.length - 1}
-            onClick={() => irPara(indice + 1)}
+            disabled={indice === SECOES.length - 1 || navegandoSecao}
+            onClick={() => void irPara(indice + 1)}
           >
             Próxima
           </button>
