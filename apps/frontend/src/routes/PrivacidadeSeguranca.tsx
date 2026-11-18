@@ -1,10 +1,11 @@
-import { ArrowLeft, Eye, HardDrive, KeyRound, Lock, ScrollText, ShieldCheck } from "lucide-react";
+import { ArrowLeft, Eye, HardDrive, KeyRound, Lock, ScrollText, ShieldCheck, Smartphone } from "lucide-react";
 import { Link } from "react-router-dom";
 import { getSession } from "../lib/session";
 import { rotaInicial } from "../lib/rotas";
 
 const itensGerais = [
-  { Icone: Lock, texto: "Os dados dos pacientes são criptografados durante a transmissão (HTTPS) e no banco de dados (AES-256)." },
+  { Icone: Lock, texto: "Os dados dos pacientes trafegam por conexão segura (HTTPS) e ficam armazenados em banco de dados com criptografia em repouso (AES-256), fornecida pelo provedor." },
+  { Icone: Smartphone, texto: "Os dados salvos no aparelho são criptografados e protegidos por PIN." },
   { Icone: HardDrive, texto: "Os backups são criptografados e apenas administradores podem baixá-los." },
   { Icone: KeyRound, texto: "As senhas são armazenadas em formato de hash e não ficam disponíveis em texto legível." },
 ];
@@ -44,11 +45,11 @@ export default function PrivacidadeSeguranca() {
           <ul className="mt-3 flex flex-col gap-3">
             <li className="flex items-start gap-3 text-[13px] leading-relaxed text-ink-soft">
               <Eye size={17} className="mt-0.5 shrink-0 text-primary" />
-              <span>Alunos acessam os prontuários dos pacientes que atendem. Professores supervisores podem acessar o acervo clínico da clínica para atividades de ensino e supervisão.</span>
+              <span>Alunos acessam os prontuários dos pacientes que atendem. Professores podem acessar o acervo clínico da clínica para atividades de ensino e supervisão.</span>
             </li>
             <li className="flex items-start gap-3 text-[13px] leading-relaxed text-ink-soft">
               <ScrollText size={17} className="mt-0.5 shrink-0 text-primary" />
-              <span>As operações realizadas no sistema são registradas em log de auditoria, incluindo leituras e alterações de prontuários e ações de supervisão.</span>
+              <span>As principais ações no sistema são registradas em log de auditoria, como a leitura de prontuários, a liberação de acessos, a transferência de titularidade e o download de backups.</span>
             </li>
           </ul>
         </section>
