@@ -23,15 +23,10 @@ export const excluirContaSchema = z.object({
   senha: z.string().min(1, "Informe sua senha"),
 });
 
-export const aceitarTermosSchema = z.object({
-  versao: z.string().trim().min(1, "Informe a versão dos termos"),
-});
-
 export type AtualizarPerfilInput = z.infer<typeof atualizarPerfilSchema>;
 export type AlterarSenhaInput = z.infer<typeof alterarSenhaSchema>;
 export type AlterarMatriculaInput = z.infer<typeof alterarMatriculaSchema>;
 export type ExcluirContaInput = z.infer<typeof excluirContaSchema>;
-export type AceitarTermosInput = z.infer<typeof aceitarTermosSchema>;
 
 export interface UsuarioMe {
   id: string;
@@ -40,15 +35,6 @@ export interface UsuarioMe {
   perfil: "aluno" | "professor";
   matricula: string | null;
   criadoEm: string;
-  termosAceitosEm: string | null;
-  termosVersao: string | null;
-  versaoAtual: string | null;
   temPinCriptografia: boolean;
   saltCriptografia: string | null;
-}
-
-export interface TermosResposta {
-  versao: string;
-  conteudo: string;
-  publicadaEm: string;
 }

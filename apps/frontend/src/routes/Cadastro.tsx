@@ -140,11 +140,15 @@ export default function Cadastro() {
           {perfil === "professor" && (
             <div>
               <label htmlFor="matricula" className="label">Matrícula</label>
-              <input id="matricula" type="text" inputMode="numeric" className="input" {...register("matricula")} />
-              {errors.matricula ? (
+              <input
+                id="matricula"
+                type="text"
+                inputMode="numeric"
+                className="input"
+                {...register("matricula")}
+              />
+              {errors.matricula && (
                 <p className="field-error">{errors.matricula.message}</p>
-              ) : (
-                <p className="hint">Usada na assinatura e na liberação de acesso.</p>
               )}
             </div>
           )}
@@ -214,6 +218,9 @@ export default function Cadastro() {
 
         <p className="mt-6 text-center text-[14px] text-ink-soft">
           Já tem conta? <Link to="/login" className="font-medium text-primary">Entrar</Link>
+        </p>
+        <p className="mt-4 text-center text-[12px]">
+          <Link to="/privacidade" className="font-medium text-primary">Privacidade e segurança</Link>
         </p>
       </main>
     </div>

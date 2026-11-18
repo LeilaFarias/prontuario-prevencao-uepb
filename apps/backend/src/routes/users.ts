@@ -2,18 +2,15 @@ import { randomUUID } from "node:crypto";
 import type { FastifyPluginAsync } from "fastify";
 import { z } from "zod";
 import {
-  aceitarTermosSchema,
   alterarMatriculaSchema,
   alterarSenhaSchema,
   atualizarPerfilSchema,
   excluirContaSchema,
-  type TermosResposta,
   type UsuarioMe,
 } from "@prontuario/shared";
 import { executar, todas, transacao, uma } from "../db";
 import { gerarHashesPinCriptografia, gerarHashesPinLiberacao, verificarPinCriptografia } from "../lib/pin";
 import { hashSenha, verificarSenha } from "../lib/senha";
-import { SQL_VERSAO_ATUAL } from "../lib/termos";
 
 const definirPinSchema = z.object({
   pin: z.string().regex(/^\d{8}$/, "PIN deve ter 8 dígitos"),
@@ -34,9 +31,6 @@ interface UsuarioRow {
   perfil: string;
   matricula: string | null;
   criadoEm: string;
-  termosAceitosEm: string | null;
-  termosVersao: string | null;
-  versaoAtual: string | null;
   temPinCriptografia: boolean;
   saltCriptografia: string | null;
 }
@@ -53,8 +47,7 @@ export const userRoutes: FastifyPluginAsync = async (app) => {
   const buscarMe = async (id: string): Promise<UsuarioMe> => {
     const u = (await uma<UsuarioRow>(
       db,
-      `SELECT "id", "nome", "email", "perfil", "matricula", "criadoEm", "termosAceitosEm", "termosVersao",
-              ${SQL_VERSAO_ATUAL} AS "versaoAtual",
+      `SELECT "id", "nome", "email", "perfil", "matricula", "criadoEm",
               ("pinCriptografiaHash" IS NOT NULL) AS "temPinCriptografia", "saltCriptografia"
          FROM "Usuario" WHERE "id" = $1`,
       [id],
@@ -74,36 +67,7 @@ export const userRoutes: FastifyPluginAsync = async (app) => {
     return todas<AlunoRow>(db, listarAlunos);
   });
 
-  app.get("/termos", async (_req, reply) => {
-    const termos = await uma<TermosResposta>(
-      db,
-      `SELECT "versao", "conteudo", "publicadaEm" FROM "TermosVersao" ORDER BY "publicadaEm" DESC LIMIT 1`,
-    );
-    if (!termos) return reply.status(404).send({ message: "Termos não publicados.", codigo: "TERMOS_NAO_PUBLICADOS" });
-    return termos;
-  });
-
   app.get("/users/me", protegida, async (req) => buscarMe(req.user.sub));
-
-  app.post("/users/me/aceitar-termos", protegida, async (req, reply) => {
-    const id = req.user.sub;
-    const { versao } = aceitarTermosSchema.parse(req.body);
-
-    if (!(await uma(db, `SELECT "id" FROM "TermosVersao" WHERE "versao" = $1`, [versao]))) {
-      return reply.status(400).send({ message: "Versão dos termos inexistente.", codigo: "TERMOS_VERSAO_INVALIDA" });
-    }
-
-    await transacao(db, async (tx) => {
-      await executar(tx, `UPDATE "Usuario" SET "termosAceitosEm" = now(), "termosVersao" = $1 WHERE "id" = $2`, [versao, id]);
-      await executar(tx, `INSERT INTO "AuditLog" ("id", "usuarioId", "acao", "detalhe") VALUES ($1, $2, $3, $4)`, [
-        randomUUID(),
-        id,
-        "termos-aceitos",
-        JSON.stringify({ usuarioId: id, versao }),
-      ]);
-    });
-    return reply.status(204).send();
-  });
 
   app.put("/users/me", protegida, async (req, reply) => {
     const id = req.user.sub;

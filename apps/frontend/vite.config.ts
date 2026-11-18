@@ -19,7 +19,6 @@ const API_PREFIXES = [
   "/health",
   "/configuracoes",
   "/indicador-pacientes",
-  "/termos",
 ];
 
 export default defineConfig({

@@ -3,7 +3,6 @@ import { clearSession, getSession } from "./session";
 export const API_URL = import.meta.env.VITE_API_URL ?? "";
 export const TIMEOUT_SYNC_MS = 8_000;
 export const TIMEOUT_FLUSH_MS = 20_000;
-export const EVENTO_TERMOS_NAO_ACEITOS = "termos-nao-aceitos";
 
 export class ApiError extends Error {
   constructor(
@@ -54,9 +53,6 @@ async function request<T>(method: string, path: string, body?: unknown, opcoes?:
     window.location.assign("/login?sessao=expirada");
   }
 
-  if (res.status === 403 && data?.codigo === "TERMOS_NAO_ACEITOS") {
-    window.dispatchEvent(new CustomEvent(EVENTO_TERMOS_NAO_ACEITOS));
-  }
 
   if (!res.ok) {
     throw new ApiError((data?.message ?? data?.error) ?? "Algo deu errado. Tente novamente.", res.status, data?.codigo);

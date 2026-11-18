@@ -130,10 +130,6 @@ export default function Login() {
           {isSubmitting ? "Entrando…" : "Entrar"}
         </button>
 
-        <p className="text-center text-[12px] leading-snug text-ink-faint">
-          Ao entrar, você concorda com os{" "}
-          <Link to="/termos" className="font-medium text-primary">Termos de Uso e a Política de Privacidade</Link>
-        </p>
       </form>
 
       <div className="my-6 flex items-center gap-3 text-[12.5px] text-ink-faint">
@@ -145,6 +141,7 @@ export default function Login() {
       </p>
 
       <div className="mt-auto pt-8 text-center">
+        <Link to="/privacidade" className="mb-3 inline-block text-[12px] font-medium text-primary">Privacidade e segurança</Link>
         <VersaoApp compacta />
       </div>
     </main>

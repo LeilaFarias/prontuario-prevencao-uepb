@@ -2,7 +2,6 @@ import { existsSync, readFileSync } from "node:fs";
 import pg from "pg";
 import type { Pool as PgPool, PoolClient, PoolConfig, QueryResult } from "pg";
 import { env } from "./env";
-import { CONTEUDO_TERMOS_V1, VERSAO_TERMOS_INICIAL } from "./lib/termos";
 
 const { Pool, types } = pg;
 
@@ -208,8 +207,6 @@ export async function migrar(db: Db): Promise<void> {
          ADD COLUMN IF NOT EXISTS "pinHashClient" TEXT NULL,
          ADD COLUMN IF NOT EXISTS "saltClient" TEXT NULL,
          ADD COLUMN IF NOT EXISTS "saltServer" TEXT NULL,
-         ADD COLUMN IF NOT EXISTS "termosAceitosEm" TIMESTAMPTZ NULL,
-         ADD COLUMN IF NOT EXISTS "termosVersao" TEXT NULL,
          ADD COLUMN IF NOT EXISTS "pinCriptografiaHash" TEXT NULL,
          ADD COLUMN IF NOT EXISTS "saltCriptografia" TEXT NULL,
          ADD COLUMN IF NOT EXISTS "emailVerificadoEm" TIMESTAMPTZ DEFAULT now()`,
@@ -226,19 +223,7 @@ export async function migrar(db: Db): Promise<void> {
        )`,
     );
     await tx.query(`CREATE INDEX IF NOT EXISTS idx_liberacao_offline_pront ON "LiberacaoOffline"("prontuarioId")`);
-    await tx.query(
-      `CREATE TABLE IF NOT EXISTS "TermosVersao" (
-         "id"          TEXT PRIMARY KEY,
-         "versao"      TEXT UNIQUE NOT NULL,
-         "conteudo"    TEXT NOT NULL,
-         "publicadaEm" TIMESTAMPTZ NOT NULL DEFAULT now()
-       )`,
-    );
-    await tx.query(
-      `INSERT INTO "TermosVersao" ("id", "versao", "conteudo") VALUES ($1, $2, $3) ON CONFLICT DO NOTHING`,
-      [`termos-${VERSAO_TERMOS_INICIAL}`, VERSAO_TERMOS_INICIAL, CONTEUDO_TERMOS_V1],
-    );
-    for (const tabela of [...TABELAS, "TermosVersao"]) {
+    for (const tabela of TABELAS) {
       await tx.query(`ALTER TABLE "${tabela}" ENABLE ROW LEVEL SECURITY`);
     }
   });

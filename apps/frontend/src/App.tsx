@@ -1,9 +1,7 @@
-import { useCallback, useEffect, useState, type ReactElement } from "react";
+import { useEffect, useState, type ReactElement } from "react";
 import { useLiveQuery } from "dexie-react-hooks";
 import { Navigate, Route, Routes, useLocation } from "react-router-dom";
-import type { UsuarioMe } from "@prontuario/shared";
 import { db } from "./db/dexie";
-import { api, EVENTO_TERMOS_NAO_ACEITOS } from "./lib/api";
 import { getChave } from "./lib/chaveLocal";
 import { atualizarMetaPin, lerMetaPin, migrarNomesCifrados, type MetaPin } from "./lib/pinCriptografia";
 import { getSession } from "./lib/session";
@@ -22,9 +20,8 @@ import Perfil from "./routes/Perfil";
 import RecuperarSenha from "./routes/RecuperarSenha";
 import RedefinirSenha from "./routes/RedefinirSenha";
 import ConfirmarEmail from "./routes/ConfirmarEmail";
-import Termos from "./routes/Termos";
+import PrivacidadeSeguranca from "./routes/PrivacidadeSeguranca";
 import SessaoAviso from "./components/SessaoAviso";
-import ModalTermos from "./components/ModalTermos";
 import UnlockPin from "./components/UnlockPin";
 import ErrorBoundary from "./components/ErrorBoundary";
 
@@ -47,44 +44,6 @@ function SomenteAluno({ children }: { children: ReactElement }) {
   const sessao = getSession();
   if (!sessao) return <Navigate to="/login" replace />;
   return sessao.user.perfil === "professor" ? <Navigate to="/fila" replace /> : children;
-}
-
-function GateTermos({ onAceito }: { onAceito: () => void }) {
-  const { pathname } = useLocation();
-  const token = getSession()?.accessToken;
-  const [usuario, setUsuario] = useState<UsuarioMe | null>(null);
-
-  const carregar = useCallback(async () => {
-    try {
-      setUsuario(await api.get<UsuarioMe>("/users/me"));
-    } catch {
-      setUsuario(null);
-    }
-  }, []);
-
-  useEffect(() => {
-    setUsuario(null);
-    if (!token) return;
-    void carregar();
-    const aoNegar = () => void carregar();
-    window.addEventListener(EVENTO_TERMOS_NAO_ACEITOS, aoNegar);
-    return () => window.removeEventListener(EVENTO_TERMOS_NAO_ACEITOS, aoNegar);
-  }, [token, carregar]);
-
-  if (!token || !usuario || pathname.startsWith("/termos")) return null;
-  const { versaoAtual } = usuario;
-  if (!versaoAtual || (usuario.termosAceitosEm && usuario.termosVersao === versaoAtual)) return null;
-
-  return (
-    <ModalTermos
-      perfil={usuario.perfil}
-      versao={versaoAtual}
-      onAceito={async () => {
-        await carregar();
-        onAceito();
-      }}
-    />
-  );
 }
 
 function GateCriptografia({ onDesbloqueado }: { onDesbloqueado: () => void }) {
@@ -147,7 +106,6 @@ function Inicio() {
 }
 
 export default function App() {
-  useLocation();
   const token = getSession()?.accessToken;
   const [recarga, setRecarga] = useState(0);
 
@@ -172,7 +130,6 @@ export default function App() {
   return (
     <div className="device">
       <SessaoAviso />
-      <GateTermos onAceito={() => setRecarga((n) => n + 1)} />
       <GateCriptografia onDesbloqueado={() => setRecarga((n) => n + 1)} />
       <AvisoBloqueio />
       <Routes key={recarga}>
@@ -181,7 +138,7 @@ export default function App() {
         <Route path="/recuperar" element={<SomenteVisitante><RecuperarSenha /></SomenteVisitante>} />
         <Route path="/redefinir-senha" element={<RedefinirSenha />} />
         <Route path="/confirmar-email" element={<ConfirmarEmail />} />
-        <Route path="/termos" element={<Termos />} />
+        <Route path="/privacidade" element={<PrivacidadeSeguranca />} />
         <Route path="/prontuarios" element={<SomenteAluno><ListaProntuarios /></SomenteAluno>} />
         <Route path="/fila" element={<SomenteProfessor><Fila /></SomenteProfessor>} />
         <Route path="/acessos" element={<SomenteProfessor><Acessos /></SomenteProfessor>} />

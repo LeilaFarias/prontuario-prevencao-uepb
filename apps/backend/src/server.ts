@@ -38,7 +38,6 @@ const API_PREFIXES = [
   "/health",
   "/configuracoes",
   "/indicador-pacientes",
-  "/termos",
 ];
 
 const isApiPath = (url: string) =>

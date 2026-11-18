@@ -456,8 +456,7 @@ function SobreApp({ tema }: { tema: Tema }) {
         <VersaoApp />
       </div>
       <div className="mt-3 flex flex-col gap-2 text-[13px] font-medium">
-        <Link to="/termos" className={tema.texto}>Termos de Uso e Política de Privacidade</Link>
-        <Link to="/termos#seguranca" className={tema.texto}>Como protegemos seus dados</Link>
+        <Link to="/privacidade" className={tema.texto}>Privacidade e segurança</Link>
       </div>
     </section>
   );
@@ -563,7 +562,6 @@ export default function Perfil() {
           subtitulo="Informe a nova matrícula."
           label="Matrícula"
           inputMode="numeric"
-          hint="Usada na assinatura e na liberação de acesso. Altere com cuidado."
           schema={alterarMatriculaSchema.shape.matricula}
           valorInicial={u.matricula ?? ""}
           tema={tema}
