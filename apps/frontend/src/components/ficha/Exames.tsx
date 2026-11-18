@@ -1,7 +1,7 @@
 import { Controller, useWatch } from "react-hook-form";
 import { useLiveQuery } from "dexie-react-hooks";
 import { examesSchema } from "@prontuario/shared";
-import { db, type LocalProntuario } from "../../db/dexie";
+import { lerProntuarioDecifrado, type LocalProntuario } from "../../db/dexie";
 import { useSecao } from "../../hooks/useSecao";
 import { useSyncStatus } from "../../hooks/useSyncStatus";
 import CampoTexto from "./CampoTexto";
@@ -166,7 +166,7 @@ function FormularioExames({ prontuario }: { prontuario: LocalProntuario }) {
 }
 
 export default function Exames({ prontuarioId }: { prontuarioId: string }) {
-  const prontuario = useLiveQuery(() => db.prontuarios.get(prontuarioId), [prontuarioId]);
+  const prontuario = useLiveQuery(() => lerProntuarioDecifrado(prontuarioId), [prontuarioId]);
   if (!prontuario) return null;
   return <FormularioExames prontuario={prontuario} />;
 }

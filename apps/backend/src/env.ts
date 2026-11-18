@@ -28,7 +28,7 @@ const envSchema = z.object({
   LOGIN_RATE_LIMIT_MAX: z.coerce.number().int().positive().default(5),
   
   BREVO_API_KEY: z.string().optional(),
-  MAIL_FROM_EMAIL: z.string().email().optional(),
+  MAIL_FROM_EMAIL: z.union([z.string().email(), z.literal("")]).optional().transform((v) => v || undefined),
   MAIL_FROM_NAME: z.string().default("Prontuário Digital"),
   RESET_TOKEN_SECRET: z
     .string()
@@ -44,7 +44,11 @@ const envSchema = z.object({
         .filter(Boolean),
     ),
   BACKUP_KEY: z.string().min(32, "BACKUP_KEY deve ter 32+ caracteres").refine(semValorDeExemplo, MSG_EXEMPLO),
-  PROFESSOR_INVITE_CODE: z.string().min(8).optional(),
+  PROFESSOR_INVITE_CODE: z
+    .string()
+    .default("")
+    .transform((v) => v.split(",").map((email) => email.trim().toLowerCase()).filter(Boolean))
+    .refine((emails) => emails.every((email) => z.string().email().safeParse(email).success), "PROFESSOR_INVITE_CODE deve conter e-mails válidos separados por vírgula"),
   APP_URL: z.string().default("http://localhost:5173"),
 
   CORS_ORIGIN: z.string().default("http://localhost:5173"),

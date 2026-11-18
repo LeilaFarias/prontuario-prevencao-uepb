@@ -1,5 +1,6 @@
 import type { SessionUser } from "@prontuario/shared";
 import { db } from "../db/dexie";
+import { PREFIXO_META_PIN, setChave } from "./chaveLocal";
 
 export interface Session {
   accessToken: string;
@@ -29,8 +30,17 @@ export function updateSessionUser(user: SessionUser): void {
   if (atual) saveSession({ ...atual, user });
 }
 
+function limparMetaPin(): void {
+  for (let i = localStorage.length - 1; i >= 0; i--) {
+    const chave = localStorage.key(i);
+    if (chave?.startsWith(PREFIXO_META_PIN)) localStorage.removeItem(chave);
+  }
+}
+
 export async function clearSession(): Promise<void> {
   localStorage.removeItem(KEY);
+  setChave(null);
+  limparMetaPin();
   try {
     await db.transaction("rw", db.prontuarios, db.syncQueue, db.planosProfessor, async () => {
       await db.prontuarios.clear();

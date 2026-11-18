@@ -7,15 +7,18 @@ import {
   type SyncResponse,
 } from "@prontuario/shared";
 import { db } from "../db/dexie";
-import type { LocalProntuario } from "../db/dexie";
+import type { LocalProntuario, LocalSyncOp } from "../db/dexie";
 import { ApiError, api, TIMEOUT_FLUSH_MS } from "../lib/api";
 import { ACESSO_EXPIRADO_EVENT, acessoVigente } from "../lib/acesso";
 import { marcadorDeAviso, registrarAvisoVisto } from "../lib/avisosVistos";
+import { cifrar, cifrarCamposPaciente, decifrar, decifrarCamposPaciente, getChave } from "../lib/chaveLocal";
 import { getSession } from "../lib/session";
 import { uuid } from "../lib/uuid";
 
 export const SYNC_EVENT = "sync:changed";
+export const SYNC_QUEUE_EVENT = "sync-queue-changed";
 export const ULTIMO_SALVAMENTO_KEY = "prontuario:ultimoSalvamento";
+export const APP_BLOQUEADO_EVENT = "app:bloqueado";
 const INTERVALO_MS = 30_000;
 const DEBOUNCE_ONLINE_MS = 2_000;
 const LOTE = 200;
@@ -31,6 +34,10 @@ function registrarSalvamento(ts: number): void {
 
 export function notifyChanged(): void {
   window.dispatchEvent(new CustomEvent(SYNC_EVENT));
+}
+
+function notifyQueueChanged(): void {
+  window.dispatchEvent(new CustomEvent(SYNC_QUEUE_EVENT));
 }
 
 export function contarPendentes(): Promise<number> {
@@ -71,6 +78,7 @@ export async function criarProntuarioLocal(alunoTitularId: string): Promise<stri
 
   registrarSalvamento(agora);
   notifyChanged();
+  notifyQueueChanged();
   void flush();
   return id;
 }
@@ -78,6 +86,12 @@ export async function criarProntuarioLocal(alunoTitularId: string): Promise<stri
 export class AcessoExpiradoError extends Error {
   constructor() {
     super("O acesso temporário expirou.");
+  }
+}
+
+export class AppBloqueadoError extends Error {
+  constructor() {
+    super("Desbloqueie o app primeiro.");
   }
 }
 
@@ -93,7 +107,33 @@ export async function salvarSecaoLocal(
   cabecalho?: CabecalhoPaciente,
 ): Promise<void> {
   const dados = salvarSecaoSchema.parse({ prontuarioId, secaoId, conteudo });
+  const chave = getChave();
+  if (!chave) {
+    window.dispatchEvent(new CustomEvent(APP_BLOQUEADO_EVENT));
+    throw new AppBloqueadoError();
+  }
+  const conteudoCifrado = await cifrar(chave, JSON.stringify(dados.conteudo));
+  const valorLocal = secoesVazias([dados.conteudo]) ? {} : conteudoCifrado;
   const agora = Date.now();
+
+  const existente = await db.prontuarios.get(dados.prontuarioId);
+  const pacienteAtual = existente ? await decifrarCamposPaciente(chave, existente) : undefined;
+  const nome = cabecalho?.pacienteNome?.trim();
+  const novoNome = nome && nome.length >= 2 && nome !== pacienteAtual?.pacienteNome ? nome : undefined;
+  const nascimento = cabecalho?.pacienteDataNascimento?.trim();
+  const novoNascimento =
+    nascimento && /^\d{4}-\d{2}-\d{2}$/.test(nascimento) && nascimento !== pacienteAtual?.pacienteDataNascimento
+      ? nascimento
+      : undefined;
+  const camposNovos = {
+    ...(novoNome ? { pacienteNome: novoNome } : {}),
+    ...(novoNascimento ? { pacienteDataNascimento: novoNascimento } : {}),
+  };
+  const alterouPaciente = novoNome !== undefined || novoNascimento !== undefined;
+  const camposLocais = alterouPaciente
+    ? await cifrarCamposPaciente(chave, { pacienteNome: novoNome ?? "", pacienteDataNascimento: novoNascimento })
+    : undefined;
+  const payloadCifrado = alterouPaciente ? await cifrar(chave, JSON.stringify(camposNovos)) : undefined;
 
   await db.transaction("rw", db.prontuarios, db.syncQueue, async () => {
     const atual = await db.prontuarios.get(dados.prontuarioId);
@@ -102,14 +142,6 @@ export async function salvarSecaoLocal(
 
     const invalidaAssinatura = atual.status === "assinado";
     if (invalidaAssinatura && !acessoVigente(atual, agora)) throw new AcessoExpiradoError();
-
-    const nome = cabecalho?.pacienteNome?.trim();
-    const novoNome = nome && nome.length >= 2 && nome !== atual.pacienteNome ? nome : undefined;
-    const nascimento = cabecalho?.pacienteDataNascimento?.trim();
-    const novoNascimento =
-      nascimento && /^\d{4}-\d{2}-\d{2}$/.test(nascimento) && nascimento !== atual.pacienteDataNascimento
-        ? nascimento
-        : undefined;
 
     await db.prontuarios.put({
       ...atual,
@@ -121,23 +153,20 @@ export async function salvarSecaoLocal(
             acessoSolicitadoEm: undefined,
           }
         : {}),
-      ...(novoNome ? { pacienteNome: novoNome } : {}),
-      ...(novoNascimento ? { pacienteDataNascimento: novoNascimento } : {}),
-      secoes: { ...atual.secoes, [dados.secaoId]: dados.conteudo },
+      ...(novoNome ? { pacienteNome: camposLocais!.pacienteNome } : {}),
+      ...(novoNascimento ? { pacienteDataNascimento: camposLocais!.pacienteDataNascimento } : {}),
+      secoes: { ...atual.secoes, [dados.secaoId]: valorLocal },
       atualizadoEm: agora,
       sincronizado: false,
     });
 
-    if (novoNome || novoNascimento) {
+    if (payloadCifrado) {
       await db.syncQueue.add({
         prontuarioId: dados.prontuarioId,
         op: "update",
         entity: "prontuario",
         entityId: dados.prontuarioId,
-        payload: {
-          ...(novoNome ? { pacienteNome: novoNome } : {}),
-          ...(novoNascimento ? { pacienteDataNascimento: novoNascimento } : {}),
-        },
+        payloadCifrado,
         ts: agora,
       });
     }
@@ -155,14 +184,36 @@ export async function salvarSecaoLocal(
       op: "update",
       entity: "secao",
       entityId: entityIdSecao,
-      payload: { secaoId: dados.secaoId, conteudo: dados.conteudo },
+      payload: { secaoId: dados.secaoId, conteudoCifrado },
       ts: agora,
     });
   });
 
   registrarSalvamento(agora);
   notifyChanged();
+  notifyQueueChanged();
   void flush();
+}
+
+async function prepararParaEnvio(op: LocalSyncOp, chave: CryptoKey | null): Promise<LocalSyncOp | null> {
+  if (typeof op.payloadCifrado === "string") {
+    if (!chave) return null;
+    try {
+      const { payloadCifrado, ...resto } = op;
+      return { ...resto, payload: JSON.parse(await decifrar(chave, payloadCifrado)) };
+    } catch {
+      return null;
+    }
+  }
+  const cifrado = op.entity === "secao" ? op.payload?.conteudoCifrado : undefined;
+  if (typeof cifrado !== "string") return op;
+  if (!chave) return null;
+  try {
+    const { conteudoCifrado: _cifrado, ...resto } = op.payload ?? {};
+    return { ...op, payload: { ...resto, conteudo: JSON.parse(await decifrar(chave, cifrado)) } };
+  } catch {
+    return null;
+  }
 }
 
 let emVoo: Promise<void> | null = null;
@@ -184,7 +235,8 @@ export function flush(): Promise<void> {
 
 async function executarFlush(): Promise<void> {
   try {
-    await db.syncQueue.filter((o) => !OPS_SUPORTADAS.has(o.op)).delete();
+    const descartadas = await db.syncQueue.filter((o) => !OPS_SUPORTADAS.has(o.op)).delete();
+    if (descartadas > 0) notifyQueueChanged();
     for (let primeira = true; ; primeira = false) {
       const lote = await db.syncQueue.toCollection().limit(LOTE).toArray();
       const liberacoes = primeira ? await db.liberacoesOffline.filter((l) => !l.sincronizado).toArray() : [];
@@ -199,16 +251,16 @@ async function executarFlush(): Promise<void> {
         return p;
       };
 
+      const chave = getChave();
+      const retidos = new Set<string>();
       const enviar: typeof lote = [];
       for (const op of lote) {
+        if (retidos.has(op.prontuarioId)) continue;
         const p = await getPront(op.prontuarioId);
-        if (!p) {
-          enviar.push(op);
-          continue;
-        }
-        const bloqueado =
-          (p.status === "enviado" || p.status === "assinado") && !acessoVigente(p, op.ts);
-        if (!bloqueado) enviar.push(op);
+        if (p && (p.status === "enviado" || p.status === "assinado") && !acessoVigente(p, op.ts)) continue;
+        const pronta = await prepararParaEnvio(op, chave);
+        if (pronta) enviar.push(pronta);
+        else retidos.add(op.prontuarioId);
       }
 
       if (enviar.length === 0 && liberacoes.length === 0) break;
@@ -240,6 +292,7 @@ async function executarFlush(): Promise<void> {
       const apagar = enviar.filter((op) => !bloqueadasBackend.has(op.prontuarioId));
       if (apagar.length > 0) {
         await db.syncQueue.bulkDelete(apagar.map((o) => o.id!));
+        notifyQueueChanged();
       }
 
       await tratarEnviosRecusados(resposta.envios ?? []);
@@ -326,6 +379,7 @@ async function enfileirarEnvio(prontuarioId: string): Promise<number> {
 
   registrarSalvamento(agora);
   notifyChanged();
+  notifyQueueChanged();
   void flush();
   return agora;
 }
@@ -395,6 +449,7 @@ export async function reabrirParaCorrecao(prontuarioId: string): Promise<void> {
 
   registrarSalvamento(agora);
   notifyChanged();
+  notifyQueueChanged();
   void flush();
 }
 
@@ -404,7 +459,7 @@ export function podeDescartarRascunho(
   return (
     p.status === "em_andamento" &&
     !p.descartadoEm &&
-    p.pacienteNome.trim() === "" &&
+    (p.pacienteNome ?? "").trim() === "" &&
     !p.pacienteDataNascimento &&
     secoesVazias(Object.values(p.secoes))
   );
@@ -439,6 +494,7 @@ export async function descartarRascunhoLocal(prontuarioId: string): Promise<bool
   if (descartado) {
     registrarSalvamento(agora);
     notifyChanged();
+    notifyQueueChanged();
     void flush();
   }
   return descartado;

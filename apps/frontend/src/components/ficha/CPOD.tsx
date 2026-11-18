@@ -3,7 +3,7 @@ import { useWatch } from "react-hook-form";
 import { useLiveQuery } from "dexie-react-hooks";
 import { Plus } from "lucide-react";
 import { cpodSchema, type RegistroCPODDados } from "@prontuario/shared";
-import { db, type LocalProntuario } from "../../db/dexie";
+import { lerProntuarioDecifrado, type LocalProntuario } from "../../db/dexie";
 import { useSecao } from "../../hooks/useSecao";
 import { useSyncStatus } from "../../hooks/useSyncStatus";
 import { hojeISO } from "../../lib/data";
@@ -140,7 +140,7 @@ function FormularioCPOD({ prontuario }: { prontuario: LocalProntuario }) {
 }
 
 export default function CPOD({ prontuarioId }: { prontuarioId: string }) {
-  const prontuario = useLiveQuery(() => db.prontuarios.get(prontuarioId), [prontuarioId]);
+  const prontuario = useLiveQuery(() => lerProntuarioDecifrado(prontuarioId), [prontuarioId]);
   if (!prontuario) return null;
   return <FormularioCPOD prontuario={prontuario} />;
 }

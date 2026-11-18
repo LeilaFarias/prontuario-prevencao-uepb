@@ -247,8 +247,12 @@ export default function Fila() {
         <p className="mb-2.5 text-[11px] font-bold uppercase tracking-[0.07em] text-prof">
           Clínica de Prevenção em Saúde Bucal · UEPB
         </p>
-        <h1 className="font-display text-[26px] font-semibold leading-[1.15] text-ink">Fila de revisão</h1>
-        <p className="mt-0.5 text-[12.5px] text-ink-soft">{subtitulo}</p>
+        <div className="flex items-start justify-between gap-3">
+          <div className="min-w-0">
+            <h1 className="font-display text-[26px] font-semibold leading-[1.15] text-ink">Fila de revisão</h1>
+            <p className="mt-0.5 text-[12.5px] text-ink-soft">{subtitulo}</p>
+          </div>
+        </div>
       </header>
 
       <div role="tablist" aria-label="Status dos prontuários" className="mx-5 flex border-b border-line">

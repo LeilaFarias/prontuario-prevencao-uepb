@@ -1,25 +1,23 @@
-import { pbkdf2, randomBytes, randomUUID, scrypt } from "node:crypto";
-import { promisify } from "node:util";
+import { randomUUID } from "node:crypto";
 import type { FastifyPluginAsync } from "fastify";
 import { z } from "zod";
 import {
-  aceitarTermosSchema,
   alterarMatriculaSchema,
   alterarSenhaSchema,
   atualizarPerfilSchema,
   excluirContaSchema,
-  type TermosResposta,
   type UsuarioMe,
 } from "@prontuario/shared";
 import { executar, todas, transacao, uma } from "../db";
+import { gerarHashesPinCriptografia, gerarHashesPinLiberacao, verificarPinCriptografia } from "../lib/pin";
 import { hashSenha, verificarSenha } from "../lib/senha";
-import { SQL_VERSAO_ATUAL } from "../lib/termos";
-
-const scryptAsync = promisify(scrypt);
-const pbkdf2Async = promisify(pbkdf2);
 
 const definirPinSchema = z.object({
   pin: z.string().regex(/^\d{8}$/, "PIN deve ter 8 dígitos"),
+});
+
+const resetPinCriptografiaSchema = z.object({
+  senha: z.string().min(1, "Informe a senha"),
 });
 
 const excluirContaComMotivoSchema = excluirContaSchema.extend({
@@ -33,9 +31,8 @@ interface UsuarioRow {
   perfil: string;
   matricula: string | null;
   criadoEm: string;
-  termosAceitosEm: string | null;
-  termosVersao: string | null;
-  versaoAtual: string | null;
+  temPinCriptografia: boolean;
+  saltCriptografia: string | null;
 }
 
 interface AlunoRow {
@@ -50,8 +47,8 @@ export const userRoutes: FastifyPluginAsync = async (app) => {
   const buscarMe = async (id: string): Promise<UsuarioMe> => {
     const u = (await uma<UsuarioRow>(
       db,
-      `SELECT "id", "nome", "email", "perfil", "matricula", "criadoEm", "termosAceitosEm", "termosVersao",
-              ${SQL_VERSAO_ATUAL} AS "versaoAtual"
+      `SELECT "id", "nome", "email", "perfil", "matricula", "criadoEm",
+              ("pinCriptografiaHash" IS NOT NULL) AS "temPinCriptografia", "saltCriptografia"
          FROM "Usuario" WHERE "id" = $1`,
       [id],
     )) as UsuarioRow;
@@ -70,36 +67,7 @@ export const userRoutes: FastifyPluginAsync = async (app) => {
     return todas<AlunoRow>(db, listarAlunos);
   });
 
-  app.get("/termos", async (_req, reply) => {
-    const termos = await uma<TermosResposta>(
-      db,
-      `SELECT "versao", "conteudo", "publicadaEm" FROM "TermosVersao" ORDER BY "publicadaEm" DESC LIMIT 1`,
-    );
-    if (!termos) return reply.status(404).send({ message: "Termos não publicados.", codigo: "TERMOS_NAO_PUBLICADOS" });
-    return termos;
-  });
-
   app.get("/users/me", protegida, async (req) => buscarMe(req.user.sub));
-
-  app.post("/users/me/aceitar-termos", protegida, async (req, reply) => {
-    const id = req.user.sub;
-    const { versao } = aceitarTermosSchema.parse(req.body);
-
-    if (!(await uma(db, `SELECT "id" FROM "TermosVersao" WHERE "versao" = $1`, [versao]))) {
-      return reply.status(400).send({ message: "Versão dos termos inexistente.", codigo: "TERMOS_VERSAO_INVALIDA" });
-    }
-
-    await transacao(db, async (tx) => {
-      await executar(tx, `UPDATE "Usuario" SET "termosAceitosEm" = now(), "termosVersao" = $1 WHERE "id" = $2`, [versao, id]);
-      await executar(tx, `INSERT INTO "AuditLog" ("id", "usuarioId", "acao", "detalhe") VALUES ($1, $2, $3, $4)`, [
-        randomUUID(),
-        id,
-        "termos-aceitos",
-        JSON.stringify({ usuarioId: id, versao }),
-      ]);
-    });
-    return reply.status(204).send();
-  });
 
   app.put("/users/me", protegida, async (req, reply) => {
     const id = req.user.sub;
@@ -141,20 +109,67 @@ export const userRoutes: FastifyPluginAsync = async (app) => {
     return { ok: true };
   });
 
-  app.put("/users/me/pin", protegida, async (req, reply) => {
+  app.put("/users/me/pin-criptografia", protegida, async (req, reply) => {
     const { pin } = definirPinSchema.parse(req.body);
-    const saltServer = randomBytes(16).toString("hex");
-    const saltClient = randomBytes(16).toString("hex");
-    const pinHashServer = ((await scryptAsync(pin, saltServer, 64)) as Buffer).toString("hex");
-    const pinHashClient = (await pbkdf2Async(pin, saltClient, 600000, 32, "sha256")).toString("hex");
+    const cripto = await gerarHashesPinCriptografia(pin);
+    const professor = req.user.perfil.toLowerCase() === "professor";
+    const liberacao = professor ? await gerarHashesPinLiberacao(pin) : null;
 
-    await executar(
-      db,
-      `UPDATE "Usuario" SET "pinHash" = $1, "saltServer" = $2, "pinHashClient" = $3, "saltClient" = $4 WHERE "id" = $5`,
-      [pinHashServer, saltServer, pinHashClient, saltClient, req.user.sub],
-    );
+    await transacao(db, async (tx) => {
+      await executar(tx, `UPDATE "Usuario" SET "pinCriptografiaHash" = $1, "saltCriptografia" = $2 WHERE "id" = $3`, [
+        cripto.pinCriptografiaHash,
+        cripto.saltCriptografia,
+        req.user.sub,
+      ]);
+      if (liberacao) {
+        await executar(
+          tx,
+          `UPDATE "Usuario" SET "pinHash" = $1, "saltServer" = $2, "pinHashClient" = $3, "saltClient" = $4 WHERE "id" = $5`,
+          [liberacao.pinHash, liberacao.saltServer, liberacao.pinHashClient, liberacao.saltClient, req.user.sub],
+        );
+      }
+    });
     return reply.status(204).send();
   });
+
+  app.post(
+    "/users/me/pin-criptografia/verificar",
+    { ...protegida, config: { rateLimit: { max: 10, timeWindow: "15 minutes" } } },
+    async (req) => {
+      const { pin } = definirPinSchema.parse(req.body);
+      const u = await uma<{ pinCriptografiaHash: string | null; saltCriptografia: string | null }>(
+        db,
+        `SELECT "pinCriptografiaHash", "saltCriptografia" FROM "Usuario" WHERE "id" = $1`,
+        [req.user.sub],
+      );
+      if (!u?.pinCriptografiaHash || !u.saltCriptografia) return { valido: false };
+      return { valido: await verificarPinCriptografia(pin, u.pinCriptografiaHash, u.saltCriptografia) };
+    },
+  );
+
+  app.post(
+    "/users/me/pin-criptografia/reset",
+    { ...protegida, config: { rateLimit: { max: 5, timeWindow: "15 minutes" } } },
+    async (req, reply) => {
+      const id = req.user.sub;
+      const { senha } = resetPinCriptografiaSchema.parse(req.body);
+
+      const hash = await buscarHash(id);
+      if (!hash || !(await verificarSenha(senha, hash))) {
+        return reply.status(401).send({ message: "Senha incorreta." });
+      }
+
+      await executar(
+        db,
+        `UPDATE "Usuario"
+         SET "pinCriptografiaHash" = NULL, "saltCriptografia" = NULL,
+             "pinHash" = NULL, "saltServer" = NULL, "pinHashClient" = NULL, "saltClient" = NULL
+         WHERE "id" = $1`,
+        [id],
+      );
+      return reply.status(204).send();
+    },
+  );
 
   app.put("/users/me/matricula", protegida, async (req, reply) => {
     const id = req.user.sub;

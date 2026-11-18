@@ -27,6 +27,8 @@ export default function Login() {
     (location.state as { sessaoExpirada?: boolean } | null)?.sessaoExpirada === true;
   const [mostrarSenha, setMostrarSenha] = useState(false);
   const [erro, setErro] = useState<string | null>(null);
+  const [emailNaoVerificado, setEmailNaoVerificado] = useState(false);
+  const [reenvioMensagem, setReenvioMensagem] = useState<string | null>(null);
   const {
     register,
     handleSubmit,
@@ -35,12 +37,29 @@ export default function Login() {
 
   async function onSubmit(dados: LoginInput) {
     setErro(null);
+    setEmailNaoVerificado(false);
+    setReenvioMensagem(null);
     try {
       const sessao = await api.post<LoginResponse>("/auth/login", dados);
       saveSession(sessao);
       navigate(rotaInicial(sessao.user.perfil), { replace: true });
     } catch (e) {
       setErro(e instanceof Error ? e.message : "Não foi possível entrar.");
+      setEmailNaoVerificado((e as { codigo?: string })?.codigo === "EMAIL_NAO_VERIFICADO");
+    }
+  }
+
+  async function reenviarConfirmacao() {
+    const email = (document.getElementById("email") as HTMLInputElement | null)?.value.trim();
+    if (!email) {
+      setReenvioMensagem("Informe seu e-mail acima antes de solicitar o link.");
+      return;
+    }
+    try {
+      await api.post("/auth/resend-confirmation", { email });
+      setReenvioMensagem("Se houver uma conta aguardando confirmação para esse e-mail, enviaremos um novo link.");
+    } catch (e) {
+      setReenvioMensagem(e instanceof Error ? e.message : "Não foi possível solicitar outro link.");
     }
   }
 
@@ -100,15 +119,17 @@ export default function Login() {
           <div role="status" className="banner-erro">Sua sessão expirou. Entre novamente.</div>
         )}
         {erro && <div role="alert" className="banner-erro">{erro}</div>}
+        {emailNaoVerificado && (
+          <button type="button" onClick={() => void reenviarConfirmacao()} className="text-left text-[13px] font-medium text-primary underline">
+            Reenviar link de confirmação
+          </button>
+        )}
+        {reenvioMensagem && <div role="status" className="banner-ok">{reenvioMensagem}</div>}
 
         <button type="submit" disabled={isSubmitting} className="btn-dark">
           {isSubmitting ? "Entrando…" : "Entrar"}
         </button>
 
-        <p className="text-center text-[12px] leading-snug text-ink-faint">
-          Ao entrar, você concorda com os{" "}
-          <Link to="/termos" className="font-medium text-primary">Termos de Uso e a Política de Privacidade</Link>
-        </p>
       </form>
 
       <div className="my-6 flex items-center gap-3 text-[12.5px] text-ink-faint">
@@ -120,6 +141,7 @@ export default function Login() {
       </p>
 
       <div className="mt-auto pt-8 text-center">
+        <Link to="/privacidade" className="mb-3 inline-block text-[12px] font-medium text-primary">Privacidade e segurança</Link>
         <VersaoApp compacta />
       </div>
     </main>

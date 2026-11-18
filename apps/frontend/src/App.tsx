@@ -1,8 +1,11 @@
-import { useCallback, useEffect, useState, type ReactElement } from "react";
+import { useEffect, useState, type ReactElement } from "react";
+import { useLiveQuery } from "dexie-react-hooks";
 import { Navigate, Route, Routes, useLocation } from "react-router-dom";
-import type { UsuarioMe } from "@prontuario/shared";
-import { api, EVENTO_TERMOS_NAO_ACEITOS } from "./lib/api";
+import { db } from "./db/dexie";
+import { getChave } from "./lib/chaveLocal";
+import { atualizarMetaPin, lerMetaPin, migrarNomesCifrados, type MetaPin } from "./lib/pinCriptografia";
 import { getSession } from "./lib/session";
+import { APP_BLOQUEADO_EVENT } from "./sync/queue";
 import { atualizarCacheProfessores } from "./sync/professores";
 import { rotaInicial } from "./lib/rotas";
 import Login from "./routes/Login";
@@ -16,9 +19,10 @@ import RevisaoProntuario from "./routes/RevisaoProntuario";
 import Perfil from "./routes/Perfil";
 import RecuperarSenha from "./routes/RecuperarSenha";
 import RedefinirSenha from "./routes/RedefinirSenha";
-import Termos from "./routes/Termos";
+import ConfirmarEmail from "./routes/ConfirmarEmail";
+import PrivacidadeSeguranca from "./routes/PrivacidadeSeguranca";
 import SessaoAviso from "./components/SessaoAviso";
-import ModalTermos from "./components/ModalTermos";
+import UnlockPin from "./components/UnlockPin";
 import ErrorBoundary from "./components/ErrorBoundary";
 
 function Protegida({ children }: { children: ReactElement }) {
@@ -42,41 +46,58 @@ function SomenteAluno({ children }: { children: ReactElement }) {
   return sessao.user.perfil === "professor" ? <Navigate to="/fila" replace /> : children;
 }
 
-function GateTermos({ onAceito }: { onAceito: () => void }) {
+function GateCriptografia({ onDesbloqueado }: { onDesbloqueado: () => void }) {
   const { pathname } = useLocation();
-  const token = getSession()?.accessToken;
-  const [usuario, setUsuario] = useState<UsuarioMe | null>(null);
+  const sessao = getSession();
+  const userId = sessao?.user.id;
+  const token = sessao?.accessToken;
+  const [meta, setMeta] = useState<MetaPin | null>(null);
+  const totalLocal = useLiveQuery(() => db.prontuarios.count(), []);
 
-  const carregar = useCallback(async () => {
-    try {
-      setUsuario(await api.get<UsuarioMe>("/users/me"));
-    } catch {
-      setUsuario(null);
+  useEffect(() => {
+    if (!userId) {
+      setMeta(null);
+      return;
     }
+    setMeta(lerMetaPin(userId));
+    if (!navigator.onLine) return;
+    let ativo = true;
+    atualizarMetaPin(userId)
+      .then((m) => ativo && setMeta(m))
+      .catch(() => undefined);
+    return () => {
+      ativo = false;
+    };
+  }, [userId, token]);
+
+  // A redefinição de senha é um fluxo de recuperação da conta e não precisa
+  // desbloquear os prontuários locais para ser concluída.
+  if (pathname === "/redefinir-senha") return null;
+  if (!userId || !meta || getChave()) return null;
+  if (!meta.tem && !totalLocal) return null;
+  return <UnlockPin temPin={meta.tem} onDesbloqueado={onDesbloqueado} />;
+}
+
+function AvisoBloqueio() {
+  const [visivel, setVisivel] = useState(false);
+
+  useEffect(() => {
+    const mostrar = () => setVisivel(true);
+    window.addEventListener(APP_BLOQUEADO_EVENT, mostrar);
+    return () => window.removeEventListener(APP_BLOQUEADO_EVENT, mostrar);
   }, []);
 
   useEffect(() => {
-    setUsuario(null);
-    if (!token) return;
-    void carregar();
-    const aoNegar = () => void carregar();
-    window.addEventListener(EVENTO_TERMOS_NAO_ACEITOS, aoNegar);
-    return () => window.removeEventListener(EVENTO_TERMOS_NAO_ACEITOS, aoNegar);
-  }, [token, carregar]);
+    if (!visivel) return;
+    const t = window.setTimeout(() => setVisivel(false), 4_000);
+    return () => window.clearTimeout(t);
+  }, [visivel]);
 
-  if (!token || !usuario || pathname.startsWith("/termos")) return null;
-  const { versaoAtual } = usuario;
-  if (!versaoAtual || (usuario.termosAceitosEm && usuario.termosVersao === versaoAtual)) return null;
-
+  if (!visivel) return null;
   return (
-    <ModalTermos
-      perfil={usuario.perfil}
-      versao={versaoAtual}
-      onAceito={async () => {
-        await carregar();
-        onAceito();
-      }}
-    />
+    <div role="alert" className="fixed inset-x-4 top-4 z-50 rounded-lg bg-alt-tint px-4 py-2.5 text-[13px] text-alt shadow-lg">
+      Desbloqueie o app primeiro.
+    </div>
   );
 }
 
@@ -85,9 +106,12 @@ function Inicio() {
 }
 
 export default function App() {
-  useLocation();
   const token = getSession()?.accessToken;
   const [recarga, setRecarga] = useState(0);
+
+  useEffect(() => {
+    migrarNomesCifrados().catch((erro: unknown) => console.warn("[migracao] nomes de pacientes:", erro));
+  }, [token, recarga]);
 
   useEffect(() => {
     void atualizarCacheProfessores();
@@ -106,13 +130,15 @@ export default function App() {
   return (
     <div className="device">
       <SessaoAviso />
-      <GateTermos onAceito={() => setRecarga((n) => n + 1)} />
+      <GateCriptografia onDesbloqueado={() => setRecarga((n) => n + 1)} />
+      <AvisoBloqueio />
       <Routes key={recarga}>
         <Route path="/login" element={<SomenteVisitante><Login /></SomenteVisitante>} />
         <Route path="/cadastro" element={<SomenteVisitante><Cadastro /></SomenteVisitante>} />
         <Route path="/recuperar" element={<SomenteVisitante><RecuperarSenha /></SomenteVisitante>} />
         <Route path="/redefinir-senha" element={<RedefinirSenha />} />
-        <Route path="/termos" element={<Termos />} />
+        <Route path="/confirmar-email" element={<ConfirmarEmail />} />
+        <Route path="/privacidade" element={<PrivacidadeSeguranca />} />
         <Route path="/prontuarios" element={<SomenteAluno><ListaProntuarios /></SomenteAluno>} />
         <Route path="/fila" element={<SomenteProfessor><Fila /></SomenteProfessor>} />
         <Route path="/acessos" element={<SomenteProfessor><Acessos /></SomenteProfessor>} />

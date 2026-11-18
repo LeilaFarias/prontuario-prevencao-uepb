@@ -1,5 +1,13 @@
 import Dexie, { type Table } from "dexie";
-import type { HistoricoProntuario } from "@prontuario/shared";
+import { secoesVazias, type HistoricoProntuario } from "@prontuario/shared";
+import {
+  cifrar,
+  cifrarCamposPaciente,
+  decifrar,
+  decifrarCamposPaciente,
+  getChave,
+  ocultarCamposPaciente,
+} from "../lib/chaveLocal";
 
 export type LocalStatus = "em_andamento" | "enviado" | "assinado" | "devolvido" | "transferido";
 
@@ -34,6 +42,7 @@ export interface LocalProntuario {
   transferidoParaNome?: string;
   historico?: HistoricoProntuario;
   descartadoEm?: string;
+  secoesPendentes?: boolean;
 }
 
 export interface LocalPlanoProfessor {
@@ -72,7 +81,8 @@ export interface LocalSyncOp {
   op: "create" | "update" | "delete" | "enviar" | "reabrir" | "descartar";
   entity: "prontuario" | "secao" | "procedimento" | "anexo";
   entityId: string;
-  payload: Record<string, unknown>;
+  payload?: Record<string, unknown>;
+  payloadCifrado?: string;
   ts: number;
 }
 
@@ -104,6 +114,92 @@ class ProntuarioDB extends Dexie {
 }
 
 export const db = new ProntuarioDB();
+
+export async function limparDexieLocal(): Promise<void> {
+  await db.transaction("rw", db.tables, async () => {
+    await Promise.all(db.tables.map((t) => t.clear()));
+  });
+}
+
+export async function cifrarSecoes(
+  chave: CryptoKey,
+  secoes: Record<string, unknown>,
+): Promise<Record<string, unknown>> {
+  const entradas = await Promise.all(
+    Object.entries(secoes).map(
+      async ([id, conteudo]) =>
+        [id, secoesVazias([conteudo]) ? {} : await cifrar(chave, JSON.stringify(conteudo))] as const,
+    ),
+  );
+  return Object.fromEntries(entradas);
+}
+
+async function decifrarSecoes(chave: CryptoKey, secoes: Record<string, unknown>): Promise<Record<string, any>> {
+  const entradas = await Promise.all(
+    Object.entries(secoes).map(
+      async ([id, valor]) => [id, typeof valor === "string" ? JSON.parse(await decifrar(chave, valor)) : valor] as const,
+    ),
+  );
+  return Object.fromEntries(entradas);
+}
+
+export async function decifrarProntuario(p: LocalProntuario): Promise<LocalProntuario> {
+  const chave = getChave();
+  if (!chave) return { ...ocultarCamposPaciente(p), secoes: {} };
+  const [comCampos, secoes] = await Promise.all([decifrarCamposPaciente(chave, p), decifrarSecoes(chave, p.secoes)]);
+  return { ...comCampos, secoes };
+}
+
+export async function lerProntuarioDecifrado(id: string): Promise<LocalProntuario | undefined> {
+  const p = await db.prontuarios.get(id);
+  return p ? decifrarProntuario(p) : undefined;
+}
+
+export async function recifrarDadosLocais(antiga: CryptoKey, nova: CryptoKey): Promise<void> {
+  for (;;) {
+    const [prontuarios, fila] = await Promise.all([db.prontuarios.toArray(), db.syncQueue.toArray()]);
+
+    const prontuariosNovos = new Map<string, Pick<LocalProntuario, "secoes" | "pacienteNome" | "pacienteDataNascimento">>();
+    for (const p of prontuarios) {
+      const claras = await decifrarSecoes(antiga, p.secoes);
+      const recifradas: Record<string, unknown> = {};
+      for (const [id, valor] of Object.entries(p.secoes)) {
+        recifradas[id] = typeof valor === "string" ? await cifrar(nova, JSON.stringify(claras[id])) : valor;
+      }
+      const { pacienteNome, pacienteDataNascimento } = await cifrarCamposPaciente(
+        nova,
+        await decifrarCamposPaciente(antiga, p),
+      );
+      prontuariosNovos.set(p.id, { secoes: recifradas, pacienteNome, pacienteDataNascimento });
+    }
+
+    const opsNovas = new Map<number, Pick<LocalSyncOp, "payload" | "payloadCifrado">>();
+    for (const op of fila) {
+      if (op.id === undefined) continue;
+      if (typeof op.payloadCifrado === "string") {
+        opsNovas.set(op.id, { payloadCifrado: await cifrar(nova, await decifrar(antiga, op.payloadCifrado)) });
+        continue;
+      }
+      const cifrado = op.payload?.conteudoCifrado;
+      if (typeof cifrado !== "string") continue;
+      opsNovas.set(op.id, {
+        payload: { ...op.payload, conteudoCifrado: await cifrar(nova, await decifrar(antiga, cifrado)) },
+      });
+    }
+
+    const assinatura = (ps: LocalProntuario[], os: LocalSyncOp[]) =>
+      JSON.stringify([ps.map((p) => [p.id, p.atualizadoEm]), os.map((o) => o.id)]);
+
+    const aplicado = await db.transaction("rw", db.prontuarios, db.syncQueue, async () => {
+      const [prontuariosAgora, filaAgora] = await Promise.all([db.prontuarios.toArray(), db.syncQueue.toArray()]);
+      if (assinatura(prontuariosAgora, filaAgora) !== assinatura(prontuarios, fila)) return false;
+      for (const [id, campos] of prontuariosNovos) await db.prontuarios.update(id, campos);
+      for (const [id, campos] of opsNovas) await db.syncQueue.update(id, campos);
+      return true;
+    });
+    if (aplicado) return;
+  }
+}
 
 type CamposAcesso = Pick<LocalProntuario, "acessoExpiraEm" | "acessoRevogadoEm">;
 
