@@ -9,7 +9,7 @@ import {
   type SyncResponse,
 } from "@prontuario/shared";
 import { comSavepoint, executar, todas, transacao, uma, type Executor } from "../db";
-import { ACESSO_DURACAO_MS, acessoCobreOperacaoOuLiberacao, type AcessoRow } from "../lib/acesso";
+import { ACESSO_DURACAO_MS, acessoCobreOperacaoOuLiberacao, alunoPodeEditar, type AcessoRow } from "../lib/acesso";
 import { enviarProntuario } from "../lib/envio";
 import { reabrirProntuario } from "../lib/reabertura";
 
@@ -39,6 +39,7 @@ interface ProntRow extends AcessoRow {
   alunoTitularId: string;
   professorSupervisorId: string | null;
   descartadoEm: string | null;
+  desfechoEnvio: string | null;
 }
 
 interface RascunhoRow {
@@ -67,7 +68,7 @@ const editaFicha = (op: SyncOperation): boolean =>
 export const syncRoutes: FastifyPluginAsync = async (app) => {
   const { db } = app;
 
-  const buscarPront = `SELECT "id", "status", "alunoTitularId", "professorSupervisorId", "descartadoEm",
+  const buscarPront = `SELECT "id", "status", "alunoTitularId", "professorSupervisorId", "descartadoEm", "desfechoEnvio",
             "acessoSolicitadoEm", "acessoExpiraEm", "acessoRevogadoEm", "acessoRecusadoEm"
       FROM "Prontuario" WHERE "id" = $1 FOR UPDATE`;
   const invalidarAssinatura = `UPDATE "Prontuario"
@@ -280,7 +281,7 @@ export const syncRoutes: FastifyPluginAsync = async (app) => {
               descartar = true;
               acessoExpirado.add(op.prontuarioId);
             }
-          } else if (enviado) {
+          } else if (enviado && !(usuario.perfil === "aluno" && alunoPodeEditar(pront.status, pront.desfechoEnvio))) {
             descartar = true;
             if (!(await acessoCobreOperacaoOuLiberacao(tx, pront, op.ts))) acessoExpirado.add(op.prontuarioId);
           }

@@ -36,6 +36,14 @@ export const devolverSchema = z.object({
     .max(COMENTARIO_DEVOLUCAO_MAX, `O comentário pode ter no máximo ${COMENTARIO_DEVOLUCAO_MAX} caracteres`),
 });
 
+export const comentarioProfessorSchema = z.object({
+  comentario: z
+    .string()
+    .trim()
+    .min(1, "Escreva o comentário")
+    .max(COMENTARIO_DEVOLUCAO_MAX, `O comentário pode ter no máximo ${COMENTARIO_DEVOLUCAO_MAX} caracteres`),
+});
+
 export const QUEM_RECEBE = ["anterior", "novo"] as const;
 
 export type QuemRecebe = (typeof QUEM_RECEBE)[number];
@@ -53,6 +61,7 @@ export const manterTitularidadeSchema = z.object({
 
 export type AssinarInput = z.infer<typeof assinarSchema>;
 export type DevolverInput = z.infer<typeof devolverSchema>;
+export type ComentarioProfessorInput = z.infer<typeof comentarioProfessorSchema>;
 export type TransferirTitularidadeInput = z.infer<typeof transferirTitularidadeSchema>;
 export type ManterTitularidadeInput = z.infer<typeof manterTitularidadeSchema>;
 
@@ -97,6 +106,7 @@ export interface ItemFilaRevisao {
   alunoAuxiliar: string;
   duplaAnteriorNome: string | null;
   tipoDesfecho: TipoDesfecho | null;
+  aguardandoConclusao: boolean;
 }
 
 export interface FilaRevisaoResponse {
@@ -125,11 +135,18 @@ export interface DevolverResponse {
   devolvidoPorNome: string;
 }
 
+export interface ComentarioProfessorResponse {
+  ok: true;
+  comentadoEm: string;
+}
+
 export type CodigoErroRevisao =
   | "MATRICULA_NAO_CONFERE"
   | "SENHA_INCORRETA"
   | "NAO_SUPERVISOR"
-  | "NAO_AGUARDANDO";
+  | "NAO_AGUARDANDO"
+  | "AGUARDANDO_CONCLUSAO_ALUNO"
+  | "DEVOLUCAO_NAO_APLICAVEL";
 
 
 export interface NotificacaoAluno {

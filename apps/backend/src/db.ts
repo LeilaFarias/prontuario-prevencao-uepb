@@ -211,6 +211,7 @@ export async function migrar(db: Db): Promise<void> {
          ADD COLUMN IF NOT EXISTS "saltCriptografia" TEXT NULL,
          ADD COLUMN IF NOT EXISTS "emailVerificadoEm" TIMESTAMPTZ DEFAULT now()`,
     );
+    await tx.query(`ALTER TABLE "Prontuario" ADD COLUMN IF NOT EXISTS "desfechoEnvio" TEXT NULL`);
     await tx.query(
       `CREATE TABLE IF NOT EXISTS "LiberacaoOffline" (
          "id"           TEXT PRIMARY KEY,

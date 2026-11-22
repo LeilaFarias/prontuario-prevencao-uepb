@@ -2,6 +2,7 @@ import { randomUUID } from "node:crypto";
 import type { FastifyPluginAsync, FastifyReply } from "fastify";
 import {
   assinarSchema,
+  comentarioProfessorSchema,
   devolverSchema,
   manterTitularidadeSchema,
   TIPOS_DESFECHO,
@@ -15,9 +16,20 @@ import {
   type AssinarResponse,
   type CodigoErroRevisao,
   type DevolverResponse,
+  type ComentarioProfessorResponse,
 } from "@prontuario/shared";
 import { executar, todas, transacao, uma, type Executor } from "../db";
-import { ACESSO_DURACAO_MS, estadoAcesso, pedidoPendente, type AcessoRow } from "../lib/acesso";
+import {
+  ACESSO_DURACAO_MS,
+  AGUARDANDO_CONCLUSAO_ALUNO,
+  DEVOLUCAO_NAO_APLICAVEL,
+  aguardandoConclusao,
+  desfechoDoEnvio,
+  estadoAcesso,
+  pedidoPendente,
+  professorPodeAssinarOuDevolver,
+  type AcessoRow,
+} from "../lib/acesso";
 import { registrarAuditoria as auditar } from "../lib/auditoria";
 import { buscarDuplicado, enviarProntuario } from "../lib/envio";
 import { reabrirProntuario } from "../lib/reabertura";
@@ -51,6 +63,7 @@ interface FilaRow {
   alunoNome: string;
   professorSupervisorNome: string | null;
   tipoDesfecho: string | null;
+  desfechoEnvio: string | null;
 }
 
 interface SecaoRow {
@@ -67,6 +80,7 @@ interface ProfessorRow {
 
 interface ProntuarioRevisaoRow {
   status: string;
+  desfechoEnvio: string | null;
   professorSupervisorId: string | null;
   acessoExpiraEm: string | null;
   acessoRevogadoEm: string | null;
@@ -81,6 +95,7 @@ interface ProntuarioAcessoRow extends AcessoRow {
 }
 
 interface RevisaoDetalheRow extends AcessoRow {
+  desfechoEnvio: string | null;
   assinadoEm: string | null;
   assinadoPorNome: string | null;
   devolvidoEm: string | null;
@@ -167,7 +182,7 @@ export const prontuariosRoutes: FastifyPluginAsync = async (app) => {
      ORDER BY p."atualizadoEm" DESC`;
   const selecionarFila = `SELECT p."id", p."pacienteNome", p."pacienteDataNascimento", p."sinalizadoDuplicidade", p."professorSupervisorId",
             p."alunoTitularId", ${ATUALIZADO_EM_EFETIVO} AS "atualizadoEm", u."nome" AS "alunoNome",
-            pr."nome" AS "professorSupervisorNome",
+            pr."nome" AS "professorSupervisorNome", p."desfechoEnvio",
             (SELECT s."conteudo"->>'tipoDesfecho' FROM "Secao" s
               WHERE s."prontuarioId" = p."id" AND s."secaoId" = 'conclusao') AS "tipoDesfecho"
      FROM "Prontuario" p
@@ -181,7 +196,7 @@ export const prontuariosRoutes: FastifyPluginAsync = async (app) => {
      ORDER BY "atualizadoEm" DESC`;
   const buscarSecoes = `SELECT "secaoId", "conteudo" FROM "Secao" WHERE "prontuarioId" = $1`;
   const buscarSecaoProcedimentos = `SELECT "conteudo" FROM "Secao" WHERE "prontuarioId" = $1 AND "secaoId" = 'procedimentos'`;
-  const buscarRevisao = `SELECT "assinadoEm", "assinadoPorNome", "devolvidoEm", "devolvidoPorNome", "motivoDevolucao", "comentarioDevolucao",
+  const buscarRevisao = `SELECT "desfechoEnvio", "assinadoEm", "assinadoPorNome", "devolvidoEm", "devolvidoPorNome", "motivoDevolucao", "comentarioDevolucao",
        "acessoSolicitadoEm", "acessoExpiraEm", "acessoRevogadoEm", "acessoRecusadoEm"
       FROM "Prontuario" WHERE "id" = $1`;
   const buscarPartes = `SELECT p."id" AS "prontuarioId", p."pacienteNome", p."pacienteDataNascimento", p."status", p."criadoEm",
@@ -231,7 +246,7 @@ export const prontuariosRoutes: FastifyPluginAsync = async (app) => {
           "atualizadoEm" = $3
       WHERE "id" = $4`;
   const buscarProfessor = `SELECT "id", "nome", "matricula", "senhaHash" FROM "Usuario" WHERE "id" = $1 AND UPPER("perfil") = 'PROFESSOR' AND "ativo"`;
-  const buscarParaAcao = `SELECT "status", "professorSupervisorId",
+  const buscarParaAcao = `SELECT "status", "desfechoEnvio", "professorSupervisorId",
             "acessoExpiraEm", "acessoRevogadoEm", "acessoSolicitadoEm", "acessoRecusadoEm"
      FROM "Prontuario" WHERE "id" = $1 FOR UPDATE`;
   const gravarAssinatura = `UPDATE "Prontuario"
@@ -366,6 +381,7 @@ export const prontuariosRoutes: FastifyPluginAsync = async (app) => {
           ...(await lerDupla(db, r.id)),
           duplaAnteriorNome: duplicado ? await nomeDuplaDestino(db, duplicado.id) : null,
           tipoDesfecho: TIPOS_DESFECHO.find((t) => t === r.tipoDesfecho) ?? null,
+          aguardandoConclusao: !statusAlvo && aguardandoConclusao("ENVIADO", r.desfechoEnvio),
         };
       }),
     );
@@ -455,7 +471,7 @@ export const prontuariosRoutes: FastifyPluginAsync = async (app) => {
     const historico = linha.transferidoDe ? await montarHistorico(linha.transferidoDe, req.log) : null;
 
     const ehSupervisor = !alunoUser && linha.professorSupervisorId === req.user.sub;
-    const podeAgir = ehSupervisor && linha.status.toUpperCase() === "ENVIADO";
+    const podeAgir = ehSupervisor && professorPodeAssinarOuDevolver(linha.status, revisao.desfechoEnvio);
 
     const envio = await uma<{ ts: number | null }>(db, buscarEnvio, [linha.id]);
     const enviadoEm = envio?.ts ? new Date(envio.ts).toISOString() : null;
@@ -478,6 +494,7 @@ export const prontuariosRoutes: FastifyPluginAsync = async (app) => {
       secoes,
       historico,
       podeAgir,
+      aguardandoConclusao: aguardandoConclusao(linha.status, revisao.desfechoEnvio),
       ehSupervisor,
       enviadoEm,
     };
@@ -869,6 +886,7 @@ export const prontuariosRoutes: FastifyPluginAsync = async (app) => {
       if (!pront) return { erro: 404 as const };
       if (pront.status.toUpperCase() !== "ENVIADO") return { erro: 409 as const };
       if (pront.professorSupervisorId !== professor.id) return { erro: 403 as const };
+      if (!professorPodeAssinarOuDevolver(pront.status, pront.desfechoEnvio)) return { erro: "aguardando" as const };
 
       const agora = new Date().toISOString();
       await executar(tx, gravarAssinatura, [agora, professor.id, professor.nome, agora, id]);
@@ -880,6 +898,7 @@ export const prontuariosRoutes: FastifyPluginAsync = async (app) => {
 
     if ("erro" in resultado) {
       if (resultado.erro === 404) return reply.status(404).send({ message: "Prontuário não encontrado." });
+      if (resultado.erro === "aguardando") return reply.status(409).send(AGUARDANDO_CONCLUSAO_ALUNO);
       if (resultado.erro === 409) {
         return recusar(reply, 409, "Prontuário não está aguardando assinatura", "NAO_AGUARDANDO");
       }
@@ -908,6 +927,7 @@ export const prontuariosRoutes: FastifyPluginAsync = async (app) => {
       if (!pront) return { erro: 404 as const };
       if (pront.status.toUpperCase() !== "ENVIADO") return { erro: 409 as const };
       if (pront.professorSupervisorId !== professor.id) return { erro: 403 as const };
+      if (!professorPodeAssinarOuDevolver(pront.status, pront.desfechoEnvio)) return { erro: "nao_aplicavel" as const };
 
       const agoraMs = Date.now();
       const agora = new Date(agoraMs).toISOString();
@@ -937,6 +957,7 @@ export const prontuariosRoutes: FastifyPluginAsync = async (app) => {
 
     if ("erro" in resultado) {
       if (resultado.erro === 404) return reply.status(404).send({ message: "Prontuário não encontrado." });
+      if (resultado.erro === "nao_aplicavel") return reply.status(400).send(DEVOLUCAO_NAO_APLICAVEL);
       if (resultado.erro === 409) {
         return recusar(reply, 409, "Prontuário não está aguardando revisão", "NAO_AGUARDANDO");
       }
@@ -949,6 +970,53 @@ export const prontuariosRoutes: FastifyPluginAsync = async (app) => {
       devolvidoEm: resultado.agora,
       devolvidoPorNome: professor.nome,
     };
+    return resposta;
+  });
+
+  app.post<{ Params: { id: string } }>("/prontuarios/:id/comentario", protegida, async (req, reply) => {
+    const { comentario } = comentarioProfessorSchema.parse(req.body);
+
+    const professor = await uma<ProfessorRow>(db, buscarProfessor, [req.user.sub]);
+    if (!professor) return reply.status(403).send({ message: "Apenas professores podem comentar prontuários." });
+
+    const { id } = req.params;
+    const resultado = await transacao(db, async (tx) => {
+      const pront = await uma<ProntuarioRevisaoRow>(tx, buscarParaAcao, [id]);
+      if (!pront) return { erro: 404 as const };
+      if (pront.status.toUpperCase() !== "ENVIADO") return { erro: 409 as const };
+      if (pront.professorSupervisorId !== professor.id) return { erro: 403 as const };
+
+      const partes = await uma<PartesRow>(tx, buscarPartes, [id]);
+      const agora = new Date().toISOString();
+      await executar(tx, registrarAuditoria, [
+        randomUUID(),
+        professor.id,
+        id,
+        "comentario-professor",
+        JSON.stringify({ comentario, desfecho: desfechoDoEnvio(pront.desfechoEnvio) }),
+      ]);
+      if (partes) {
+        await notificar(
+          tx,
+          partes.alunoId,
+          id,
+          "comentario-professor",
+          `${professor.nome} comentou o prontuário de ${partes.pacienteNome}: ${comentario}`,
+        );
+      }
+      return { agora };
+    });
+
+    if ("erro" in resultado) {
+      if (resultado.erro === 404) return reply.status(404).send({ message: "Prontuário não encontrado." });
+      if (resultado.erro === 409) {
+        return recusar(reply, 409, "Prontuário não está aguardando revisão", "NAO_AGUARDANDO");
+      }
+      return recusar(reply, 403, "Apenas o professor supervisor pode comentar", "NAO_SUPERVISOR");
+    }
+
+    req.log.info({ prontuarioId: id, professorId: professor.id }, "comentário do professor registrado");
+    const resposta: ComentarioProfessorResponse = { ok: true, comentadoEm: resultado.agora };
     return resposta;
   });
 
