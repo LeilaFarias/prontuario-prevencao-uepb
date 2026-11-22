@@ -217,7 +217,7 @@ function FormularioConclusao({ prontuario }: { prontuario: LocalProntuario }) {
         )}
       </GrupoFicha>
 
-      <GrupoFicha titulo="Anexos fotográficos" subtitulo="Fotos clínicas do antes e depois do caso.">
+      <GrupoFicha titulo="Anexos fotográficos" subtitulo="Fotos clínicas (ex. raio-x)">
         {!somenteLeitura && (
           <input
             ref={inputFotos}

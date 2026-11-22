@@ -61,6 +61,10 @@ function FormularioPlano({ prontuario }: { prontuario: LocalProntuario }) {
         titulo="Plano de ações preventivas e de mínima intervenção"
         subtitulo="Descreva o que será feito em cada sessão de atendimento."
       >
+        <p className="-mt-1 text-[12px] leading-snug text-ink-faint">
+          Descreva o plano executado hoje e o que será feito no próximo retorno.
+        </p>
+
         {sessoes.map((sessao, idx) => (
           <div
             key={sessao.id}

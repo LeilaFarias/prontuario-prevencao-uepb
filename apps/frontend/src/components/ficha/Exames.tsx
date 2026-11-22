@@ -1,5 +1,6 @@
 import { Controller, useWatch } from "react-hook-form";
 import { useLiveQuery } from "dexie-react-hooks";
+import { UserX } from "lucide-react";
 import { examesSchema } from "@prontuario/shared";
 import { lerProntuarioDecifrado, type LocalProntuario } from "../../db/dexie";
 import { useSecao } from "../../hooks/useSecao";
@@ -47,6 +48,14 @@ function FormularioExames({ prontuario }: { prontuario: LocalProntuario }) {
 
   return (
     <div className="flex flex-col gap-3 pb-2">
+      <div
+        role="note"
+        className="flex items-center gap-2.5 rounded-field border-2 border-alt bg-alt-tint px-3.5 py-3 text-alt"
+      >
+        <UserX size={20} className="shrink-0" aria-hidden="true" />
+        <p className="text-[14px] font-bold uppercase leading-snug tracking-wide">Solicitar a saída do acompanhante</p>
+      </div>
+
       <GrupoFicha titulo="Exame extra oral">
         <Controller
           control={control}

@@ -187,7 +187,20 @@ function ConteudoRevisao({ prontuario, onAtualizar }: ConteudoProps) {
         {renderSecao(secao.id)}
       </main>
 
-      <footer className="sticky bottom-0 mt-2 border-t border-line bg-paper px-5 py-3">
+      <footer className="sticky bottom-0 mt-2 flex flex-col gap-2.5 border-t border-line bg-paper px-5 py-3">
+        <div className="grid grid-cols-2 gap-3">
+          <button type="button" className="btn-ghost" disabled={indice === 0} onClick={() => setIndice(indice - 1)}>
+            Anterior
+          </button>
+          <button
+            type="button"
+            className="btn-prof"
+            disabled={indice === SECOES.length - 1}
+            onClick={() => setIndice(indice + 1)}
+          >
+            Próxima
+          </button>
+        </div>
         {aguardando ? (
           <>
             {offline && podeAgir && (

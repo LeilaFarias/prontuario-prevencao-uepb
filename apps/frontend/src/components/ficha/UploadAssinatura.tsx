@@ -11,6 +11,7 @@ interface Props {
   somenteLeitura?: boolean;
   desabilitado?: boolean;
   rotulo?: string;
+  placeholder?: string;
   children?: ReactNode;
 }
 
@@ -22,6 +23,7 @@ export default function UploadAssinatura({
   somenteLeitura = false,
   desabilitado = false,
   rotulo = "assinatura",
+  placeholder = "Tire uma foto do termo assinado à mão ou escolha uma imagem da galeria.",
   children,
 }: Props) {
   const inputCamera = useRef<HTMLInputElement>(null);
@@ -117,7 +119,7 @@ export default function UploadAssinatura({
           <Camera size={26} className="mx-auto text-ink-faint" aria-hidden="true" />
           <p className="mt-2 text-[13px] font-semibold text-ink">Anexar foto da {rotulo}</p>
           <p className="mx-auto mt-1 max-w-[260px] text-[11.5px] text-ink-faint">
-            Tire uma foto do termo assinado à mão ou escolha uma imagem da galeria.
+            {placeholder}
           </p>
           <div className="mt-4 flex justify-center gap-2">
             <button

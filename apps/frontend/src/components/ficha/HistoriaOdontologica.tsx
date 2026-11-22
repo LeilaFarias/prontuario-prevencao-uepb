@@ -82,6 +82,7 @@ function FormularioHistoriaOdontologica({ prontuario }: { prontuario: LocalPront
     historiaOdontologicaSchema,
   );
 
+  const primeiraConsulta = useWatch({ control, name: "primeiraConsulta" });
   const acoesRecebidas = useWatch({ control, name: "acoesPreventivasRecebidas" });
   const escova = useWatch({ control, name: "escovaDiariamente" });
   const habitos = useWatch({ control, name: "habitosParafuncionais" });
@@ -144,37 +145,41 @@ function FormularioHistoriaOdontologica({ prontuario }: { prontuario: LocalPront
       <GrupoFicha titulo="Histórico de consultas">
         {simNao("primeiraConsulta", "Primeira consulta odontológica?")}
 
-        <Controller
-          control={control}
-          name="tempoUltimaConsulta"
-          render={({ field }) => (
-            <SegmentedToggle
-              label="Tempo da última consulta"
-              value={field.value}
-              onChange={(v) => field.onChange(v)}
-              options={OPCOES_TEMPO}
-              disabled={somenteLeitura}
-            />
-          )}
-        />
+        {primeiraConsulta !== true && (
+          <Controller
+            control={control}
+            name="tempoUltimaConsulta"
+            render={({ field }) => (
+              <SegmentedToggle
+                label="Tempo da última consulta"
+                value={field.value}
+                onChange={(v) => field.onChange(v)}
+                options={OPCOES_TEMPO}
+                disabled={somenteLeitura}
+              />
+            )}
+          />
+        )}
 
         {textoLongo("queixaPrincipal", "Motivo da procura atual (queixa principal)", "Descreva o motivo relatado")}
         {simNao("dorDente", "Presença de dor de dente?")}
         {textoCurto("motivoUEPB", "Motivo da procura pela clínica da UEPB", "Ex.: encaminhamento, indicação")}
 
-        <Controller
-          control={control}
-          name="comportamentoAnterior"
-          render={({ field }) => (
-            <SegmentedToggle
-              label="Comportamento no atendimento anterior"
-              value={field.value}
-              onChange={(v) => field.onChange(v)}
-              options={OPCOES_COMPORTAMENTO}
-              disabled={somenteLeitura}
-            />
-          )}
-        />
+        {primeiraConsulta !== true && (
+          <Controller
+            control={control}
+            name="comportamentoAnterior"
+            render={({ field }) => (
+              <SegmentedToggle
+                label="Comportamento no atendimento anterior"
+                value={field.value}
+                onChange={(v) => field.onChange(v)}
+                options={OPCOES_COMPORTAMENTO}
+                disabled={somenteLeitura}
+              />
+            )}
+          />
+        )}
       </GrupoFicha>
 
       <GrupoFicha titulo="Ações preventivas e higiene bucal">
