@@ -5,7 +5,11 @@ import { ARCADAS, type Arcada } from "../../lib/odontograma";
 
 interface Props {
   renderDente: (numero: number, deciduo: boolean, arcada: Arcada) => ReactNode;
+  renderRotulos?: (arcada: Arcada) => ReactNode;
 }
+
+const LARGURA_ROTULOS = 18;
+const DESLOCAMENTO_ROTULOS = `${LARGURA_ROTULOS + 3}px`;
 
 type OrientacaoTela = ScreenOrientation & { lock?: (o: string) => Promise<void>; unlock?: () => void };
 
@@ -20,37 +24,76 @@ function Linha({
   deciduo,
   arcada,
   renderDente,
+  renderRotulos,
 }: {
   numeros: ReadonlyArray<number>;
   deciduo: boolean;
   arcada: Arcada;
   renderDente: Props["renderDente"];
+  renderRotulos: Props["renderRotulos"];
 }) {
   const deslocamento = deciduo ? 2 : 0;
   return (
-    <div className="grid gap-[3px]" style={{ gridTemplateColumns: COLUNAS }}>
-      {numeros.map((n, i) => (
-        <div key={n} className="min-w-0" style={{ gridColumn: colunaGrid(i + deslocamento) }}>
-          {renderDente(n, deciduo, arcada)}
+    <div className="flex gap-[3px]">
+      {renderRotulos && (
+        <div
+          aria-hidden="true"
+          className="sticky left-0 z-20 shrink-0 bg-raised"
+          style={{ width: LARGURA_ROTULOS }}
+        >
+          {renderRotulos(arcada)}
         </div>
-      ))}
+      )}
+      <div className="grid min-w-0 flex-1 gap-[3px]" style={{ gridTemplateColumns: COLUNAS }}>
+        {numeros.map((n, i) => (
+          <div key={n} className="min-w-0" style={{ gridColumn: colunaGrid(i + deslocamento) }}>
+            {renderDente(n, deciduo, arcada)}
+          </div>
+        ))}
+      </div>
     </div>
   );
 }
 
-function Arcadas({ renderDente }: Props) {
+function Arcadas({ renderDente, renderRotulos }: Props) {
+  const comRotulos = Boolean(renderRotulos);
   return (
     <div className="relative flex flex-col gap-5">
-      <div aria-hidden="true" className="pointer-events-none absolute inset-y-0 left-1/2 w-px bg-line-soft" />
+      <div
+        aria-hidden="true"
+        className="pointer-events-none absolute inset-y-0 w-px bg-line-soft"
+        style={{
+          left: comRotulos
+            ? `calc(${DESLOCAMENTO_ROTULOS} + (100% - ${DESLOCAMENTO_ROTULOS}) / 2)`
+            : "50%",
+        }}
+      />
 
       {ARCADAS.map((a) => {
         const permanentes = (
-          <Linha numeros={a.permanentes} deciduo={false} arcada={a.arcada} renderDente={renderDente} />
+          <Linha
+            numeros={a.permanentes}
+            deciduo={false}
+            arcada={a.arcada}
+            renderDente={renderDente}
+            renderRotulos={renderRotulos}
+          />
         );
-        const deciduos = <Linha numeros={a.deciduos} deciduo arcada={a.arcada} renderDente={renderDente} />;
+        const deciduos = (
+          <Linha
+            numeros={a.deciduos}
+            deciduo
+            arcada={a.arcada}
+            renderDente={renderDente}
+            renderRotulos={renderRotulos}
+          />
+        );
         return (
           <div key={a.arcada} role="group" aria-label={a.nome}>
-            <div className="mb-2 grid grid-cols-[1fr_auto_1fr] items-center text-[10px] font-bold uppercase tracking-wider">
+            <div
+              className="mb-2 grid grid-cols-[1fr_auto_1fr] items-center text-[10px] font-bold uppercase tracking-wider"
+              style={{ paddingLeft: comRotulos ? DESLOCAMENTO_ROTULOS : undefined }}
+            >
               <span className="text-ink-faint">Direito</span>
               <h4 className="relative z-10 bg-raised px-2 text-ink-soft">{a.nome}</h4>
               <span className="text-right text-ink-faint">Esquerdo</span>
@@ -152,7 +195,7 @@ function TelaCheia({ onClose, children }: { onClose: () => void; children: React
   );
 }
 
-export default function OdontogramaHorizontal({ renderDente }: Props) {
+export default function OdontogramaHorizontal({ renderDente, renderRotulos }: Props) {
   const [ampliado, setAmpliado] = useState(false);
   const fechar = useCallback(() => setAmpliado(false), []);
 
@@ -172,13 +215,13 @@ export default function OdontogramaHorizontal({ renderDente }: Props) {
 
       <div className="overflow-x-auto pb-2">
         <div className="min-w-[540px]">
-          <Arcadas renderDente={renderDente} />
+          <Arcadas renderDente={renderDente} renderRotulos={renderRotulos} />
         </div>
       </div>
 
       {ampliado && (
         <TelaCheia onClose={fechar}>
-          <Arcadas renderDente={renderDente} />
+          <Arcadas renderDente={renderDente} renderRotulos={renderRotulos} />
         </TelaCheia>
       )}
     </div>

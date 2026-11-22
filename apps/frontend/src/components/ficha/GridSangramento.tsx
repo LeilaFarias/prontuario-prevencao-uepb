@@ -25,11 +25,10 @@ export default function GridSangramento({ dentes, onToggleDente, onToggleFace, d
         aria-pressed={valor === 1}
         aria-label={`Dente ${numero}, face ${NOMES_FACE[face]}: ${valor === 1 ? "com sangramento" : "sem sangramento"}`}
         onClick={() => onToggleFace(numero, face)}
-        className={`flex min-h-[24px] items-center justify-center gap-0.5 rounded-[5px] border-[1.5px] text-[10.5px] font-bold transition ${
+        className={`flex h-6 items-center justify-center rounded-[5px] border-[1.5px] text-[10.5px] font-bold transition ${
           valor === 1 ? "border-alt bg-alt-tint text-alt" : "border-line bg-raised text-ink-faint"
         } ${presente ? "" : "pointer-events-none opacity-35"} ${disabled ? "cursor-default" : ""}`}
       >
-        <span className="text-[8.5px] font-semibold opacity-60">{face}</span>
         {valor}
       </button>
     );
@@ -58,5 +57,16 @@ export default function GridSangramento({ dentes, onToggleDente, onToggleFace, d
     );
   };
 
-  return <OdontogramaHorizontal renderDente={renderDente} />;
+  const renderRotulos = (arcada: Arcada) => {
+    const [faceTopo, faceBase] = FACES_LINHAS[arcada];
+    return (
+      <div className="flex flex-col gap-[3px] text-[10px] font-bold text-ink-faint">
+        <span className="flex h-6 items-center justify-center">{faceTopo}</span>
+        <span className="h-7" />
+        <span className="flex h-6 items-center justify-center">{faceBase}</span>
+      </div>
+    );
+  };
+
+  return <OdontogramaHorizontal renderDente={renderDente} renderRotulos={renderRotulos} />;
 }
