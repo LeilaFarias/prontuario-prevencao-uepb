@@ -188,8 +188,12 @@ export const fotoAnexoSchema = z.object({
 
 export type FotoAnexo = z.infer<typeof fotoAnexoSchema>;
 
+export const TIPOS_DESFECHO = ["concluido", "encaminhado", "nao_finalizado"] as const;
+
+export type TipoDesfecho = (typeof TIPOS_DESFECHO)[number];
+
 export const conclusaoSchema = z.object({
-  tipoDesfecho: z.enum(["concluido", "encaminhado"]).nullable().default(null),
+  tipoDesfecho: z.enum(TIPOS_DESFECHO).nullable().default(null),
   concluidoEm: z.string().default(""),
   encaminhamentoEm: z.string().default(""),
   encaminhamentoPara: z.string().default(""),

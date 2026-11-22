@@ -1,4 +1,5 @@
 import { z } from "zod";
+import type { TipoDesfecho } from "./prontuario";
 
 export const MOTIVOS_DEVOLUCAO = [
   "calculo_divergente",
@@ -95,6 +96,7 @@ export interface ItemFilaRevisao {
   alunoOperador: string;
   alunoAuxiliar: string;
   duplaAnteriorNome: string | null;
+  tipoDesfecho: TipoDesfecho | null;
 }
 
 export interface FilaRevisaoResponse {

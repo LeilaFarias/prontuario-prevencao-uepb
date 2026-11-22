@@ -4,6 +4,7 @@ import {
   assinarSchema,
   devolverSchema,
   manterTitularidadeSchema,
+  TIPOS_DESFECHO,
   transferirTitularidadeSchema,
   type DuplicidadeResponse,
   type Encaminhamento,
@@ -49,6 +50,7 @@ interface FilaRow {
   atualizadoEm: string;
   alunoNome: string;
   professorSupervisorNome: string | null;
+  tipoDesfecho: string | null;
 }
 
 interface SecaoRow {
@@ -165,7 +167,9 @@ export const prontuariosRoutes: FastifyPluginAsync = async (app) => {
      ORDER BY p."atualizadoEm" DESC`;
   const selecionarFila = `SELECT p."id", p."pacienteNome", p."pacienteDataNascimento", p."sinalizadoDuplicidade", p."professorSupervisorId",
             p."alunoTitularId", ${ATUALIZADO_EM_EFETIVO} AS "atualizadoEm", u."nome" AS "alunoNome",
-            pr."nome" AS "professorSupervisorNome"
+            pr."nome" AS "professorSupervisorNome",
+            (SELECT s."conteudo"->>'tipoDesfecho' FROM "Secao" s
+              WHERE s."prontuarioId" = p."id" AND s."secaoId" = 'conclusao') AS "tipoDesfecho"
      FROM "Prontuario" p
      JOIN "Usuario" u ON u."id" = p."alunoTitularId"
      LEFT JOIN "Usuario" pr ON pr."id" = p."professorSupervisorId"`;
@@ -361,6 +365,7 @@ export const prontuariosRoutes: FastifyPluginAsync = async (app) => {
           alunoNome: r.alunoNome,
           ...(await lerDupla(db, r.id)),
           duplaAnteriorNome: duplicado ? await nomeDuplaDestino(db, duplicado.id) : null,
+          tipoDesfecho: TIPOS_DESFECHO.find((t) => t === r.tipoDesfecho) ?? null,
         };
       }),
     );
