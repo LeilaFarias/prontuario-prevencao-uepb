@@ -14,6 +14,7 @@ import {
   type Sangramento,
 } from "@prontuario/shared";
 import type { LocalProntuario } from "../db/dexie";
+import { DENTES_IHOS } from "./ihos";
 
 export interface Pendencia {
   secaoId: SecaoId;
@@ -106,7 +107,11 @@ const VERIFICADORES: Partial<Record<SecaoId, Verificador>> = {
     const registros = lista<IHOS["registros"][number]>(ler<IHOS>(c).registros);
     if (registros.length === 0) return "Nenhum registro de IHOS";
     const avaliados = (r: Partial<IHOS["registros"][number]>): number =>
-      Object.values(r.dentes ?? {}).filter((nota) => nota !== null && nota !== undefined).length;
+      DENTES_IHOS.filter(({ chave }) => {
+        if (r.ausentes?.[chave] === true) return true;
+        const nota = r.dentes?.[chave];
+        return nota !== null && nota !== undefined;
+      }).length;
     const melhor = Math.max(...registros.map(avaliados));
     if (melhor >= 6) return null;
     return `Registro de IHOS incompleto: ${melhor} de 6 dentes avaliados`;

@@ -6,7 +6,7 @@ import { lerProntuarioDecifrado, type LocalProntuario } from "../../db/dexie";
 import { useSecao } from "../../hooks/useSecao";
 import { useSyncStatus } from "../../hooks/useSyncStatus";
 import { hojeISO } from "../../lib/data";
-import { dentesIHOSVazios } from "../../lib/ihos";
+import { ausentesIHOSVazios, dentesIHOSVazios } from "../../lib/ihos";
 import { uuid } from "../../lib/uuid";
 import GrupoFicha from "./GrupoFicha";
 import RegistroIHOS from "./RegistroIHOS";
@@ -45,7 +45,7 @@ function FormularioIHOS({ prontuario }: { prontuario: LocalProntuario }) {
   const adicionar = () =>
     setValue("registros", [
       ...getValues("registros"),
-      { id: uuid(), data: hojeISO(), dentes: dentesIHOSVazios() },
+      { id: uuid(), data: hojeISO(), dentes: dentesIHOSVazios(), ausentes: ausentesIHOSVazios() },
     ]);
 
   const atualizar = (id: string, parcial: Partial<RegistroIHOSDados>) =>
@@ -64,7 +64,7 @@ function FormularioIHOS({ prontuario }: { prontuario: LocalProntuario }) {
     <div className="flex flex-col gap-3 pb-2">
       <GrupoFicha
         titulo="Índice de Higiene Oral Simplificado (IHOS)"
-        subtitulo="Avalie a presença de biofilme em cada uma das 6 faces-índice."
+        subtitulo="Avalie a presença de biofilme em cada uma das 6 faces-índice. Marque como ausente o dente que não estiver na boca."
       >
         <div className="flex flex-col gap-2 rounded-field bg-paper p-3">
           {LEGENDA.map((l) => (

@@ -278,6 +278,8 @@ export const vazioSangramento = (): Sangramento => sangramentoSchema.parse({});
 
 const notaIHOS = z.union([z.literal(0), z.literal(1), z.literal(2), z.literal(3), z.null()]).default(null);
 
+const ausenteIHOS = z.boolean().default(false);
+
 export const registroIHOSSchema = z.object({
   id: z.string(),
   data: z.string().default(""),
@@ -289,6 +291,16 @@ export const registroIHOSSchema = z.object({
       V31: notaIHOS,
       L36: notaIHOS,
       L46: notaIHOS,
+    })
+    .default({}),
+  ausentes: z
+    .object({
+      V11: ausenteIHOS,
+      V16: ausenteIHOS,
+      V26: ausenteIHOS,
+      V31: ausenteIHOS,
+      L36: ausenteIHOS,
+      L46: ausenteIHOS,
     })
     .default({}),
 });

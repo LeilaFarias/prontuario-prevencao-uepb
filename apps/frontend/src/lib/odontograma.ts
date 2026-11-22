@@ -42,6 +42,31 @@ export const QUADRANTES: ReadonlyArray<Quadrante> = [
   },
 ];
 
+export interface ArcadaDentes {
+  arcada: Arcada;
+  nome: string;
+  permanentes: ReadonlyArray<number>;
+  deciduos: ReadonlyArray<number>;
+  facesAvaliadas: ReadonlyArray<Face>;
+}
+
+export const ARCADAS: ReadonlyArray<ArcadaDentes> = [
+  {
+    arcada: "superior",
+    nome: "Arcada superior",
+    permanentes: [17, 16, 15, 14, 13, 12, 11, 21, 22, 23, 24, 25, 26, 27],
+    deciduos: [55, 54, 53, 52, 51, 61, 62, 63, 64, 65],
+    facesAvaliadas: ["V", "P"],
+  },
+  {
+    arcada: "inferior",
+    nome: "Arcada inferior",
+    permanentes: [47, 46, 45, 44, 43, 42, 41, 31, 32, 33, 34, 35, 36, 37],
+    deciduos: [85, 84, 83, 82, 81, 71, 72, 73, 74, 75],
+    facesAvaliadas: ["V", "L"],
+  },
+];
+
 export const NOMES_FACE: Record<Face, string> = {
   V: "vestibular",
   P: "palatina",

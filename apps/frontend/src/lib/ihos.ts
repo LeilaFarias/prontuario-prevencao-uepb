@@ -3,6 +3,7 @@ import type { RegistroIHOSDados } from "@prontuario/shared";
 export type NotaIHOS = 0 | 1 | 2 | 3 | null;
 export type ChaveIHOS = keyof RegistroIHOSDados["dentes"];
 export type DentesIHOS = Record<ChaveIHOS, NotaIHOS>;
+export type AusentesIHOS = Record<ChaveIHOS, boolean>;
 export type InterpretacaoIHOS = "boa" | "regular" | "ruim" | null;
 
 export const DENTES_IHOS: ReadonlyArray<{ chave: ChaveIHOS; label: string; descricao: string }> = [
@@ -21,6 +22,8 @@ export const TEXTO_INTERPRETACAO_IHOS: Record<Exclude<InterpretacaoIHOS, null>, 
 };
 
 export interface ResultadoIHOS {
+  dentesPresentes: number;
+  todosAusentes: boolean;
   dentesExaminados: number;
   somaNotas: number;
   media: number;
@@ -31,11 +34,21 @@ export function dentesIHOSVazios(): DentesIHOS {
   return { V11: null, V16: null, V26: null, V31: null, L36: null, L46: null };
 }
 
-export function calcularIHOS(dentes: Partial<Record<ChaveIHOS, NotaIHOS>>): ResultadoIHOS {
+export function ausentesIHOSVazios(): AusentesIHOS {
+  return { V11: false, V16: false, V26: false, V31: false, L36: false, L46: false };
+}
+
+export function calcularIHOS(
+  dentes: Partial<Record<ChaveIHOS, NotaIHOS>>,
+  ausentes: Partial<Record<ChaveIHOS, boolean>> = {},
+): ResultadoIHOS {
+  let dentesPresentes = 0;
   let dentesExaminados = 0;
   let somaNotas = 0;
 
   for (const { chave } of DENTES_IHOS) {
+    if (ausentes[chave] === true) continue;
+    dentesPresentes += 1;
     const nota = dentes[chave];
     if (nota === null || nota === undefined) continue;
     dentesExaminados += 1;
@@ -51,5 +64,12 @@ export function calcularIHOS(dentes: Partial<Record<ChaveIHOS, NotaIHOS>>): Resu
     else interpretacao = "ruim";
   }
 
-  return { dentesExaminados, somaNotas, media, interpretacao };
+  return {
+    dentesPresentes,
+    todosAusentes: dentesPresentes === 0,
+    dentesExaminados,
+    somaNotas,
+    media,
+    interpretacao,
+  };
 }
