@@ -543,7 +543,7 @@ export default function Prontuario() {
         ))}
       </nav>
 
-      <main className="flex-1 px-5 pb-4 pt-2">
+      <main className="min-h-0 flex-1 px-5 pb-32 pt-2">
         {atual.historico && !!atual.historico.secoes[secao.id] && (
             <div className="mb-3">
             <HistoricoSecao
@@ -601,7 +601,7 @@ export default function Prontuario() {
         )}
       </main>
 
-      <footer className="sticky bottom-0 mt-4 flex flex-col gap-2.5 border-t border-line bg-paper px-5 py-3">
+      <footer className="sticky bottom-0 z-30 mt-4 flex shrink-0 flex-col gap-2.5 border-t border-line bg-paper px-5 py-3">
         <div className="grid grid-cols-2 gap-3">
           <button type="button" className="btn-ghost" disabled={indice === 0} onClick={() => irPara(indice - 1)}>
             Anterior

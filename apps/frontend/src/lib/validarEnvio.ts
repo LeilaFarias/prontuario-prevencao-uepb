@@ -28,7 +28,10 @@ export interface ResultadoValidacao {
   pendencias: Pendencia[];
 }
 
-const preenchido = (v: unknown): boolean => typeof v === "string" && v.trim() !== "";
+const normalizarTexto = (v: string): string =>
+  v.trim().normalize("NFD").replace(/[\u0300-\u036f]/g, "").toLocaleLowerCase("pt-BR");
+
+const preenchido = (v: unknown): boolean => typeof v === "string" && normalizarTexto(v) !== "";
 
 function ler<T>(bruto: unknown): Partial<T> {
   return bruto !== null && typeof bruto === "object" ? (bruto as Partial<T>) : {};
@@ -99,7 +102,7 @@ const VERIFICADORES: Partial<Record<SecaoId, Verificador>> = {
   sangramento: (c) => {
     const registros = lista<Sangramento["registros"][number]>(ler<Sangramento>(c).registros);
     if (registros.length === 0) return "Nenhum registro de sangramento";
-    if (!registros.some((r) => preenchido(r.data))) return "Registro de sangramento sem data";
+    if (!registros.some((r) => r.naoAvaliado === true || preenchido(r.data))) return "Registro de sangramento sem data";
     return null;
   },
 
@@ -107,7 +110,7 @@ const VERIFICADORES: Partial<Record<SecaoId, Verificador>> = {
     const registros = lista<IHOS["registros"][number]>(ler<IHOS>(c).registros);
     if (registros.length === 0) return "Nenhum registro de IHOS";
     const avaliados = (r: Partial<IHOS["registros"][number]>): number =>
-      DENTES_IHOS.filter(({ chave }) => {
+      r.naoAvaliado === true ? 6 : DENTES_IHOS.filter(({ chave }) => {
         if (r.ausentes?.[chave] === true) return true;
         const nota = r.dentes?.[chave];
         return nota !== null && nota !== undefined;
@@ -122,6 +125,7 @@ const VERIFICADORES: Partial<Record<SecaoId, Verificador>> = {
     if (registros.length === 0) return "Nenhum registro de CPO-D/ceo-d";
 
     const faltasDe = (r: Partial<CPOD["registros"][number]>): string[] => {
+      if (r.naoAvaliado === true) return [];
       const faltas: string[] = [];
       if (!preenchido(r.data)) faltas.push("data");
       if (!Object.values(r.dentes ?? {}).some((codigo) => preenchido(codigo))) faltas.push("código em ao menos 1 dente");

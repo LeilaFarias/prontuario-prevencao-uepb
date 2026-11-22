@@ -267,6 +267,7 @@ export const sangramentoDentesSchema = z.record(z.string(), denteSangramentoSche
 export const registroSangramentoSchema = z.object({
   id: z.string(),
   data: z.string().default(""),
+  naoAvaliado: z.boolean().default(false),
   dentes: sangramentoDentesSchema.default({}),
 });
 
@@ -287,6 +288,7 @@ const ausenteIHOS = z.boolean().default(false);
 export const registroIHOSSchema = z.object({
   id: z.string(),
   data: z.string().default(""),
+  naoAvaliado: z.boolean().default(false),
   dentes: z
     .object({
       V11: notaIHOS,
@@ -336,6 +338,7 @@ const calculoManualCEODSchema = z.object({
 export const registroCPODSchema = z.object({
   id: z.string(),
   data: z.string().default(""),
+  naoAvaliado: z.boolean().default(false),
   dentes: z.record(z.string(), z.string()).default({}),
   cpodManual: calculoManualCPODSchema.default({}),
   ceodManual: calculoManualCEODSchema.default({}),

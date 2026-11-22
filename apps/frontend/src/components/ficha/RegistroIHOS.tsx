@@ -11,11 +11,12 @@ import {
 } from "../../lib/ihos";
 import CampoData from "./CampoData";
 import EscalaIHOS from "./EscalaIHOS";
+import StatusExame from "./StatusExame";
 
 interface Props {
   registro: RegistroIHOSDados;
   indice: number;
-  onChange: (parcial: Partial<Pick<RegistroIHOSDados, "data" | "dentes" | "ausentes">>) => void;
+  onChange: (parcial: Partial<Pick<RegistroIHOSDados, "data" | "dentes" | "ausentes" | "naoAvaliado">>) => void;
   onRemover?: () => void;
   disabled?: boolean;
 }
@@ -49,11 +50,13 @@ export default function RegistroIHOS({ registro, indice, onChange, onRemover, di
 
   return (
     <section className="rounded-card border border-line bg-raised p-4">
-      <div className="mb-4 flex items-center justify-between gap-3">
-        <div>
+      <div className="mb-4 flex flex-wrap items-center justify-between gap-3">
+        <div className="min-w-0">
           <h3 className="font-display text-[15px] font-semibold text-ink">Registro {indice + 1}</h3>
           <p className="mt-0.5 text-[11.5px] text-ink-faint">{formatarData(registro.data)}</p>
         </div>
+        <div className="ml-auto flex flex-wrap items-center justify-end gap-3">
+          <StatusExame naoAvaliado={registro.naoAvaliado} disabled={disabled} onChange={(naoAvaliado) => onChange({ naoAvaliado })} />
         {onRemover && !disabled && (
           <button
             type="button"
@@ -63,6 +66,7 @@ export default function RegistroIHOS({ registro, indice, onChange, onRemover, di
             Remover
           </button>
         )}
+        </div>
       </div>
 
       <CampoData
@@ -72,7 +76,7 @@ export default function RegistroIHOS({ registro, indice, onChange, onRemover, di
         disabled={disabled}
       />
 
-      <div className="mt-3">
+      {!registro.naoAvaliado && <div className="mt-3">
         {DENTES_IHOS.map(({ chave, label, descricao }) => (
           <EscalaIHOS
             key={chave}
@@ -85,9 +89,9 @@ export default function RegistroIHOS({ registro, indice, onChange, onRemover, di
             disabled={disabled}
           />
         ))}
-      </div>
+      </div>}
 
-      <div className={`mt-4 rounded-field border p-4 text-center ${estilo.caixa}`}>
+      {!registro.naoAvaliado && <div className={`mt-4 rounded-field border p-4 text-center ${estilo.caixa}`}>
         <p className="text-[11px] font-semibold uppercase tracking-wider text-ink-soft">IHOS</p>
         <p className={`font-display text-[36px] font-medium leading-tight ${estilo.valor}`}>
           {resultado.todosAusentes ? "—" : formatarMedia(resultado.media)}
@@ -109,7 +113,7 @@ export default function RegistroIHOS({ registro, indice, onChange, onRemover, di
           </p>
         )}
         <p className="mt-1 text-[11px] text-ink-faint">IHOS = soma das notas ÷ dentes presentes examinados</p>
-      </div>
+      </div>}
     </section>
   );
 }

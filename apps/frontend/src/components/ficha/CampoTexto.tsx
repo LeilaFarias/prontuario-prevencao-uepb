@@ -1,4 +1,5 @@
 import { useId, type HTMLInputTypeAttribute, type InputHTMLAttributes } from "react";
+import MarcadorCampo from "./MarcadorCampo";
 
 export interface CampoTextoProps {
   label: string;
@@ -13,6 +14,7 @@ export interface CampoTextoProps {
   multiline?: boolean;
   rows?: number;
   obrigatorio?: boolean;
+  permiteMarcador?: boolean;
 }
 
 export default function CampoTexto({
@@ -28,8 +30,10 @@ export default function CampoTexto({
   multiline = false,
   rows = 3,
   obrigatorio = false,
+  permiteMarcador = true,
 }: CampoTextoProps) {
   const id = useId();
+  const mostrarMarcador = permiteMarcador && !disabled && value.trim() === "";
   return (
     <div>
       <label htmlFor={id} className="field-label">
@@ -40,31 +44,34 @@ export default function CampoTexto({
           </span>
         )}
       </label>
-      {multiline ? (
-        <textarea
-          id={id}
-          className="input !h-auto min-h-[80px] resize-none py-3 leading-snug disabled:bg-paper disabled:text-ink-soft"
-          value={value}
-          onChange={(e) => onChange(e.target.value)}
-          placeholder={placeholder}
-          disabled={disabled}
-          maxLength={maxLength}
-          rows={rows}
-        />
-      ) : (
-        <input
-          id={id}
-          type={type}
-          className="input disabled:bg-paper disabled:text-ink-soft"
-          value={value}
-          onChange={(e) => onChange(e.target.value)}
-          placeholder={placeholder}
-          disabled={disabled}
-          inputMode={inputMode}
-          autoComplete={autoComplete}
-          maxLength={maxLength}
-        />
-      )}
+      <div className="relative">
+        {multiline ? (
+          <textarea
+            id={id}
+            className="input !h-auto min-h-[80px] resize-none py-3 pr-10 leading-snug disabled:bg-paper disabled:text-ink-soft"
+            value={value}
+            onChange={(e) => onChange(e.target.value)}
+            placeholder={placeholder}
+            disabled={disabled}
+            maxLength={maxLength}
+            rows={rows}
+          />
+        ) : (
+          <input
+            id={id}
+            type={type}
+            className="input pr-10 disabled:bg-paper disabled:text-ink-soft"
+            value={value}
+            onChange={(e) => onChange(e.target.value)}
+            placeholder={placeholder}
+            disabled={disabled}
+            inputMode={inputMode}
+            autoComplete={autoComplete}
+            maxLength={maxLength}
+          />
+        )}
+        {mostrarMarcador && <MarcadorCampo onSelecionar={onChange} />}
+      </div>
     </div>
   );
 }

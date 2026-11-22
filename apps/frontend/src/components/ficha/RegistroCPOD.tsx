@@ -4,6 +4,7 @@ import type { RegistroCPODDados } from "@prontuario/shared";
 import { formatarDataBR } from "../../lib/data";
 import CampoData from "./CampoData";
 import OdontogramaCPOD from "./OdontogramaCPOD";
+import StatusExame from "./StatusExame";
 
 interface Props {
   registro: RegistroCPODDados;
@@ -87,7 +88,7 @@ export default function RegistroCPOD({
     <div className="min-w-0 flex-1 text-left">
       <h3 className="font-display text-[15px] font-semibold text-ink">Registro {indice + 1}</h3>
       <p className="mt-0.5 truncate text-[11.5px] text-ink-faint">
-        {formatarDataBR(registro.data) || "Sem data"} · {resumoCalculo(registro)}
+        {formatarDataBR(registro.data) || "Sem data"} · {registro.naoAvaliado ? "Não avaliado nesta sessão" : resumoCalculo(registro)}
       </p>
     </div>
   );
@@ -96,7 +97,7 @@ export default function RegistroCPOD({
     <section
       className={`overflow-hidden rounded-card border border-line bg-raised ${expandido ? "shadow-sm" : ""}`}
     >
-      <div className="flex items-center gap-3 p-4">
+      <div className="flex flex-wrap items-center gap-3 p-4">
         {colapsavel ? (
           <button
             type="button"
@@ -115,6 +116,8 @@ export default function RegistroCPOD({
         ) : (
           titulo
         )}
+
+        <StatusExame naoAvaliado={registro.naoAvaliado} disabled={disabled} onChange={(naoAvaliado) => onChange({ naoAvaliado })} />
 
         {onRemover && !disabled && (
           <button
@@ -136,7 +139,7 @@ export default function RegistroCPOD({
             disabled={disabled}
           />
 
-          <OdontogramaCPOD
+          {!registro.naoAvaliado && <><OdontogramaCPOD
             dentes={registro.dentes}
             onChange={(numero, codigo) => {
               const { [String(numero)]: _removido, ...restantes } = registro.dentes;
@@ -169,7 +172,7 @@ export default function RegistroCPOD({
             <p className="mt-3 text-[11.5px] text-ink-faint">
               Preencha os valores que você calculou manualmente. O professor fará a conferência na revisão.
             </p>
-          </div>
+          </div></>}
         </div>
       )}
     </section>

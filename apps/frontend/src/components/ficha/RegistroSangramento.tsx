@@ -3,11 +3,12 @@ import type { RegistroSangramentoDados } from "@prontuario/shared";
 import { calcularSG, denteVazio, gerarDentesVazios, type DentesSangramento, type Face } from "../../lib/odontograma";
 import CampoData from "./CampoData";
 import GridSangramento from "./GridSangramento";
+import StatusExame from "./StatusExame";
 
 interface Props {
   registro: RegistroSangramentoDados;
   indice: number;
-  onChange: (parcial: Partial<Pick<RegistroSangramentoDados, "data" | "dentes">>) => void;
+  onChange: (parcial: Partial<Pick<RegistroSangramentoDados, "data" | "dentes" | "naoAvaliado">>) => void;
   onRemover?: () => void;
   disabled?: boolean;
 }
@@ -59,11 +60,13 @@ export default function RegistroSangramento({ registro, indice, onChange, onRemo
 
   return (
     <section className="rounded-card border border-line bg-raised p-4">
-      <div className="mb-4 flex items-center justify-between gap-3">
-        <div>
+      <div className="mb-4 flex flex-wrap items-center justify-between gap-3">
+        <div className="min-w-0">
           <h3 className="font-display text-[15px] font-semibold text-ink">Registro {indice + 1}</h3>
           <p className="mt-0.5 text-[11.5px] text-ink-faint">{formatarData(registro.data)}</p>
         </div>
+        <div className="ml-auto flex flex-wrap items-center justify-end gap-3">
+          <StatusExame naoAvaliado={registro.naoAvaliado} disabled={disabled} onChange={(naoAvaliado) => onChange({ naoAvaliado })} />
         {onRemover && !disabled && (
           <button
             type="button"
@@ -73,6 +76,7 @@ export default function RegistroSangramento({ registro, indice, onChange, onRemo
             Remover
           </button>
         )}
+        </div>
       </div>
 
       <CampoData
@@ -82,6 +86,7 @@ export default function RegistroSangramento({ registro, indice, onChange, onRemo
         disabled={disabled}
       />
 
+      {!registro.naoAvaliado && <>
       <div className="mb-4 mt-4 flex flex-wrap items-center gap-x-3 gap-y-1.5 text-[11.5px] text-ink-soft">
         <span className="flex items-center gap-2">
           <Swatch valor="0" sangrando={false} />
@@ -117,6 +122,7 @@ export default function RegistroSangramento({ registro, indice, onChange, onRemo
         </p>
         <p className="mt-1 text-[11px] text-ink-faint">SG = (faces sangrantes × 100) ÷ (dentes presentes × 2)</p>
       </div>
+      </>}
     </section>
   );
 }
