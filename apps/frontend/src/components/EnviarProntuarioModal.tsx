@@ -164,7 +164,7 @@ export default function EnviarProntuarioModal({
         onClose={onClose}
         centralizado
         title="Ficha enviada!"
-        subtitle={`${fase.professorNome ? `A ${fase.professorNome}` : "O professor"} recebeu o prontuário e vai revisar.`}
+        subtitle={conclusao?.tipoDesfecho === "nao_finalizado" ? `${fase.professorNome ? `A ${fase.professorNome}` : "O professor"} recebeu o prontuário. Ele poderá visualizar e comentar enquanto você continua a sessão.` : `${fase.professorNome ? `A ${fase.professorNome}` : "O professor"} recebeu o prontuário e vai revisar.`}
         icone={
           <Icone tom="primary">
             <Check size={30} />

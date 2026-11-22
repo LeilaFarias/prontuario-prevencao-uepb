@@ -8,6 +8,7 @@ import { useSyncStatus } from "../../hooks/useSyncStatus";
 import CampoTexto from "./CampoTexto";
 import ExamRow from "./ExamRow";
 import GrupoFicha from "./GrupoFicha";
+import StatusExame from "./StatusExame";
 import SegmentedToggle from "./SegmentedToggle";
 
 const OPCOES_SIM_NAO = [
@@ -45,6 +46,8 @@ function FormularioExames({ prontuario }: { prontuario: LocalProntuario }) {
   const { control, setValue, salvando, salvoEm, somenteLeitura } = useSecao(prontuario, "exames", examesSchema);
 
   const aberturaAnormal = useWatch({ control, name: "extraOral.aberturaAnormal" });
+  const extraNaoAvaliado = useWatch({ control, name: "extraOral.naoAvaliado" });
+  const intraNaoAvaliado = useWatch({ control, name: "intraOral.naoAvaliado" });
 
   return (
     <div className="flex flex-col gap-3 pb-2">
@@ -57,6 +60,8 @@ function FormularioExames({ prontuario }: { prontuario: LocalProntuario }) {
       </div>
 
       <GrupoFicha titulo="Exame extra oral">
+        <div className="flex justify-end"><StatusExame naoAvaliado={extraNaoAvaliado} disabled={somenteLeitura} onChange={(v) => setValue("extraOral.naoAvaliado", v)} /></div>
+        {!extraNaoAvaliado && <>
         <Controller
           control={control}
           name="extraOral.locomocao"
@@ -67,7 +72,7 @@ function FormularioExames({ prontuario }: { prontuario: LocalProntuario }) {
               onChange={field.onChange}
               placeholder="Registre as alterações observadas"
               multiline
-              disabled={somenteLeitura}
+              disabled={somenteLeitura || extraNaoAvaliado}
             />
           )}
         />
@@ -82,7 +87,7 @@ function FormularioExames({ prontuario }: { prontuario: LocalProntuario }) {
               onChange={field.onChange}
               placeholder="Registre as alterações observadas"
               multiline
-              disabled={somenteLeitura}
+              disabled={somenteLeitura || extraNaoAvaliado}
             />
           )}
         />
@@ -97,10 +102,10 @@ function FormularioExames({ prontuario }: { prontuario: LocalProntuario }) {
               onChange={(v) => {
                 const resposta = v === "sim";
                 field.onChange(resposta);
-                if (!resposta) setValue("extraOral.aberturaObservacao", "");
+                if (!resposta) setValue("extraOral.aberturaObservacao", "Não se aplica");
               }}
               options={OPCOES_SIM_NAO}
-              disabled={somenteLeitura}
+              disabled={somenteLeitura || extraNaoAvaliado}
             />
           )}
         />
@@ -116,14 +121,17 @@ function FormularioExames({ prontuario }: { prontuario: LocalProntuario }) {
                 onChange={field.onChange}
                 placeholder="Descreva a alteração"
                 multiline
-                disabled={somenteLeitura}
+                disabled={somenteLeitura || extraNaoAvaliado}
               />
             )}
           />
         )}
+        </>}
       </GrupoFicha>
 
       <GrupoFicha titulo="Exame intra oral">
+        <div className="flex justify-end"><StatusExame naoAvaliado={intraNaoAvaliado} disabled={somenteLeitura} onChange={(v) => setValue("intraOral.naoAvaliado", v)} /></div>
+        {!intraNaoAvaliado && <>
         <div className="rounded-field border border-line-soft bg-paper px-4 py-1.5">
           {ESTRUTURAS.map(({ chave, label }) => (
             <Controller
@@ -140,11 +148,11 @@ function FormularioExames({ prontuario }: { prontuario: LocalProntuario }) {
                       value={field.value}
                       onChange={(v) => {
                         field.onChange(v);
-                        if (v !== "alteracao") setValue(`intraOral.observacoes.${chave}`, "");
+                        if (v !== "alteracao") setValue(`intraOral.observacoes.${chave}`, "Não se aplica");
                       }}
                       observacao={obs.value}
                       onObservacaoChange={obs.onChange}
-                      disabled={somenteLeitura}
+                      disabled={somenteLeitura || intraNaoAvaliado}
                     />
                   )}
                 />
@@ -163,10 +171,11 @@ function FormularioExames({ prontuario }: { prontuario: LocalProntuario }) {
               onChange={field.onChange}
               placeholder="Registre outras alterações observadas"
               multiline
-              disabled={somenteLeitura}
+              disabled={somenteLeitura || intraNaoAvaliado}
             />
           )}
         />
+        </>}
       </GrupoFicha>
 
       <IndicadorSalvamento salvando={salvando} jaSalvou={salvoEm !== null || Boolean(prontuario.secoes["exames"])} />

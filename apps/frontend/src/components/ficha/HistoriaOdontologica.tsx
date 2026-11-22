@@ -251,7 +251,7 @@ function FormularioHistoriaOdontologica({ prontuario }: { prontuario: LocalPront
               values={field.value}
               onChange={(novos) => {
                 field.onChange(novos);
-                if (novos.length === 0) setValue("frequenciaHabitos", "");
+                if (novos.length === 0) setValue("frequenciaHabitos", "Não se aplica");
               }}
               disabled={somenteLeitura}
             />

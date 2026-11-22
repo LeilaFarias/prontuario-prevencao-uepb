@@ -222,8 +222,8 @@ function FormularioDadosPessoais({ prontuario }: { prontuario: LocalProntuario }
                 const ehEstudante = v === "sim";
                 field.onChange(ehEstudante);
                 if (!ehEstudante) {
-                  setValue("escola", "");
-                  setValue("serie", "");
+                  setValue("escola", "Não se aplica");
+                  setValue("serie", "Não se aplica");
                 }
               }}
               options={OPCOES_ESTUDANTE}

@@ -10,6 +10,7 @@ import { uuid } from "../../lib/uuid";
 import CampoData from "./CampoData";
 import CampoTexto from "./CampoTexto";
 import GrupoFicha from "./GrupoFicha";
+import StatusExame from "./StatusExame";
 
 function hojeISO(): string {
   const d = new Date();
@@ -40,6 +41,7 @@ function FormularioProcedimentos({ prontuario }: { prontuario: LocalProntuario }
   );
 
   const itens = useWatch({ control, name: "itens" });
+  const naoAvaliado = useWatch({ control, name: "naoAvaliado" });
   const containerRef = useRef<HTMLDivElement>(null);
   const timerRef = useRef<number | null>(null);
   const [destaqueId, setDestaqueId] = useState<string | null>(null);
@@ -102,6 +104,8 @@ function FormularioProcedimentos({ prontuario }: { prontuario: LocalProntuario }
   return (
     <div ref={containerRef} className="flex flex-col gap-3 pb-2">
       <GrupoFicha titulo="Procedimentos executados" subtitulo="Registre cada atendimento realizado.">
+        <div className="flex justify-end"><StatusExame naoAvaliado={naoAvaliado} disabled={somenteLeitura} onChange={(v) => setValue("naoAvaliado", v)} /></div>
+        {!naoAvaliado && <>
         {itens.length === 0 ? (
           <div className="flex flex-col items-center gap-2 rounded-field border border-line-soft bg-paper px-4 py-8 text-center">
             <Paperclip size={24} className="text-ink-faint" aria-hidden="true" />
@@ -121,7 +125,7 @@ function FormularioProcedimentos({ prontuario }: { prontuario: LocalProntuario }
                   Já existe um registro de hoje. Você pode continuar escrevendo abaixo.
                 </p>
               )}
-              {!somenteLeitura && (
+              {!somenteLeitura && !naoAvaliado && (
                 <button
                   type="button"
                   onClick={() => remover(item.id)}
@@ -134,7 +138,7 @@ function FormularioProcedimentos({ prontuario }: { prontuario: LocalProntuario }
                 label="Data"
                 value={item.data}
                 onChange={(v) => atualizar(item.id, { data: v })}
-                disabled={somenteLeitura}
+                disabled={somenteLeitura || naoAvaliado}
               />
               <CampoTexto
                 label="Descrição"
@@ -142,13 +146,14 @@ function FormularioProcedimentos({ prontuario }: { prontuario: LocalProntuario }
                 onChange={(v) => atualizar(item.id, { descricao: v })}
                 placeholder="Descreva o procedimento realizado"
                 multiline
-                disabled={somenteLeitura}
+                disabled={somenteLeitura || naoAvaliado}
+                permiteMarcador={false}
               />
             </div>
           ))
         )}
 
-        {!somenteLeitura && (
+        {!somenteLeitura && !naoAvaliado && (
           <button
             type="button"
             onClick={adicionar}
@@ -158,6 +163,7 @@ function FormularioProcedimentos({ prontuario }: { prontuario: LocalProntuario }
             Adicionar procedimento do dia
           </button>
         )}
+        </>}
       </GrupoFicha>
 
       <IndicadorSalvamento

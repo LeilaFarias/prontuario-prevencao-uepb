@@ -1,3 +1,4 @@
+
 interface Props {
   naoAvaliado: boolean;
   disabled?: boolean;
@@ -12,7 +13,11 @@ export default function StatusExame({ naoAvaliado, disabled = false, onChange }:
           Não avaliado nesta sessão
         </span>
         {!disabled && onChange && (
-          <button type="button" onClick={() => onChange(false)} className="text-[11px] font-semibold text-primary">
+          <button
+            type="button"
+            onClick={() => onChange(false)}
+            className="text-[11px] font-semibold text-primary"
+          >
             Avaliar
           </button>
         )}

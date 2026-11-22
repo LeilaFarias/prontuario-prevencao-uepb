@@ -5,7 +5,6 @@ const OPCOES = [
   "Não informado",
   "NDN",
   "Não se aplica",
-  "Não avaliado nesta sessão",
 ] as const;
 
 interface Props {

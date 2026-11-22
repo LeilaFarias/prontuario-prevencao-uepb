@@ -31,6 +31,7 @@ import SangramentoLeitura from "../components/ficha/revisao/SangramentoLeitura";
 import AssinarModal from "../components/revisao/AssinarModal";
 import DevolverModal from "../components/revisao/DevolverModal";
 import StatusBanner from "../components/revisao/StatusBanner";
+import { api, ApiError } from "../lib/api";
 import Topbar from "../components/Topbar";
 import { useProntuario, type ProntuarioRevisao } from "../hooks/useProntuario";
 import { temDivergenciaCPOD } from "../lib/comparacaoCPOD";
@@ -48,6 +49,9 @@ function ConteudoRevisao({ prontuario, onAtualizar }: ConteudoProps) {
   const [modalAssinar, setModalAssinar] = useState(false);
   const [modalDevolver, setModalDevolver] = useState(false);
   const [offline, setOffline] = useState(!navigator.onLine);
+  const [comentario, setComentario] = useState("");
+  const [comentando, setComentando] = useState(false);
+  const [mensagemComentario, setMensagemComentario] = useState("");
   const chipAtivo = useRef<HTMLButtonElement | null>(null);
 
   useEffect(() => {
@@ -90,10 +94,27 @@ function ConteudoRevisao({ prontuario, onAtualizar }: ConteudoProps) {
   const nascimento = prontuario.pacienteDataNascimento ?? secoes.dadosPessoais.dataNascimento;
   const idade = nascimento ? formatarIdade(nascimento) : "";
   const aguardando = prontuario.status.toUpperCase() === "ENVIADO";
+  const desfecho = (prontuario.secoes.conclusao as { tipoDesfecho?: string } | undefined)?.tipoDesfecho;
+  const aguardandoConclusao = aguardando && desfecho === "nao_finalizado";
   const bloqueado = !podeAgir || offline;
   const nomeProfessor = getSession()?.user.nome ?? "";
   const procedimentosPendentes = secoes.procedimentos.itens.length;
   const voltarParaFila = () => navigate("/fila");
+
+  async function enviarComentario() {
+    if (!comentario.trim() || comentando || offline || !podeAgir) return;
+    setComentando(true);
+    setMensagemComentario("");
+    try {
+      await api.post(`/prontuarios/${encodeURIComponent(prontuario.id)}/comentario`, { comentario: comentario.trim() });
+      setComentario("");
+      setMensagemComentario("Comentário enviado ao aluno.");
+    } catch (erro) {
+      setMensagemComentario(erro instanceof ApiError ? erro.message : "Não foi possível enviar o comentário.");
+    } finally {
+      setComentando(false);
+    }
+  }
 
   function renderSecao(id: SecaoId) {
     switch (id) {
@@ -177,11 +198,39 @@ function ConteudoRevisao({ prontuario, onAtualizar }: ConteudoProps) {
           </div>
         </section>
 
+        {aguardandoConclusao && (
+          <div role="status" className="rounded-card border border-sync/30 bg-sync-tint p-3 text-[12.5px] text-sync">
+            <p className="font-semibold">⏳ Aguardando conclusão do aluno</p>
+            <p className="mt-1">O aluno ainda está trabalhando nesta sessão. Você poderá revisar e assinar quando ele marcar como Concluído ou Encaminhamento.</p>
+          </div>
+        )}
+
         {aguardando && !ehSupervisor && (
           <div role="note" className="banner-erro flex items-start gap-2">
             <AlertTriangle size={16} className="mt-0.5 shrink-0" aria-hidden="true" />
             <span>Apenas o professor supervisor pode agir sobre este prontuário.</span>
           </div>
+        )}
+
+        {aguardandoConclusao && ehSupervisor && (
+          <section className="rounded-card border border-line bg-raised p-4">
+            <h3 className="mb-2 text-[14px] font-semibold text-ink">Comentário para o aluno</h3>
+            <textarea
+              value={comentario}
+              onChange={(e) => setComentario(e.target.value)}
+              disabled={offline || !podeAgir || comentando}
+              maxLength={2000}
+              rows={3}
+              placeholder="Escreva uma orientação para o aluno…"
+              className="input !h-auto min-h-[88px] resize-y py-3"
+            />
+            <div className="mt-2 flex items-center justify-between gap-3">
+              <p role="status" className="text-[11.5px] text-ink-soft">{mensagemComentario || `${comentario.length}/2000`}</p>
+              <button type="button" className="btn-prof" disabled={!comentario.trim() || offline || !podeAgir || comentando} onClick={() => void enviarComentario()}>
+                {comentando ? "Enviando…" : "Enviar comentário"}
+              </button>
+            </div>
+          </section>
         )}
 
         {renderSecao(secao.id)}
@@ -201,7 +250,7 @@ function ConteudoRevisao({ prontuario, onAtualizar }: ConteudoProps) {
             Próxima
           </button>
         </div>
-        {aguardando ? (
+        {aguardando && !aguardandoConclusao ? (
           <>
             {offline && podeAgir && (
               <p role="status" className="mb-2 flex items-center gap-1.5 text-[12px] text-ink-soft">

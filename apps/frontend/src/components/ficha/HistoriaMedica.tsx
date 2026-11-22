@@ -60,7 +60,7 @@ function FormularioHistoriaMedica({ prontuario }: { prontuario: LocalProntuario 
             const resposta = v === "sim";
             field.onChange(resposta);
             if (!resposta) {
-              for (const dependente of DEPENDENTES[name]) setValue(dependente, "");
+              for (const dependente of DEPENDENTES[name]) setValue(dependente, "Não se aplica");
             }
           }}
           options={OPCOES_SIM_NAO}

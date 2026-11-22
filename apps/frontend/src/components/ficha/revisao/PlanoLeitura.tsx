@@ -2,6 +2,7 @@ import type { Plano } from "@prontuario/shared";
 import CampoLeitura from "../CampoLeitura";
 import GrupoFicha from "../GrupoFicha";
 import VazioLeitura from "./VazioLeitura";
+import StatusExame from "../StatusExame";
 
 export default function PlanoLeitura({ dados }: { dados: Plano }) {
   const sessoes = [...dados.sessoes].sort((a, b) => a.numero - b.numero);
@@ -9,6 +10,7 @@ export default function PlanoLeitura({ dados }: { dados: Plano }) {
   return (
     <div className="flex flex-col gap-3 pb-2">
       <GrupoFicha titulo="Plano da dupla" subtitulo="Plano de ações preventivas e de mínima intervenção.">
+        {dados.naoAvaliado ? <StatusExame naoAvaliado disabled /> : <>
         {sessoes.length === 0 ? (
           <VazioLeitura texto="A dupla não registrou sessões no plano." />
         ) : (
@@ -16,6 +18,7 @@ export default function PlanoLeitura({ dados }: { dados: Plano }) {
             <CampoLeitura key={s.id || i} label={`${s.numero}ª sessão`} valor={s.descricao} multiline />
           ))
         )}
+        </>}
       </GrupoFicha>
     </div>
   );

@@ -19,6 +19,7 @@ const QUALIDADE_FOTO = 0.75;
 const OPCOES_DESFECHO = [
   { value: "concluido", label: "Tratamento concluído" },
   { value: "encaminhado", label: "Encaminhado" },
+  { value: "nao_finalizado", label: "Não finalizado nesta sessão" },
 ] as const;
 
 function IndicadorSalvamento({ salvando, jaSalvou }: { salvando: boolean; jaSalvou: boolean }) {
@@ -158,7 +159,7 @@ function FormularioConclusao({ prontuario }: { prontuario: LocalProntuario }) {
                 field.onChange(v);
                 if (v === "encaminhado") {
                   setValue("concluidoEm", "");
-                } else {
+                } else if (v === "concluido") {
                   setValue("encaminhamentoEm", "");
                   setValue("encaminhamentoPara", "");
                 }
@@ -168,6 +169,8 @@ function FormularioConclusao({ prontuario }: { prontuario: LocalProntuario }) {
             />
           )}
         />
+
+        {tipoDesfecho === "nao_finalizado" && <p className="rounded-field bg-sync-tint px-3 py-2 text-[12px] text-sync">Esta sessão ainda não foi concluída. Você poderá continuar editando e reenviar o prontuário quando estiver pronto.</p>}
 
         {tipoDesfecho === "concluido" && (
           <Controller

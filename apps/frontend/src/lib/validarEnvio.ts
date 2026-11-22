@@ -82,7 +82,9 @@ const VERIFICADORES: Partial<Record<SecaoId, Verificador>> = {
   },
 
   exames: (c) => {
-    const intra = ler<Exames>(c).intraOral ?? {};
+    const exame = ler<Exames>(c);
+    const intra = exame.intraOral ?? {};
+    if ((intra as { naoAvaliado?: boolean }).naoAvaliado === true) return null;
     const estruturas = [
       ["labios", "lábios"],
       ["freioLabial", "freio labial"],
@@ -143,11 +145,13 @@ const VERIFICADORES: Partial<Record<SecaoId, Verificador>> = {
   },
 
   "plano-preventivo": (c) => {
+    if (ler<Plano>(c).naoAvaliado === true) return null;
     const sessoes = lista<Plano["sessoes"][number]>(ler<Plano>(c).sessoes);
     return preenchido(sessoes[0]?.descricao) ? null : "Falta: descrição da 1ª sessão";
   },
 
   procedimentos: (c) => {
+    if (ler<Procedimentos>(c).naoAvaliado === true) return null;
     const itens = lista<Procedimentos["itens"][number]>(ler<Procedimentos>(c).itens);
     if (itens.length === 0) return "Nenhum procedimento registrado";
     if (!itens.some((i) => preenchido(i.data) && preenchido(i.descricao))) return "Procedimento sem data ou descrição";
@@ -170,7 +174,11 @@ const VERIFICADORES: Partial<Record<SecaoId, Verificador>> = {
   },
 };
 
-export function validarEnvio(prontuario: Pick<LocalProntuario, "secoes">): ResultadoValidacao {
+export function validarEnvio(prontuario: Pick<LocalProntuario, "secoes"> & Partial<Pick<LocalProntuario, "status">>): ResultadoValidacao {
+  const conclusao = ler<Conclusao>(prontuario.secoes.conclusao);
+  if (prontuario.status === "assinado" || (prontuario.status === "enviado" && (conclusao.tipoDesfecho === "concluido" || conclusao.tipoDesfecho === "encaminhado"))) {
+    return { ok: true, pendencias: [] };
+  }
   const pendentes: Array<{ secaoId: SecaoId; secao: string; mensagem: string }> = [];
 
   SECOES.forEach((s, i) => {
