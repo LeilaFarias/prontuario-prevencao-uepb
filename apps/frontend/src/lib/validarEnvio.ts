@@ -83,22 +83,38 @@ const VERIFICADORES: Partial<Record<SecaoId, Verificador>> = {
 
   exames: (c) => {
     const exame = ler<Exames>(c);
+    const extra = exame.extraOral ?? {};
     const intra = exame.intraOral ?? {};
-    if ((intra as { naoAvaliado?: boolean }).naoAvaliado === true) return null;
-    const estruturas = [
-      ["labios", "lábios"],
-      ["freioLabial", "freio labial"],
-      ["gengiva", "gengiva"],
-      ["mucosa", "mucosa"],
-      ["palato", "palato"],
-      ["lingua", "língua"],
-      ["freioLingual", "freio lingual"],
-      ["assoalho", "assoalho"],
-    ] as const;
-    const semAvaliacao = estruturas
-      .filter(([chave]) => (intra as Record<string, unknown>)[chave] !== "normal" && (intra as Record<string, unknown>)[chave] !== "alteracao")
-      .map(([, nome]) => nome);
-    return semAvaliacao.length > 0 ? `Exame intra oral sem avaliação: ${semAvaliacao.join(", ")}` : null;
+    const faltas: string[] = [];
+
+    if (!(extra as { naoAvaliado?: boolean }).naoAvaliado) {
+      if (!preenchido((extra as { locomocao?: string }).locomocao)) faltas.push("locomoção");
+      if (!preenchido((extra as { cicatrizesEdemas?: string }).cicatrizesEdemas)) faltas.push("cicatrizes, edemas, assimetrias e tumefações");
+      if ((extra as { aberturaAnormal?: boolean | null }).aberturaAnormal == null) faltas.push("abertura anormal da boca");
+      if ((extra as { aberturaAnormal?: boolean | null }).aberturaAnormal === true &&
+          !preenchido((extra as { aberturaObservacao?: string }).aberturaObservacao)) {
+        faltas.push("observações da abertura anormal");
+      }
+    }
+
+    if (!(intra as { naoAvaliado?: boolean }).naoAvaliado) {
+      const estruturas = [
+        ["labios", "lábios"],
+        ["freioLabial", "freio labial"],
+        ["gengiva", "gengiva"],
+        ["mucosa", "mucosa"],
+        ["palato", "palato"],
+        ["lingua", "língua"],
+        ["freioLingual", "freio lingual"],
+        ["assoalho", "assoalho"],
+      ] as const;
+      const semAvaliacao = estruturas
+        .filter(([chave]) => (intra as Record<string, unknown>)[chave] !== "normal" && (intra as Record<string, unknown>)[chave] !== "alteracao")
+        .map(([, nome]) => nome);
+      if (semAvaliacao.length > 0) faltas.push(`exame intra oral: ${semAvaliacao.join(", ")}`);
+    }
+
+    return falta(faltas);
   },
 
   sangramento: (c) => {

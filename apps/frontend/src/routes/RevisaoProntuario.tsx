@@ -49,9 +49,6 @@ function ConteudoRevisao({ prontuario, onAtualizar }: ConteudoProps) {
   const [modalAssinar, setModalAssinar] = useState(false);
   const [modalDevolver, setModalDevolver] = useState(false);
   const [offline, setOffline] = useState(!navigator.onLine);
-  const [comentario, setComentario] = useState("");
-  const [comentando, setComentando] = useState(false);
-  const [mensagemComentario, setMensagemComentario] = useState("");
   const chipAtivo = useRef<HTMLButtonElement | null>(null);
 
   useEffect(() => {
@@ -101,20 +98,6 @@ function ConteudoRevisao({ prontuario, onAtualizar }: ConteudoProps) {
   const procedimentosPendentes = secoes.procedimentos.itens.length;
   const voltarParaFila = () => navigate("/fila");
 
-  async function enviarComentario() {
-    if (!comentario.trim() || comentando || offline || !podeAgir) return;
-    setComentando(true);
-    setMensagemComentario("");
-    try {
-      await api.post(`/prontuarios/${encodeURIComponent(prontuario.id)}/comentario`, { comentario: comentario.trim() });
-      setComentario("");
-      setMensagemComentario("Comentário enviado ao aluno.");
-    } catch (erro) {
-      setMensagemComentario(erro instanceof ApiError ? erro.message : "Não foi possível enviar o comentário.");
-    } finally {
-      setComentando(false);
-    }
-  }
 
   function renderSecao(id: SecaoId) {
     switch (id) {
@@ -211,31 +194,12 @@ function ConteudoRevisao({ prontuario, onAtualizar }: ConteudoProps) {
           </div>
         )}
 
-        {aguardandoConclusao && ehSupervisor && (
-          <section className="rounded-card border border-line bg-raised p-4">
-            <h3 className="mb-2 text-[14px] font-semibold text-ink">Comentário para o aluno</h3>
-            <textarea
-              value={comentario}
-              onChange={(e) => setComentario(e.target.value)}
-              disabled={offline || !podeAgir || comentando}
-              maxLength={2000}
-              rows={3}
-              placeholder="Escreva uma orientação para o aluno…"
-              className="input !h-auto min-h-[88px] resize-y py-3"
-            />
-            <div className="mt-2 flex items-center justify-between gap-3">
-              <p role="status" className="text-[11.5px] text-ink-soft">{mensagemComentario || `${comentario.length}/2000`}</p>
-              <button type="button" className="btn-prof" disabled={!comentario.trim() || offline || !podeAgir || comentando} onClick={() => void enviarComentario()}>
-                {comentando ? "Enviando…" : "Enviar comentário"}
-              </button>
-            </div>
-          </section>
-        )}
+
 
         {renderSecao(secao.id)}
       </main>
 
-      <footer className="sticky bottom-0 mt-2 flex flex-col gap-2.5 border-t border-line bg-paper px-5 py-3">
+      <footer className="sticky bottom-0 z-30 mt-2 flex flex-col gap-2.5 border-t border-line bg-paper px-5 py-3">
         <div className="grid grid-cols-2 gap-3">
           <button type="button" className="btn-ghost" disabled={indice === 0} onClick={() => setIndice(indice - 1)}>
             Anterior

@@ -180,8 +180,9 @@ export default function EnviarProntuarioModal({
             ]}
           />
           <p className="text-[12px] text-ink-faint">
-            Enquanto a ficha está em revisão, você pode consultá-la mas não editá-la. Se precisar alterar algo, peça
-            liberação de acesso.
+            {conclusao?.tipoDesfecho === "nao_finalizado"
+              ? "Você pode continuar editando o prontuário e enviá-lo novamente ao professor após concluir a sessão."
+              : "Enquanto a ficha está em revisão, você pode consultá-la mas não editá-la. Se precisar alterar algo, peça liberação de acesso."}
           </p>
           <button type="button" className="btn-primary" onClick={onVoltarParaLista}>
             Voltar para meus prontuários

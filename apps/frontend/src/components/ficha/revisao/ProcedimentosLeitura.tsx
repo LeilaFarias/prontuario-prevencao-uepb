@@ -2,10 +2,9 @@ import type { Procedimentos } from "@prontuario/shared";
 import CampoLeitura from "../CampoLeitura";
 import { dataOuVazio } from "./rotulos";
 import VazioLeitura from "./VazioLeitura";
-import StatusExame from "../StatusExame";
 
 export default function ProcedimentosLeitura({ dados }: { dados: Procedimentos }) {
-  if (dados.naoAvaliado) return <div className="rounded-card border border-line bg-raised p-4"><StatusExame naoAvaliado disabled /></div>;
+  if (dados.naoAvaliado) return <div className="rounded-card border border-line bg-raised p-4"><p className="rounded-field border border-line-soft bg-paper px-3 py-3 text-[13px] font-medium text-ink-soft">Não avaliado nesta sessão</p></div>;
   if (dados.itens.length === 0) return <VazioLeitura texto="Nenhum procedimento registrado." />;
   return (
     <div className="flex flex-col gap-3 pb-2">

@@ -2,7 +2,6 @@ import type { Plano } from "@prontuario/shared";
 import CampoLeitura from "../CampoLeitura";
 import GrupoFicha from "../GrupoFicha";
 import VazioLeitura from "./VazioLeitura";
-import StatusExame from "../StatusExame";
 
 export default function PlanoLeitura({ dados }: { dados: Plano }) {
   const sessoes = [...dados.sessoes].sort((a, b) => a.numero - b.numero);
@@ -10,7 +9,7 @@ export default function PlanoLeitura({ dados }: { dados: Plano }) {
   return (
     <div className="flex flex-col gap-3 pb-2">
       <GrupoFicha titulo="Plano da dupla" subtitulo="Plano de ações preventivas e de mínima intervenção.">
-        {dados.naoAvaliado ? <StatusExame naoAvaliado disabled /> : <>
+        {dados.naoAvaliado ? <p className="rounded-field border border-line-soft bg-paper px-3 py-3 text-[13px] font-medium text-ink-soft">Não avaliado nesta sessão</p> : <>
         {sessoes.length === 0 ? (
           <VazioLeitura texto="A dupla não registrou sessões no plano." />
         ) : (
