@@ -49,10 +49,12 @@ const VERIFICADORES: Partial<Record<SecaoId, Verificador>> = {
   consentimento: (c) => {
     const v = ler<Consentimento>(c);
     const faltas: string[] = [];
+    if (!preenchido(v.semestreLetivo)) faltas.push("semestre letivo");
+    if (!preenchido(v.professorSupervisor)) faltas.push("professor supervisor");
+    if (!preenchido(v.alunoOperador)) faltas.push("aluno operador");
     if (v.termoAceito !== true) faltas.push("aceite do termo");
     if (!preenchido(v.dataAssinatura)) faltas.push("data da assinatura");
     if (v.assinaturaAnexada !== true) faltas.push("assinatura anexada");
-    if (!preenchido(v.professorSupervisor)) faltas.push("professor supervisor");
     return falta(faltas);
   },
 
@@ -61,6 +63,23 @@ const VERIFICADORES: Partial<Record<SecaoId, Verificador>> = {
     const faltas: string[] = [];
     if (!preenchido(v.nomeCompleto)) faltas.push("nome completo");
     if (!preenchido(v.dataNascimento)) faltas.push("data de nascimento");
+    if (v.sexo !== "feminino" && v.sexo !== "masculino") faltas.push("sexo");
+    if (v.estudante == null) faltas.push("se é estudante");
+    if (v.estudante === true) {
+      if (!preenchido(v.escola)) faltas.push("escola");
+      if (!preenchido(v.serie)) faltas.push("série");
+    }
+    if (!preenchido(v.responsavelNome)) faltas.push("nome do responsável legal");
+    if (!preenchido(v.responsavelParentesco)) faltas.push("parentesco do responsável legal");
+    if (!preenchido(v.telefone)) faltas.push("telefone do responsável legal");
+    if (!preenchido(v.responsavelOcupacao)) faltas.push("ocupação do responsável legal");
+    if (!preenchido(v.responsavelEscolaridade)) faltas.push("escolaridade do responsável legal");
+    if (!preenchido(v.paiNome)) faltas.push("nome do pai");
+    if (!preenchido(v.paiOcupacao)) faltas.push("ocupação do pai");
+    if (!preenchido(v.paiEscolaridade)) faltas.push("escolaridade do pai");
+    if (!preenchido(v.maeNome)) faltas.push("nome da mãe");
+    if (!preenchido(v.maeOcupacao)) faltas.push("ocupação da mãe");
+    if (!preenchido(v.maeEscolaridade)) faltas.push("escolaridade da mãe");
     return falta(faltas);
   },
 
@@ -68,17 +87,41 @@ const VERIFICADORES: Partial<Record<SecaoId, Verificador>> = {
     const v = ler<HistoriaMedica>(c);
     const faltas: string[] = [];
     if (v.temDoenca == null) faltas.push("se tem doença");
+    else if (v.temDoenca && !preenchido(v.qualDoenca)) faltas.push("qual doença");
     if (v.emTratamento == null) faltas.push("se está em tratamento");
+    else if (v.emTratamento && !preenchido(v.qualTratamento)) faltas.push("qual tratamento");
     if (v.usaMedicamento == null) faltas.push("se usa medicamento");
-    return faltas.length > 0 ? `Responda Sim ou Não: ${faltas.join(", ")}` : null;
+    else if (v.usaMedicamento) {
+      if (!preenchido(v.qualMedicamento)) faltas.push("qual medicamento");
+      if (!preenchido(v.tempoMedicamento)) faltas.push("tempo de uso do medicamento");
+    }
+    return faltas.length > 0 ? `Responda ou detalhe: ${faltas.join(", ")}` : null;
   },
 
   "historia-odontologica": (c) => {
     const v = ler<HistoriaOdontologica>(c);
     const faltas: string[] = [];
     if (v.primeiraConsulta == null) faltas.push("primeira consulta");
-    if (v.escovaDiariamente == null) faltas.push("escova diariamente");
-    return faltas.length > 0 ? `Responda Sim ou Não: ${faltas.join(", ")}` : null;
+    if (v.primeiraConsulta === false) {
+      if (!preenchido(v.tempoUltimaConsulta)) faltas.push("tempo da última consulta");
+      if (!preenchido(v.comportamentoAnterior)) faltas.push("comportamento no atendimento anterior");
+    }
+    if (!preenchido(v.queixaPrincipal)) faltas.push("queixa principal");
+    if (v.dorDente == null) faltas.push("presença de dor de dente");
+    if (!preenchido(v.motivoUEPB)) faltas.push("motivo da procura pela clínica");
+    if (v.acoesPreventivasRecebidas == null) faltas.push("se já recebeu ações preventivas");
+    if (v.acoesPreventivasRecebidas === true && !(v.quaisAcoesPreventivas?.length)) {
+      faltas.push("quais ações preventivas recebeu");
+    }
+    if (v.escovaDiariamente == null) faltas.push("se escova os dentes diariamente");
+    if (v.escovaDiariamente === true) {
+      if (!preenchido(v.frequenciaEscovacao)) faltas.push("frequência de escovação");
+      if (!(v.recursosUtilizados?.length)) faltas.push("recursos utilizados na higiene bucal");
+    }
+    if ((v.habitosParafuncionais?.length ?? 0) > 0 && !preenchido(v.frequenciaHabitos)) {
+      faltas.push("frequência dos hábitos parafuncionais");
+    }
+    return falta(faltas);
   },
 
   exames: (c) => {
@@ -112,6 +155,11 @@ const VERIFICADORES: Partial<Record<SecaoId, Verificador>> = {
         .filter(([chave]) => (intra as Record<string, unknown>)[chave] !== "normal" && (intra as Record<string, unknown>)[chave] !== "alteracao")
         .map(([, nome]) => nome);
       if (semAvaliacao.length > 0) faltas.push(`exame intra oral: ${semAvaliacao.join(", ")}`);
+      const semObservacao = estruturas
+        .filter(([chave]) => (intra as Record<string, unknown>)[chave] === "alteracao")
+        .filter(([chave]) => !preenchido(((intra as { observacoes?: Record<string, string> }).observacoes ?? {})[chave]))
+        .map(([, nome]) => nome);
+      if (semObservacao.length > 0) faltas.push(`observações das alterações: ${semObservacao.join(", ")}`);
     }
 
     return falta(faltas);

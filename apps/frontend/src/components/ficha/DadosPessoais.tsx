@@ -190,7 +190,7 @@ function FormularioDadosPessoais({ prontuario }: { prontuario: LocalProntuario }
         {texto("endereco", "Endereço", { placeholder: "Rua, número, bairro" })}
 
         <div className="grid grid-cols-[1fr_84px] gap-3">
-          {texto("cidade", "Cidade")}
+          {texto("cidade", "Cidade", { permiteMarcador: false })}
           <Controller
             control={control}
             name="uf"
@@ -201,6 +201,7 @@ function FormularioDadosPessoais({ prontuario }: { prontuario: LocalProntuario }
                 onChange={(v) => field.onChange(limparUf(v))}
                 maxLength={2}
                 autoComplete="off"
+                permiteMarcador={false}
                 disabled={somenteLeitura}
               />
             )}

@@ -19,7 +19,7 @@ import UploadAssinatura from "./UploadAssinatura";
 
 type ChaveTexto = "semestreLetivo" | "alunoOperador" | "alunoAuxiliar";
 
-type ExtraTexto = Partial<Pick<CampoTextoProps, "placeholder" | "inputMode" | "autoComplete" | "maxLength" | "type">>;
+type ExtraTexto = Partial<Pick<CampoTextoProps, "placeholder" | "inputMode" | "autoComplete" | "maxLength" | "type" | "permiteMarcador">>;
 
 export const PARAGRAFOS_TERMO: ReadonlyArray<string> = [
   "Como responsável pelo(a) menor {IDADE}, concordo com o seu atendimento pelos acadêmicos, monitores, alunos de pós-graduação e professores vinculados à Clínica de Prevenção em Saúde Bucal do Departamento de Odontologia da Universidade Estadual da Paraíba. Sei que ocorre o apoio de outros funcionários (quadro técnico) e que poderá existir a participação de outros pesquisadores autorizados previamente.",
@@ -168,7 +168,7 @@ function FormularioConsentimento({
           </p>
         </div>
 
-        {texto("semestreLetivo", "Semestre letivo", { placeholder: "2026.2" })}
+        {texto("semestreLetivo", "Semestre letivo", { placeholder: "2026.2", permiteMarcador: false })}
         <Controller
           control={control}
           name="professorSupervisor"
@@ -176,7 +176,7 @@ function FormularioConsentimento({
             <CampoProfessor value={field.value} onChange={field.onChange} disabled={somenteLeitura} />
           )}
         />
-        {texto("alunoOperador", "Aluno operador")}
+        {texto("alunoOperador", "Aluno operador", { permiteMarcador: false })}
         {texto("alunoAuxiliar", "Aluno auxiliar")}
       </GrupoFicha>
 

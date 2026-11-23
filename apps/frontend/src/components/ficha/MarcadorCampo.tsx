@@ -1,5 +1,6 @@
 import { useEffect, useRef, useState } from "react";
-import { MoreHorizontal } from "lucide-react";
+import { createPortal } from "react-dom";
+import { MoreHorizontal, X } from "lucide-react";
 
 const OPCOES = [
   "Não informado",
@@ -14,11 +15,12 @@ interface Props {
 export default function MarcadorCampo({ onSelecionar }: Props) {
   const [aberto, setAberto] = useState(false);
   const raiz = useRef<HTMLDivElement>(null);
+  const menu = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
     if (!aberto) return;
     const fecharFora = (evento: PointerEvent) => {
-      if (evento.target instanceof Node && !raiz.current?.contains(evento.target)) setAberto(false);
+      if (evento.target instanceof Node && !raiz.current?.contains(evento.target) && !menu.current?.contains(evento.target)) setAberto(false);
     };
     const fecharEsc = (evento: KeyboardEvent) => {
       if (evento.key === "Escape") setAberto(false);
@@ -42,16 +44,29 @@ export default function MarcadorCampo({ onSelecionar }: Props) {
       >
         <MoreHorizontal size={19} aria-hidden="true" />
       </button>
-      {aberto && (
+      {aberto && typeof document !== "undefined" && createPortal(
         <>
           <button
             type="button"
             aria-label="Fechar opções"
-            className="fixed inset-0 z-40 cursor-default bg-black/20 md:bg-transparent"
+            className="fixed inset-0 z-[999] cursor-default bg-black/20"
             onClick={() => setAberto(false)}
           />
-          <div className="fixed inset-x-3 bottom-3 z-50 rounded-2xl border border-line bg-raised p-2 shadow-xl md:absolute md:inset-x-auto md:bottom-auto md:right-0 md:top-full md:mt-1 md:w-64 md:rounded-xl">
-            <p className="px-3 py-2 text-[11px] font-semibold uppercase tracking-wide text-ink-faint md:hidden">Preencher campo</p>
+          <div
+            ref={menu}
+            className="fixed inset-x-3 bottom-[calc(env(safe-area-inset-bottom)+6.5rem)] z-[1000] mx-auto max-w-md rounded-2xl border border-line bg-raised p-2 shadow-2xl"
+          >
+            <div className="flex items-center justify-between px-3 py-2">
+              <p className="text-[11px] font-semibold uppercase tracking-wide text-ink-faint">Preencher campo</p>
+              <button
+                type="button"
+                aria-label="Fechar menu de opções"
+                onClick={() => setAberto(false)}
+                className="flex h-8 w-8 items-center justify-center rounded-full text-ink-faint transition hover:bg-paper hover:text-ink"
+              >
+                <X size={17} aria-hidden="true" />
+              </button>
+            </div>
             {OPCOES.map((opcao) => (
               <button
                 key={opcao}
@@ -66,7 +81,8 @@ export default function MarcadorCampo({ onSelecionar }: Props) {
               </button>
             ))}
           </div>
-        </>
+        </>,
+        document.body,
       )}
     </div>
   );
