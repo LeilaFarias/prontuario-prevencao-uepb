@@ -200,8 +200,7 @@ function ConteudoRevisao({ prontuario, onAtualizar }: ConteudoProps) {
 
         {aguardandoConclusao && (
           <div role="status" className="rounded-card border border-sync/30 bg-sync-tint p-3 text-[12.5px] text-sync">
-            <p className="font-semibold">⏳ Aguardando conclusão do aluno</p>
-            <p className="mt-1">O aluno ainda está trabalhando nesta sessão. Você poderá revisar e assinar quando ele marcar como Concluído ou Encaminhamento.</p>
+            <p className="mt-1">O aluno ainda está trabalhando neste prontuário. Você poderá revisar e assinar quando ele marcar como Concluído ou Encaminhamento.</p>
           </div>
         )}
 

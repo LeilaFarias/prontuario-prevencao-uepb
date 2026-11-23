@@ -158,20 +158,30 @@ const VERIFICADORES: Partial<Record<SecaoId, Verificador>> = {
     return null;
   },
 
-  conclusao: (c) => {
-    const v = ler<Conclusao>(c);
-    if (v.tipoDesfecho !== "concluido" && v.tipoDesfecho !== "encaminhado") {
-      return "Falta: desfecho (concluído ou encaminhado)";
-    }
-    const faltas: string[] = [];
-    if (v.tipoDesfecho === "concluido") {
-      if (!preenchido(v.concluidoEm)) faltas.push("data de conclusão");
-    } else {
-      if (!preenchido(v.encaminhamentoEm)) faltas.push("data do encaminhamento");
-      if (!preenchido(v.encaminhamentoPara)) faltas.push("destino do encaminhamento");
-    }
-    return falta(faltas);
-  },
+conclusao: (c) => {
+  const v = ler<Conclusao>(c);
+
+  if (
+    v.tipoDesfecho !== "concluido" &&
+    v.tipoDesfecho !== "encaminhado" &&
+    v.tipoDesfecho !== "nao_finalizado"
+  ) {
+    return "Falta: desfecho";
+  }
+
+  if (v.tipoDesfecho === "nao_finalizado") return null;
+
+  const faltas: string[] = [];
+
+  if (v.tipoDesfecho === "concluido") {
+    if (!preenchido(v.concluidoEm)) faltas.push("data de conclusão");
+  } else {
+    if (!preenchido(v.encaminhamentoEm)) faltas.push("data do encaminhamento");
+    if (!preenchido(v.encaminhamentoPara)) faltas.push("destino do encaminhamento");
+  }
+
+  return falta(faltas);
+},
 };
 
 export function validarEnvio(prontuario: Pick<LocalProntuario, "secoes"> & Partial<Pick<LocalProntuario, "status">>): ResultadoValidacao {

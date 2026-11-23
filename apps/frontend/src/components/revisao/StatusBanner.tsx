@@ -13,7 +13,7 @@ export default function StatusBanner({ prontuario }: { prontuario: ProntuarioRev
 
   const desfecho = (prontuario.secoes.conclusao as { tipoDesfecho?: string } | undefined)?.tipoDesfecho;
   if (status === "ENVIADO" && desfecho === "nao_finalizado") {
-    return <div className="flex"><span className={`${PILL} bg-sync-tint text-sync`}><Clock size={12} aria-hidden="true" />⏳ Aguardando conclusão do aluno</span></div>;
+    return <div className="flex"><span className={`${PILL} bg-sync-tint text-sync`}><Clock size={12} aria-hidden="true" />Aguardando conclusão do aluno</span></div>;
   }
 
   if (status === "ASSINADO") {
