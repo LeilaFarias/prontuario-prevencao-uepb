@@ -12,6 +12,7 @@ import CampoData from "./CampoData";
 import CampoTexto from "./CampoTexto";
 import GrupoFicha from "./GrupoFicha";
 import SegmentedToggle from "./SegmentedToggle";
+import { validarEnvio } from "../../lib/validarEnvio";
 
 const MAX_FOTOS = 9;
 const QUALIDADE_FOTO = 0.75;
@@ -99,6 +100,7 @@ function FormularioConclusao({ prontuario }: { prontuario: LocalProntuario }) {
 
   const fotoAberta = fotos.find((f) => f.id === fotoAbertaId) ?? null;
   const limiteAtingido = fotos.length >= MAX_FOTOS;
+  const fichaIncompleta = !validarEnvio(prontuario).ok;
 
   const removerFoto = (id: string) => {
     setValue(
@@ -145,6 +147,17 @@ function FormularioConclusao({ prontuario }: { prontuario: LocalProntuario }) {
 
   return (
     <div className="flex flex-col gap-3 pb-2">
+      {fichaIncompleta && !somenteLeitura && (
+        <div
+          role="status"
+          className="rounded-card border border-primary/25 bg-primary-tint px-3.5 py-3 text-[12.5px] leading-relaxed text-ink"
+        >
+          <p className="font-semibold">Não conseguiu finalizar a ficha nesta aula?</p>
+          <p className="mt-1">
+            Não precisa enviar agora. Você pode continuar preenchendo a ficha até a próxima aula e enviá-la quando estiver concluída.
+          </p>
+        </div>
+      )}
       <GrupoFicha titulo="Conclusão do tratamento" subtitulo="Informe como o caso foi encerrado.">
         <Controller
           control={control}
