@@ -1,19 +1,19 @@
-import { useCallback, useEffect, useState, type KeyboardEvent } from "react";
+import { useRef, useState, type KeyboardEvent } from "react";
 import { useNavigate } from "react-router-dom";
 import { AlertCircle, AlertTriangle, Check, Clock, RotateCcw } from "lucide-react";
 import type { AbaFila, FilaRevisaoResponse, FiltroFila, ItemFilaRevisao } from "@prontuario/shared";
-import { ApiError, api } from "../lib/api";
+import { api } from "../lib/api";
+import { marcarObsoleto } from "../lib/cacheDados";
 import { getSession } from "../lib/session";
+import { SkeletonCardLista } from "../components/Skeleton";
 import TabBarProfessor from "../components/TabBarProfessor";
 import TransferirTitularidadeModal from "../components/TransferirTitularidadeModal";
+import { useDadosCache } from "../hooks/useDadosCache";
 import { useIndicadorPacientes } from "../hooks/useIndicadorPacientes";
 import { formatarDataBR } from "../lib/data";
 import { calcularIdade, tempoRelativo } from "../lib/tempo";
 
-type Estado =
-  | { situacao: "carregando" }
-  | { situacao: "erro"; mensagem: string }
-  | { situacao: "ok"; itens: ItemFilaRevisao[] };
+const VALIDO_POR_MS = 15_000;
 
 const ABAS: { id: AbaFila; rotulo: string }[] = [
   { id: "enviados", rotulo: "Aguardando revisão" },
@@ -210,31 +210,26 @@ export default function Fila() {
   const [aba, setAba] = useState<AbaFila>("enviados");
   const [escopo, setEscopo] = useState<FiltroFila>("meus");
   const { data: indicador } = useIndicadorPacientes(escopo);
-  const [contadores, setContadores] = useState<FilaRevisaoResponse["contadores"] | null>(null);
-  const [estado, setEstado] = useState<Estado>({ situacao: "carregando" });
   const [transferindo, setTransferindo] = useState<ItemFilaRevisao | null>(null);
 
   const filtroApi = aba === "enviados" && escopo === "todos" ? "todos" : aba;
+  const prefixoCache = usuario ? `${usuario.id}:fila:` : null;
 
-  const carregar = useCallback(() => {
-    setEstado({ situacao: "carregando" });
-    api
-      .get<FilaRevisaoResponse>(`/fila-revisao?filtro=${filtroApi}`)
-      .then((r) => {
-        setContadores(r.contadores);
-        setEstado({ situacao: "ok", itens: r.prontuarios });
-      })
-      .catch((err: unknown) =>
-        setEstado({
-          situacao: "erro",
-          mensagem: err instanceof ApiError ? err.message : "Não foi possível carregar a fila.",
-        }),
-      );
-  }, [filtroApi]);
+  const { dados, erro, carregando, recarregar } = useDadosCache<FilaRevisaoResponse>(
+    prefixoCache ? `${prefixoCache}${filtroApi}` : null,
+    () => api.get<FilaRevisaoResponse>(`/fila-revisao?filtro=${filtroApi}`),
+    { validoPorMs: VALIDO_POR_MS },
+  );
 
-  useEffect(() => {
-    carregar();
-  }, [carregar]);
+  const ultimosContadores = useRef<FilaRevisaoResponse["contadores"] | null>(null);
+  if (dados) ultimosContadores.current = dados.contadores;
+  const contadores = dados?.contadores ?? ultimosContadores.current;
+  const itens = dados?.prontuarios ?? [];
+
+  const aoTransferir = () => {
+    if (prefixoCache) marcarObsoleto(prefixoCache);
+    void recarregar();
+  };
 
   const pendentes = contadores?.meus ?? 0;
   const subtitulo = [usuario?.nome, contadores ? `${pendentes} ${pendentes === 1 ? "pendente" : "pendentes"}` : null]
@@ -309,27 +304,37 @@ export default function Fila() {
       )}
 
       <main className="flex flex-1 flex-col px-5 pb-4 pt-1">
-        {estado.situacao === "erro" && (
+        {carregando && (
+          <ul className="flex flex-col gap-2.5" aria-busy="true" aria-label="Carregando fila">
+            {[0, 1, 2].map((i) => (
+              <li key={i}>
+                <SkeletonCardLista />
+              </li>
+            ))}
+          </ul>
+        )}
+
+        {!dados && erro && (
           <div className="flex flex-col gap-3">
             <p role="alert" className="banner-erro">
-              {estado.mensagem}
+              {erro.mensagem}
             </p>
-            <button type="button" className="btn-ghost" onClick={carregar}>
+            <button type="button" className="btn-ghost" onClick={() => void recarregar()}>
               Tentar novamente
             </button>
           </div>
         )}
 
-        {estado.situacao === "ok" && estado.itens.length === 0 && (
+        {dados && itens.length === 0 && (
           <div className="my-auto rounded-card border border-line-soft bg-raised px-6 py-10 text-center">
             <p className="font-display text-[18px] font-medium text-ink">{META_ABA[aba].vazioTitulo}</p>
             <p className="mt-1.5 text-[13px] text-ink-soft">{META_ABA[aba].vazioTexto}</p>
           </div>
         )}
 
-        {estado.situacao === "ok" && estado.itens.length > 0 && (
+        {dados && itens.length > 0 && (
           <ul className="flex flex-col gap-2.5">
-            {estado.itens.map((item) => (
+            {itens.map((item) => (
               <li key={item.id}>
                 <CardFila
                   item={item}
@@ -351,7 +356,7 @@ export default function Fila() {
           onClose={() => setTransferindo(null)}
           prontuarioId={transferindo.id}
           pacienteNome={transferindo.pacienteNome}
-          onSucesso={carregar}
+          onSucesso={aoTransferir}
         />
       )}
 

@@ -35,7 +35,6 @@ function RegistroLeitura({ registro, indice }: { registro: RegistroSangramentoDa
         <h3 className="font-display text-[15px] font-semibold text-ink">Registro {indice + 1}</h3>
         <p className="mt-0.5 text-[11.5px] text-ink-faint">{dataOuVazio(registro.data) || "Sem data"}</p>
       </div>
-
       <div className="mb-4 flex flex-wrap items-center gap-x-3 gap-y-1.5 text-[11.5px] text-ink-soft">
         <span className="flex items-center gap-2">
           <Swatch valor="0" sangrando={false} />

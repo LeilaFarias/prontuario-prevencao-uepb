@@ -18,14 +18,14 @@ function RegistroLeitura({ registro, indice }: { registro: RegistroCPODDados; in
           <h3 className="font-display text-[15px] font-semibold text-ink">Registro {indice + 1}</h3>
           <p className="mt-0.5 text-[11.5px] text-ink-faint">{dataOuVazio(registro.data) || "Sem data"}</p>
         </div>
-        <span
-          className={`inline-flex shrink-0 items-center gap-1 rounded-pill px-2.5 py-1 text-[11px] font-semibold ${
-            comparacao.confere ? "bg-primary-tint text-primary" : "bg-alt-tint text-alt"
-          }`}
-        >
-          {comparacao.confere ? <Check size={11} aria-hidden="true" /> : <AlertTriangle size={11} aria-hidden="true" />}
-          {comparacao.confere ? "Confere" : "Divergente"}
-        </span>
+          <span
+            className={`inline-flex shrink-0 items-center gap-1 rounded-pill px-2.5 py-1 text-[11px] font-semibold ${
+              comparacao.confere ? "bg-primary-tint text-primary" : "bg-alt-tint text-alt"
+            }`}
+          >
+            {comparacao.confere ? <Check size={11} aria-hidden="true" /> : <AlertTriangle size={11} aria-hidden="true" />}
+            {comparacao.confere ? "Confere" : "Divergente"}
+          </span>
       </div>
 
       <h4 className="mb-3 text-[11px] font-bold uppercase tracking-wider text-ink-soft">Odontograma do aluno</h4>

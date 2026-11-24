@@ -1,3 +1,4 @@
+
 import { useCallback, useEffect, useReducer, useRef, useState } from "react";
 import { useForm, type DefaultValues, type FieldValues, type UseFormReturn } from "react-hook-form";
 import type { z } from "zod";
@@ -56,15 +57,19 @@ export function useSecao<T extends SchemaSecao>(
     prontuario.status === "enviado" ||
     prontuario.status === "transferido" ||
     (prontuario.status !== "em_andamento" && !acessoVigente(prontuario));
+
   const assinadoRef = useRef(false);
   assinadoRef.current = prontuario.status === "assinado";
 
   const [, renderizar] = useReducer((n: number) => n + 1, 0);
   const expiraEm = prontuario.acessoExpiraEm;
+
   useEffect(() => {
     if (!expiraEm) return;
+
     const restante = new Date(expiraEm).getTime() - Date.now();
     if (restante <= 0) return;
+
     const t = window.setTimeout(renderizar, Math.min(restante, 2 ** 31 - 1) + 50);
     return () => window.clearTimeout(t);
   }, [expiraEm]);
@@ -83,6 +88,7 @@ export function useSecao<T extends SchemaSecao>(
 
     const valores = getValues() as V;
     const json = JSON.stringify(valores);
+
     if (json === ultimoSalvo.current) {
       if (montado.current && emAndamento.current === 0) setSalvando(false);
       return;
@@ -91,31 +97,34 @@ export function useSecao<T extends SchemaSecao>(
     const anterior = ultimoSalvo.current;
     ultimoSalvo.current = json;
     emAndamento.current += 1;
+
     const restaurar = () => {
       ultimoSalvo.current = anterior;
       if (montado.current) reset(JSON.parse(anterior) as unknown as DefaultValues<V>);
     };
+
     try {
       if (assinadoRef.current && !(await confirmarInvalidacaoAssinatura())) {
         restaurar();
         return;
       }
+
       await salvarSecaoLocal(
         prontuario.id,
         secaoId,
         JSON.parse(json) as Record<string, unknown>,
         opcoesRef.current?.cabecalho?.(valores),
       );
+
       if (montado.current) setSalvoEm(Date.now());
     } catch (err) {
       if (err instanceof AcessoExpiradoError) restaurar();
-      else {
-        console.error("[useSecao] falha ao salvar seção:", err);
-        ultimoSalvo.current = anterior;
-      }
+      else ultimoSalvo.current = anterior;
     } finally {
       emAndamento.current -= 1;
-      if (montado.current && timer.current === undefined && emAndamento.current === 0) setSalvando(false);
+      if (montado.current && timer.current === undefined && emAndamento.current === 0) {
+        setSalvando(false);
+      }
     }
   }, [getValues, reset, prontuario.id, secaoId]);
 
@@ -124,23 +133,30 @@ export function useSecao<T extends SchemaSecao>(
 
   useEffect(() => {
     if (somenteLeitura) return;
+
     const sub = watch(() => {
       if (JSON.stringify(getValues()) === ultimoSalvo.current) return;
+
       setSalvando(true);
       window.clearTimeout(timer.current);
       timer.current = window.setTimeout(() => void salvarRef.current(), DEBOUNCE_MS);
     });
+
     return () => sub.unsubscribe();
   }, [watch, getValues, somenteLeitura]);
 
   useEffect(() => {
     montado.current = true;
+
     const aoOcultar = () => {
       if (document.visibilityState === "hidden") void salvarRef.current();
     };
+
     const salvarAgora = () => salvarRef.current();
+
     salvadoresAtivos.add(salvarAgora);
     document.addEventListener("visibilitychange", aoOcultar);
+
     return () => {
       salvadoresAtivos.delete(salvarAgora);
       montado.current = false;
@@ -151,22 +167,31 @@ export function useSecao<T extends SchemaSecao>(
 
   const secaoNoDexie = prontuario.secoes[secaoId];
   const primeiraExecucao = useRef(true);
+
   useEffect(() => {
     if (primeiraExecucao.current) {
       primeiraExecucao.current = false;
       return;
     }
+
     let ativo = true;
+
     void lerProntuarioDecifrado(prontuario.id).then((p) => {
       if (!ativo || !p || !montado.current) return;
+
       if (timer.current !== undefined || emAndamento.current > 0) return;
+
       if (JSON.stringify(getValues()) !== ultimoSalvo.current) return;
+
       const novo = ler(p.secoes[secaoId], p);
       const json = JSON.stringify(novo);
+
       if (json === ultimoSalvo.current) return;
+
       ultimoSalvo.current = json;
       reset(novo as unknown as DefaultValues<V>);
     });
+
     return () => {
       ativo = false;
     };

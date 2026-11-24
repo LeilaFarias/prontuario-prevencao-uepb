@@ -1,5 +1,4 @@
 import { useState } from "react";
-import { QUADRANTES } from "../../lib/odontograma";
 import {
   CODIGOS_CONDICAO,
   codigoExibido,
@@ -9,6 +8,7 @@ import {
   type CodigoCondicao,
 } from "../../lib/cpod";
 import BottomSheet from "../BottomSheet";
+import OdontogramaHorizontal from "./OdontogramaHorizontal";
 
 interface Props {
   dentes: Record<string, string>;
@@ -25,58 +25,6 @@ function Chip({ condicao, deciduo, tamanho }: { condicao: CodigoCondicao; decidu
     >
       {codigoExibido(condicao, deciduo)}
     </span>
-  );
-}
-
-function LinhaDentes({
-  numeros,
-  deciduo,
-  dentes,
-  disabled,
-  onAbrir,
-}: {
-  numeros: ReadonlyArray<number>;
-  deciduo: boolean;
-  dentes: Record<string, string>;
-  disabled: boolean;
-  onAbrir: (numero: number) => void;
-}) {
-  const estilo = {
-    gridTemplateColumns: `repeat(${numeros.length}, 1fr)`,
-    padding: deciduo ? "0 9%" : undefined,
-  };
-
-  return (
-    <>
-      <div className="grid gap-[3px]" style={estilo}>
-        {numeros.map((n) => (
-          <span key={n} className="py-0.5 text-center text-[10px] font-semibold text-ink-soft">
-            {n}
-          </span>
-        ))}
-      </div>
-      <div className="grid gap-[3px]" style={estilo}>
-        {numeros.map((n) => {
-          const codigo = dentes[String(n)];
-          const condicao = condicaoDoCodigo(codigo, deciduo);
-          return (
-            <button
-              key={n}
-              type="button"
-              disabled={disabled}
-              onClick={() => onAbrir(n)}
-              aria-label={`Dente ${n}: ${condicao ? condicao.nome : "sem código"}`}
-              className={`flex min-h-[26px] items-center justify-center rounded-md border-[1.5px] text-[11px] font-bold transition ${
-                condicao ? "" : "border-line bg-raised text-ink-faint"
-              } ${disabled ? "cursor-default" : ""}`}
-              style={condicao ? estiloCondicao(condicao) : undefined}
-            >
-              {condicao ? codigoExibido(condicao, deciduo) : "–"}
-            </button>
-          );
-        })}
-      </div>
-    </>
   );
 }
 
@@ -97,18 +45,31 @@ export default function OdontogramaCPOD({ dentes, onChange, disabled = false }: 
     fechar();
   };
 
+  const renderDente = (n: number, deciduo: boolean) => {
+    const codigo = dentes[String(n)];
+    const condicao = condicaoDoCodigo(codigo, deciduo);
+    return (
+      <div className="flex flex-col gap-0.5">
+        <span className="py-0.5 text-center text-[10px] font-semibold text-ink-soft">{n}</span>
+        <button
+          type="button"
+          disabled={disabled}
+          onClick={() => abrir(n)}
+          aria-label={`Dente ${n}: ${condicao ? condicao.nome : "sem código"}`}
+          className={`flex min-h-[30px] items-center justify-center rounded-md border-[1.5px] text-[11px] font-bold transition ${
+            condicao ? "" : "border-line bg-raised text-ink-faint"
+          } ${disabled ? "cursor-default" : ""}`}
+          style={condicao ? estiloCondicao(condicao) : undefined}
+        >
+          {condicao ? codigoExibido(condicao, deciduo) : "–"}
+        </button>
+      </div>
+    );
+  };
+
   return (
     <div>
-      <div className="flex flex-col gap-5">
-        {QUADRANTES.map((q) => (
-          <div key={q.nome}>
-            <h4 className="mb-2 text-[11px] font-bold uppercase tracking-wider text-ink-soft">{q.nome}</h4>
-            <LinhaDentes numeros={q.permanentes} deciduo={false} dentes={dentes} disabled={disabled} onAbrir={abrir} />
-            <div className="h-1.5" />
-            <LinhaDentes numeros={q.deciduos} deciduo dentes={dentes} disabled={disabled} onAbrir={abrir} />
-          </div>
-        ))}
-      </div>
+      <OdontogramaHorizontal renderDente={renderDente} />
 
       <div className="mt-4 border-t border-line-soft pt-3">
         <ul className="grid grid-cols-2 gap-x-3 gap-y-1.5">

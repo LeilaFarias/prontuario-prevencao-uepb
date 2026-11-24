@@ -59,11 +59,12 @@ export default function RegistroSangramento({ registro, indice, onChange, onRemo
 
   return (
     <section className="rounded-card border border-line bg-raised p-4">
-      <div className="mb-4 flex items-center justify-between gap-3">
-        <div>
+      <div className="mb-4 flex flex-wrap items-center justify-between gap-3">
+        <div className="min-w-0">
           <h3 className="font-display text-[15px] font-semibold text-ink">Registro {indice + 1}</h3>
           <p className="mt-0.5 text-[11.5px] text-ink-faint">{formatarData(registro.data)}</p>
         </div>
+        <div className="ml-auto flex flex-wrap items-center justify-end gap-3">
         {onRemover && !disabled && (
           <button
             type="button"
@@ -73,6 +74,7 @@ export default function RegistroSangramento({ registro, indice, onChange, onRemo
             Remover
           </button>
         )}
+        </div>
       </div>
 
       <CampoData

@@ -98,6 +98,7 @@ const estruturaExameSchema = z.enum(["normal", "alteracao"]).nullable().default(
 export const examesSchema = z.object({
   extraOral: z
     .object({
+      naoAvaliado: z.boolean().default(false),
       locomocao: z.string().default(""),
       cicatrizesEdemas: z.string().default(""),
       aberturaAnormal: z.boolean().nullable().default(null),
@@ -107,6 +108,7 @@ export const examesSchema = z.object({
 
   intraOral: z
     .object({
+      naoAvaliado: z.boolean().default(false),
       labios: estruturaExameSchema,
       freioLabial: estruturaExameSchema,
       gengiva: estruturaExameSchema,
@@ -172,6 +174,7 @@ export const procedimentoItemSchema = z.object({
 export type ProcedimentoItem = z.infer<typeof procedimentoItemSchema>;
 
 export const procedimentosSchema = z.object({
+  naoAvaliado: z.boolean().default(false),
   itens: z.array(procedimentoItemSchema).default([]),
 });
 
@@ -188,13 +191,27 @@ export const fotoAnexoSchema = z.object({
 
 export type FotoAnexo = z.infer<typeof fotoAnexoSchema>;
 
-export const conclusaoSchema = z.object({
-  tipoDesfecho: z.enum(["concluido", "encaminhado"]).nullable().default(null),
+export const TIPOS_DESFECHO = ["concluido", "encaminhado"] as const;
+
+export type TipoDesfecho = (typeof TIPOS_DESFECHO)[number];
+
+const conclusaoBaseSchema = z.object({
+  tipoDesfecho: z.enum(TIPOS_DESFECHO).nullable().default(null),
   concluidoEm: z.string().default(""),
   encaminhamentoEm: z.string().default(""),
   encaminhamentoPara: z.string().default(""),
   fotos: z.array(fotoAnexoSchema).default([]),
 });
+
+export const conclusaoSchema = z.preprocess((valor) => {
+  if (valor && typeof valor === "object" && !Array.isArray(valor)) {
+    const registro = valor as Record<string, unknown>;
+    if (registro.tipoDesfecho === "nao_finalizado") {
+      return { ...registro, tipoDesfecho: null };
+    }
+  }
+  return valor;
+}, conclusaoBaseSchema);
 
 export type Conclusao = z.infer<typeof conclusaoSchema>;
 
@@ -210,6 +227,7 @@ export type SessaoPlano = z.infer<typeof sessaoPlanoSchema>;
 
 // Sem UUID no default do schema (ele roda em todo parse). Os 3 slots iniciais nascem em vazioPlano().
 export const planoSchema = z.object({
+  naoAvaliado: z.boolean().default(false),
   sessoes: z.array(sessaoPlanoSchema).default([]),
 });
 
@@ -238,6 +256,7 @@ const gerarIdPadrao = (): string => {
 };
 
 export const vazioPlano = (gerarId: () => string = gerarIdPadrao): Plano => ({
+  naoAvaliado: false,
   sessoes: [
     { id: gerarId(), numero: 1, descricao: "" },
     { id: gerarId(), numero: 2, descricao: "" },
@@ -263,6 +282,7 @@ export const sangramentoDentesSchema = z.record(z.string(), denteSangramentoSche
 export const registroSangramentoSchema = z.object({
   id: z.string(),
   data: z.string().default(""),
+  naoAvaliado: z.boolean().default(false),
   dentes: sangramentoDentesSchema.default({}),
 });
 
@@ -278,9 +298,12 @@ export const vazioSangramento = (): Sangramento => sangramentoSchema.parse({});
 
 const notaIHOS = z.union([z.literal(0), z.literal(1), z.literal(2), z.literal(3), z.null()]).default(null);
 
+const ausenteIHOS = z.boolean().default(false);
+
 export const registroIHOSSchema = z.object({
   id: z.string(),
   data: z.string().default(""),
+  naoAvaliado: z.boolean().default(false),
   dentes: z
     .object({
       V11: notaIHOS,
@@ -289,6 +312,16 @@ export const registroIHOSSchema = z.object({
       V31: notaIHOS,
       L36: notaIHOS,
       L46: notaIHOS,
+    })
+    .default({}),
+  ausentes: z
+    .object({
+      V11: ausenteIHOS,
+      V16: ausenteIHOS,
+      V26: ausenteIHOS,
+      V31: ausenteIHOS,
+      L36: ausenteIHOS,
+      L46: ausenteIHOS,
     })
     .default({}),
 });
@@ -320,6 +353,7 @@ const calculoManualCEODSchema = z.object({
 export const registroCPODSchema = z.object({
   id: z.string(),
   data: z.string().default(""),
+  naoAvaliado: z.boolean().default(false),
   dentes: z.record(z.string(), z.string()).default({}),
   cpodManual: calculoManualCPODSchema.default({}),
   ceodManual: calculoManualCEODSchema.default({}),

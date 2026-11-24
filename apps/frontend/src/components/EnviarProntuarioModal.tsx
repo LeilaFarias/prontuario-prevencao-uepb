@@ -180,8 +180,7 @@ export default function EnviarProntuarioModal({
             ]}
           />
           <p className="text-[12px] text-ink-faint">
-            Enquanto a ficha está em revisão, você pode consultá-la mas não editá-la. Se precisar alterar algo, peça
-            liberação de acesso.
+            Enquanto a ficha está em revisão, você pode consultá-la mas não editá-la. Se precisar alterar algo, peça liberação de acesso.
           </p>
           <button type="button" className="btn-primary" onClick={onVoltarParaLista}>
             Voltar para meus prontuários
@@ -316,6 +315,9 @@ export default function EnviarProntuarioModal({
         }
       >
         <div className="flex flex-col gap-3">
+          <p className="rounded-xl border border-line-soft bg-paper px-3 py-2.5 text-[12px] leading-relaxed text-ink-soft">
+            Você pode preencher com “Não informado”, “NDN” ou “Não se aplica” nos campos correspondentes, se for o caso.
+          </p>
           <ul className="flex flex-col overflow-hidden rounded-card border border-line-soft">
             {validacao.pendencias.map((p) => (
               <li key={p.secaoId} className="border-b border-line-soft last:border-b-0">

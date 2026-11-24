@@ -1,3 +1,4 @@
+
 import { Controller, useWatch } from "react-hook-form";
 import { useLiveQuery } from "dexie-react-hooks";
 import { Plus } from "lucide-react";
@@ -25,9 +26,20 @@ function IndicadorSalvamento({ salvando, jaSalvou }: { salvando: boolean; jaSalv
 }
 
 function garantirSessoes(plano: PlanoDados): PlanoDados {
-  if (plano.sessoes.length === 0) return vazioPlano(uuid);
+  if (plano.sessoes.length === 0) {
+    return {
+      ...plano,
+      sessoes: vazioPlano(uuid).sessoes,
+    };
+  }
+
   return {
-    sessoes: plano.sessoes.map((s, idx) => ({ ...s, id: s.id || uuid(), numero: idx + 1 })),
+    ...plano,
+    sessoes: plano.sessoes.map((s, idx) => ({
+      ...s,
+      id: s.id || uuid(),
+      numero: idx + 1,
+    })),
   };
 }
 
@@ -61,63 +73,72 @@ function FormularioPlano({ prontuario }: { prontuario: LocalProntuario }) {
         titulo="Plano de ações preventivas e de mínima intervenção"
         subtitulo="Descreva o que será feito em cada sessão de atendimento."
       >
-        {sessoes.map((sessao, idx) => (
-          <div
-            key={sessao.id}
-            className={`relative flex flex-col gap-2 ${idx > 0 ? "mt-1 border-t border-line-soft pt-4" : ""}`}
-          >
-            {podeRemover && (
+        <p className="-mt-1 text-[12px] leading-snug text-ink-faint">
+          Descreva o plano executado hoje e o que será feito no próximo retorno.
+        </p>
+
+        {(
+          <>
+            {sessoes.map((sessao, idx) => (
+              <div
+                key={sessao.id}
+                className={`relative flex flex-col gap-2 ${idx > 0 ? "mt-1 border-t border-line-soft pt-4" : ""}`}
+              >
+                {podeRemover && (
+                  <button
+                    type="button"
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      removerSessao(sessao.id);
+                    }}
+                    className={`absolute right-0 text-[11px] text-ink-faint hover:text-alt ${
+                      idx > 0 ? "top-[22px]" : "top-1.5"
+                    }`}
+                  >
+                    Remover
+                  </button>
+                )}
+
+                <div className="flex items-center gap-2">
+                  <div className="flex h-7 w-7 shrink-0 items-center justify-center rounded-full bg-primary-tint font-display text-[13px] font-semibold text-primary">
+                    {sessao.numero}
+                  </div>
+                  <span className="text-[14px] font-semibold text-ink">
+                    {sessao.numero}ª sessão
+                    {idx > 0 && <span className="ml-1 text-[12px] font-normal text-ink-faint">(opcional)</span>}
+                  </span>
+                </div>
+
+                <Controller
+                  control={control}
+                  name={`sessoes.${idx}.descricao`}
+                  render={({ field }) => (
+                    <CampoTexto
+                      label="Descrição"
+                      obrigatorio={idx === 0}
+                      value={field.value}
+                      onChange={field.onChange}
+                      placeholder="Descreva as ações previstas para esta sessão"
+                      multiline
+                      disabled={somenteLeitura}
+                      permiteMarcador={false}
+                    />
+                  )}
+                />
+              </div>
+            ))}
+
+            {!somenteLeitura && (
               <button
                 type="button"
-                onClick={(e) => {
-                  e.stopPropagation();
-                  removerSessao(sessao.id);
-                }}
-                className={`absolute right-0 text-[11px] text-ink-faint hover:text-alt ${
-                  idx > 0 ? "top-[22px]" : "top-1.5"
-                }`}
+                onClick={adicionarSessao}
+                className="flex w-full items-center justify-center gap-1.5 rounded-xl border-2 border-dashed border-ink-faint bg-transparent py-3 text-[13px] font-semibold text-ink-soft"
               >
-                Remover
+                <Plus size={16} aria-hidden="true" />
+                Adicionar sessão
               </button>
             )}
-
-            <div className="flex items-center gap-2">
-              <div className="flex h-7 w-7 shrink-0 items-center justify-center rounded-full bg-primary-tint font-display text-[13px] font-semibold text-primary">
-                {sessao.numero}
-              </div>
-              <span className="text-[14px] font-semibold text-ink">
-                {sessao.numero}ª sessão
-                {idx > 0 && <span className="ml-1 text-[12px] font-normal text-ink-faint">(opcional)</span>}
-              </span>
-            </div>
-
-            <Controller
-              control={control}
-              name={`sessoes.${idx}.descricao`}
-              render={({ field }) => (
-                <CampoTexto
-                  label="Descrição"
-                  obrigatorio={idx === 0}
-                  value={field.value}
-                  onChange={field.onChange}
-                  placeholder="Descreva as ações previstas para esta sessão"
-                  multiline
-                  disabled={somenteLeitura}
-                />
-              )}
-            />
-          </div>
-        ))}
-
-        {!somenteLeitura && (
-          <button
-            type="button"
-            onClick={adicionarSessao}
-            className="flex w-full items-center justify-center gap-1.5 rounded-xl border-2 border-dashed border-ink-faint bg-transparent py-3 text-[13px] font-semibold text-ink-soft"
-          >
-            <Plus size={16} aria-hidden="true" />
-            Adicionar sessão
-          </button>
+          </>
         )}
       </GrupoFicha>
 
@@ -131,6 +152,8 @@ function FormularioPlano({ prontuario }: { prontuario: LocalProntuario }) {
 
 export default function Plano({ prontuarioId }: { prontuarioId: string }) {
   const prontuario = useLiveQuery(() => lerProntuarioDecifrado(prontuarioId), [prontuarioId]);
+
   if (!prontuario) return null;
+
   return <FormularioPlano prontuario={prontuario} />;
 }

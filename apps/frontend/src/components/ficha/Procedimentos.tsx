@@ -1,3 +1,4 @@
+import { useEffect, useRef, useState } from "react";
 import { useWatch } from "react-hook-form";
 import { useLiveQuery } from "dexie-react-hooks";
 import { Paperclip, Plus } from "lucide-react";
@@ -9,6 +10,12 @@ import { uuid } from "../../lib/uuid";
 import CampoData from "./CampoData";
 import CampoTexto from "./CampoTexto";
 import GrupoFicha from "./GrupoFicha";
+
+function hojeISO(): string {
+  const d = new Date();
+  const p = (n: number) => String(n).padStart(2, "0");
+  return `${d.getFullYear()}-${p(d.getMonth() + 1)}-${p(d.getDate())}`;
+}
 
 function IndicadorSalvamento({ salvando, jaSalvou }: { salvando: boolean; jaSalvou: boolean }) {
   const { pendentes, online } = useSyncStatus();
@@ -33,6 +40,33 @@ function FormularioProcedimentos({ prontuario }: { prontuario: LocalProntuario }
   );
 
   const itens = useWatch({ control, name: "itens" });
+  const containerRef = useRef<HTMLDivElement>(null);
+  const timerRef = useRef<number | null>(null);
+  const [destaqueId, setDestaqueId] = useState<string | null>(null);
+
+  useEffect(
+    () => () => {
+      if (timerRef.current !== null) window.clearTimeout(timerRef.current);
+    },
+    [],
+  );
+
+  const destacar = (id: string) => {
+    setDestaqueId(id);
+    if (timerRef.current !== null) window.clearTimeout(timerRef.current);
+    timerRef.current = window.setTimeout(() => setDestaqueId(null), 4000);
+  };
+
+  const focarDescricao = (id: string) => {
+    requestAnimationFrame(() => {
+      const caixa = containerRef.current?.querySelector<HTMLElement>(`[data-procedimento-id="${id}"]`);
+      const area = caixa?.querySelector<HTMLTextAreaElement>("textarea");
+      if (!caixa || !area) return;
+      caixa.scrollIntoView({ behavior: "smooth", block: "center" });
+      area.focus({ preventScroll: true });
+      area.setSelectionRange(area.value.length, area.value.length);
+    });
+  };
 
   const atualizar = (id: string, parcial: Partial<ProcedimentoItem>) =>
     setValue(
@@ -40,7 +74,24 @@ function FormularioProcedimentos({ prontuario }: { prontuario: LocalProntuario }
       itens.map((i) => (i.id === id ? { ...i, ...parcial } : i)),
     );
 
-  const adicionar = () => setValue("itens", [...itens, { id: uuid(), data: "", descricao: "" }]);
+  const adicionar = () => {
+    const hoje = hojeISO();
+    const doDia = itens.filter((i) => i.data === hoje);
+    const existente = doDia[doDia.length - 1];
+
+    if (existente) {
+      const base = existente.descricao;
+      const descricao = base === "" || base.endsWith("\n") ? base : `${base}\n`;
+      atualizar(existente.id, { descricao });
+      destacar(existente.id);
+      focarDescricao(existente.id);
+      return;
+    }
+
+    const id = uuid();
+    setValue("itens", [...itens, { id, data: hoje, descricao: "" }]);
+    focarDescricao(id);
+  };
 
   const remover = (id: string) =>
     setValue(
@@ -49,7 +100,7 @@ function FormularioProcedimentos({ prontuario }: { prontuario: LocalProntuario }
     );
 
   return (
-    <div className="flex flex-col gap-3 pb-2">
+    <div ref={containerRef} className="flex flex-col gap-3 pb-2">
       <GrupoFicha titulo="Procedimentos executados" subtitulo="Registre cada atendimento realizado.">
         {itens.length === 0 ? (
           <div className="flex flex-col items-center gap-2 rounded-field border border-line-soft bg-paper px-4 py-8 text-center">
@@ -58,7 +109,18 @@ function FormularioProcedimentos({ prontuario }: { prontuario: LocalProntuario }
           </div>
         ) : (
           itens.map((item) => (
-            <div key={item.id} className="relative flex flex-col gap-3 rounded-field border border-line bg-paper p-4">
+            <div
+              key={item.id}
+              data-procedimento-id={item.id}
+              className={`relative flex flex-col gap-3 rounded-field border bg-paper p-4 transition-colors ${
+                destaqueId === item.id ? "border-alt" : "border-line"
+              }`}
+            >
+              {destaqueId === item.id && (
+                <p role="status" aria-live="polite" className="text-[12px] font-semibold text-alt">
+                  Já existe um registro de hoje. Você pode continuar escrevendo abaixo.
+                </p>
+              )}
               {!somenteLeitura && (
                 <button
                   type="button"
@@ -81,6 +143,7 @@ function FormularioProcedimentos({ prontuario }: { prontuario: LocalProntuario }
                 placeholder="Descreva o procedimento realizado"
                 multiline
                 disabled={somenteLeitura}
+                permiteMarcador={false}
               />
             </div>
           ))
@@ -93,7 +156,7 @@ function FormularioProcedimentos({ prontuario }: { prontuario: LocalProntuario }
             className="flex w-full items-center justify-center gap-1.5 rounded-xl border-2 border-dashed border-ink-faint bg-transparent py-3 text-[13px] font-semibold text-ink-soft"
           >
             <Plus size={16} aria-hidden="true" />
-            Adicionar procedimento
+            Adicionar procedimento do dia
           </button>
         )}
       </GrupoFicha>

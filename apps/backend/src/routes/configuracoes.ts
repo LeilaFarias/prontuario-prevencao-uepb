@@ -1,7 +1,7 @@
 import { randomUUID } from "node:crypto";
 import type { FastifyPluginAsync, FastifyReply, FastifyRequest } from "fastify";
 import { semestreSchema, type IndicadorPacientes, type SemestreResponse } from "@prontuario/shared";
-import { executar, transacao, uma } from "../db";
+import { executar, todas, transacao, uma } from "../db";
 
 const CHAVE_INICIO = "semestre_inicio";
 const CHAVE_FIM = "semestre_fim";
@@ -9,7 +9,7 @@ const CHAVE_FIM = "semestre_fim";
 export const configuracoesRoutes: FastifyPluginAsync = async (app) => {
   const { db } = app;
 
-  const buscarValor = `SELECT "valor" FROM "Configuracao" WHERE "chave" = $1`;
+  const buscarSemestre = `SELECT "chave", "valor" FROM "Configuracao" WHERE "chave" = ANY($1::text[])`;
   const gravarValor = `INSERT INTO "Configuracao" ("chave", "valor", "atualizadoEm") VALUES ($1, $2, $3)
      ON CONFLICT ("chave") DO UPDATE SET "valor" = EXCLUDED."valor", "atualizadoEm" = EXCLUDED."atualizadoEm"`;
   const registrarAuditoria = `INSERT INTO "AuditLog" ("id", "usuarioId", "prontuarioId", "acao", "detalhe") VALUES ($1, $2, NULL, $3, $4)`;
@@ -28,9 +28,9 @@ export const configuracoesRoutes: FastifyPluginAsync = async (app) => {
   const protegida = { preHandler: [app.autenticar, somenteProfessor] };
 
   const lerSemestre = async (): Promise<SemestreResponse> => {
-    const inicio = await uma<{ valor: string }>(db, buscarValor, [CHAVE_INICIO]);
-    const fim = await uma<{ valor: string }>(db, buscarValor, [CHAVE_FIM]);
-    return { inicio: inicio?.valor ?? null, fim: fim?.valor ?? null };
+    const linhas = await todas<{ chave: string; valor: string }>(db, buscarSemestre, [[CHAVE_INICIO, CHAVE_FIM]]);
+    const valorDe = (chave: string) => linhas.find((l) => l.chave === chave)?.valor ?? null;
+    return { inicio: valorDe(CHAVE_INICIO), fim: valorDe(CHAVE_FIM) };
   };
 
   app.get("/configuracoes/semestre", protegida, async (): Promise<SemestreResponse> => lerSemestre());

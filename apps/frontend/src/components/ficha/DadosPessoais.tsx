@@ -31,7 +31,7 @@ type ChaveTexto =
 
 type ChaveEscolaridade = "responsavelEscolaridade" | "paiEscolaridade" | "maeEscolaridade";
 
-type ExtraTexto = Partial<Pick<CampoTextoProps, "placeholder" | "inputMode" | "autoComplete" | "maxLength" | "type">>;
+type ExtraTexto = Partial<Pick<CampoTextoProps, "placeholder" | "inputMode" | "autoComplete" | "maxLength" | "type" | "permiteMarcador">>;
 
 const OPCOES_SEXO = [
   { value: "feminino", label: "Feminino" },
@@ -190,7 +190,7 @@ function FormularioDadosPessoais({ prontuario }: { prontuario: LocalProntuario }
         {texto("endereco", "Endereço", { placeholder: "Rua, número, bairro" })}
 
         <div className="grid grid-cols-[1fr_84px] gap-3">
-          {texto("cidade", "Cidade")}
+          {texto("cidade", "Cidade", { permiteMarcador: false })}
           <Controller
             control={control}
             name="uf"
@@ -201,6 +201,7 @@ function FormularioDadosPessoais({ prontuario }: { prontuario: LocalProntuario }
                 onChange={(v) => field.onChange(limparUf(v))}
                 maxLength={2}
                 autoComplete="off"
+                permiteMarcador={false}
                 disabled={somenteLeitura}
               />
             )}
@@ -222,8 +223,8 @@ function FormularioDadosPessoais({ prontuario }: { prontuario: LocalProntuario }
                 const ehEstudante = v === "sim";
                 field.onChange(ehEstudante);
                 if (!ehEstudante) {
-                  setValue("escola", "");
-                  setValue("serie", "");
+                  setValue("escola", "Não se aplica");
+                  setValue("serie", "Não se aplica");
                 }
               }}
               options={OPCOES_ESTUDANTE}

@@ -1,5 +1,6 @@
 import type { SessionUser } from "@prontuario/shared";
 import { db } from "../db/dexie";
+import { limparCacheDados } from "./cacheDados";
 import { PREFIXO_META_PIN, setChave } from "./chaveLocal";
 
 export interface Session {
@@ -39,6 +40,7 @@ function limparMetaPin(): void {
 
 export async function clearSession(): Promise<void> {
   localStorage.removeItem(KEY);
+  limparCacheDados();
   setChave(null);
   limparMetaPin();
   try {

@@ -51,6 +51,11 @@ export function tempoDeEspera(iso: string, agora: number = Date.now()): string {
   return `há ${dias} ${dias === 1 ? "dia" : "dias"}`;
 }
 
+export function alunoPodeEditar(status: string, _desfechoEnvio?: string | null): boolean {
+  const s = status.toUpperCase();
+  return s === "EM_ANDAMENTO" || s === "DEVOLVIDO";
+}
+
 export const liberacaoManualOnlineSchema = z.object({
   matricula: z.string().trim().min(1),
   pin: z.string().regex(/^\d{8}$/),

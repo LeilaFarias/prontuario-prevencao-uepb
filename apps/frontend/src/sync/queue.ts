@@ -156,6 +156,7 @@ export async function salvarSecaoLocal(
       ...(novoNome ? { pacienteNome: camposLocais!.pacienteNome } : {}),
       ...(novoNascimento ? { pacienteDataNascimento: camposLocais!.pacienteDataNascimento } : {}),
       secoes: { ...atual.secoes, [dados.secaoId]: valorLocal },
+      ...(dados.secaoId === "conclusao" ? { desfechoEnvio: (dados.conteudo.tipoDesfecho as LocalProntuario["desfechoEnvio"]) ?? undefined } : {}),
       atualizadoEm: agora,
       sincronizado: false,
     });

@@ -96,7 +96,7 @@ export default function RegistroCPOD({
     <section
       className={`overflow-hidden rounded-card border border-line bg-raised ${expandido ? "shadow-sm" : ""}`}
     >
-      <div className="flex items-center gap-3 p-4">
+      <div className="flex flex-wrap items-center gap-3 p-4">
         {colapsavel ? (
           <button
             type="button"

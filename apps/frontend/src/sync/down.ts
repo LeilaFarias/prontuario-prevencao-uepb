@@ -183,6 +183,7 @@ export async function aplicarRemoto(remoto: ProntuarioRemoto): Promise<boolean> 
         pacienteNome: paciente.pacienteNome,
         pacienteDataNascimento: paciente.pacienteDataNascimento,
         status,
+        desfechoEnvio: (remoto.secoes?.conclusao as { tipoDesfecho?: LocalProntuario["desfechoEnvio"] } | undefined)?.tipoDesfecho,
         ...camposDeRevisao(remoto),
         ...camposDeTransferencia(remoto),
         ...acesso,
@@ -219,6 +220,7 @@ export async function aplicarRemoto(remoto: ProntuarioRemoto): Promise<boolean> 
       await db.prontuarios.put({
         ...local,
         status: novoStatus,
+        desfechoEnvio: (remoto.secoes?.conclusao as { tipoDesfecho?: LocalProntuario["desfechoEnvio"] } | undefined)?.tipoDesfecho,
         ...acesso,
         professorSupervisorId: remoto.professorSupervisorId ?? undefined,
         professorSupervisorNome: remoto.professorSupervisorNome ?? undefined,
@@ -237,6 +239,7 @@ export async function aplicarRemoto(remoto: ProntuarioRemoto): Promise<boolean> 
       pacienteNome: paciente.pacienteNome,
       pacienteDataNascimento: paciente.pacienteDataNascimento ?? local.pacienteDataNascimento,
       status: novoStatus,
+      desfechoEnvio: (remoto.secoes?.conclusao as { tipoDesfecho?: LocalProntuario["desfechoEnvio"] } | undefined)?.tipoDesfecho,
       ...camposDeRevisao(remoto),
       ...camposDeTransferencia(remoto, local),
       ...acesso,

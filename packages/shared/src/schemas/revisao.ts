@@ -1,4 +1,5 @@
 import { z } from "zod";
+import type { TipoDesfecho } from "./prontuario";
 
 export const MOTIVOS_DEVOLUCAO = [
   "calculo_divergente",
@@ -35,6 +36,14 @@ export const devolverSchema = z.object({
     .max(COMENTARIO_DEVOLUCAO_MAX, `O comentário pode ter no máximo ${COMENTARIO_DEVOLUCAO_MAX} caracteres`),
 });
 
+export const comentarioProfessorSchema = z.object({
+  comentario: z
+    .string()
+    .trim()
+    .min(1, "Escreva o comentário")
+    .max(COMENTARIO_DEVOLUCAO_MAX, `O comentário pode ter no máximo ${COMENTARIO_DEVOLUCAO_MAX} caracteres`),
+});
+
 export const QUEM_RECEBE = ["anterior", "novo"] as const;
 
 export type QuemRecebe = (typeof QUEM_RECEBE)[number];
@@ -52,6 +61,7 @@ export const manterTitularidadeSchema = z.object({
 
 export type AssinarInput = z.infer<typeof assinarSchema>;
 export type DevolverInput = z.infer<typeof devolverSchema>;
+export type ComentarioProfessorInput = z.infer<typeof comentarioProfessorSchema>;
 export type TransferirTitularidadeInput = z.infer<typeof transferirTitularidadeSchema>;
 export type ManterTitularidadeInput = z.infer<typeof manterTitularidadeSchema>;
 
@@ -95,6 +105,7 @@ export interface ItemFilaRevisao {
   alunoOperador: string;
   alunoAuxiliar: string;
   duplaAnteriorNome: string | null;
+  tipoDesfecho: TipoDesfecho | null;
 }
 
 export interface FilaRevisaoResponse {
@@ -121,6 +132,11 @@ export interface DevolverResponse {
   ok: true;
   devolvidoEm: string;
   devolvidoPorNome: string;
+}
+
+export interface ComentarioProfessorResponse {
+  ok: true;
+  comentadoEm: string;
 }
 
 export type CodigoErroRevisao =

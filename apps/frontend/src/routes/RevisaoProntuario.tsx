@@ -31,6 +31,8 @@ import SangramentoLeitura from "../components/ficha/revisao/SangramentoLeitura";
 import AssinarModal from "../components/revisao/AssinarModal";
 import DevolverModal from "../components/revisao/DevolverModal";
 import StatusBanner from "../components/revisao/StatusBanner";
+import { api, ApiError } from "../lib/api";
+import Skeleton from "../components/Skeleton";
 import Topbar from "../components/Topbar";
 import { useProntuario, type ProntuarioRevisao } from "../hooks/useProntuario";
 import { temDivergenciaCPOD } from "../lib/comparacaoCPOD";
@@ -94,6 +96,7 @@ function ConteudoRevisao({ prontuario, onAtualizar }: ConteudoProps) {
   const nomeProfessor = getSession()?.user.nome ?? "";
   const procedimentosPendentes = secoes.procedimentos.itens.length;
   const voltarParaFila = () => navigate("/fila");
+
 
   function renderSecao(id: SecaoId) {
     switch (id) {
@@ -184,10 +187,25 @@ function ConteudoRevisao({ prontuario, onAtualizar }: ConteudoProps) {
           </div>
         )}
 
+
+
         {renderSecao(secao.id)}
       </main>
 
-      <footer className="sticky bottom-0 mt-2 border-t border-line bg-paper px-5 py-3">
+      <footer className="sticky bottom-0 z-30 mt-2 flex flex-col gap-2.5 border-t border-line bg-paper px-5 py-3">
+        <div className="grid grid-cols-2 gap-3">
+          <button type="button" className="btn-ghost" disabled={indice === 0} onClick={() => setIndice(indice - 1)}>
+            Anterior
+          </button>
+          <button
+            type="button"
+            className="btn-prof"
+            disabled={indice === SECOES.length - 1}
+            onClick={() => setIndice(indice + 1)}
+          >
+            Próxima
+          </button>
+        </div>
         {aguardando ? (
           <>
             {offline && podeAgir && (
@@ -254,8 +272,18 @@ export default function RevisaoProntuario() {
 
   if (estado.situacao === "carregando") {
     return (
-      <div className="flex flex-1 flex-col">
-        <Topbar titulo="Carregando…" tituloClassName="text-[18px]" onVoltar={() => navigate("/fila")} />
+      <div className="flex flex-1 flex-col" aria-busy="true" aria-label="Carregando prontuário">
+        <Topbar titulo="Prontuário" tituloClassName="text-[18px]" onVoltar={() => navigate("/fila")} />
+        <div className="flex gap-2 overflow-hidden px-5 pb-3 pt-1">
+          {[0, 1, 2, 3].map((i) => (
+            <Skeleton key={i} className="h-8 w-24 shrink-0 rounded-pill" />
+          ))}
+        </div>
+        <div className="flex flex-col gap-3 px-5 pt-2">
+          <Skeleton className="h-24 w-full rounded-card" />
+          <Skeleton className="h-28 w-full rounded-card" />
+          <Skeleton className="h-40 w-full rounded-card" />
+        </div>
       </div>
     );
   }

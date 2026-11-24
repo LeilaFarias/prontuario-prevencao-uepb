@@ -1,4 +1,5 @@
-import type { ResultadoEnvio } from "@prontuario/shared";
+import { randomUUID } from "node:crypto";
+import { TIPOS_DESFECHO, type ResultadoEnvio } from "@prontuario/shared";
 import { executar, uma, type Executor } from "../db";
 
 interface ProntuarioEnvioRow {
@@ -45,7 +46,23 @@ export async function enviarProntuario(db: Executor, prontuarioId: string, aluno
     [prontuarioId, alunoId],
   );
   if (!pront) return { ok: false, erro: "nao_encontrado" };
-  if (pront.status !== "EM_ANDAMENTO" && pront.status !== "DEVOLVIDO") return { ok: false, erro: "ja_enviado" };
+  if (pront.status !== "EM_ANDAMENTO" && pront.status !== "DEVOLVIDO") {
+    return { ok: false, erro: "ja_enviado" };
+  }
+
+  const conclusao = await uma<{ conteudo: string }>(
+    db,
+    `SELECT "conteudo" FROM "Secao" WHERE "prontuarioId" = $1 AND "secaoId" = 'conclusao'`,
+    [prontuarioId],
+  );
+  let desfecho: string | null = null;
+  if (conclusao) {
+    try {
+      const c = JSON.parse(conclusao.conteudo) as { tipoDesfecho?: unknown };
+      desfecho = TIPOS_DESFECHO.find((t) => t === c.tipoDesfecho) ?? null;
+    } catch {
+    }
+  }
 
   const secao = await uma<{ conteudo: string }>(
     db,
@@ -76,9 +93,16 @@ export async function enviarProntuario(db: Executor, prontuarioId: string, aluno
   await executar(
     db,
     `UPDATE "Prontuario"
-     SET "status" = 'ENVIADO', "professorSupervisorId" = $1, "sinalizadoDuplicidade" = $2, "atualizadoEm" = $3
-     WHERE "id" = $4`,
-    [professor.id, Boolean(duplicado), agora, pront.id],
+     SET "status" = 'ENVIADO', "professorSupervisorId" = $1, "sinalizadoDuplicidade" = $2, "atualizadoEm" = $3,
+         "desfechoEnvio" = $4
+     WHERE "id" = $5`,
+    [professor.id, Boolean(duplicado), agora, desfecho, pront.id],
+  );
+
+  await executar(
+    db,
+    `INSERT INTO "AuditLog" ("id", "usuarioId", "prontuarioId", "acao", "detalhe") VALUES ($1, $2, $3, $4, $5)`,
+    [randomUUID(), alunoId, pront.id, "prontuario-enviado", JSON.stringify({ desfecho })],
   );
 
   if (duplicado) await executar(db, `UPDATE "Prontuario" SET "atualizadoEm" = $1 WHERE "id" = $2`, [agora, duplicado.id]);
