@@ -44,9 +44,10 @@ interface Props {
   onDescartar?: () => void;
 }
 
-function timestamp(iso: string | undefined, padrao: number): number {
-  const ts = iso ? new Date(iso).getTime() : NaN;
-  return Number.isFinite(ts) ? ts : padrao;
+function timestampValido(valor: string | number | undefined): number | null {
+  if (valor === undefined || valor === "") return null;
+  const ts = typeof valor === "number" ? valor : new Date(valor).getTime();
+  return Number.isFinite(ts) && ts > 0 ? ts : null;
 }
 
 export default function ProntuarioCard({ prontuario: p, onAbrir, onSolicitarAcesso, onCorrigir, onDescartar }: Props) {
@@ -80,7 +81,12 @@ export default function ProntuarioCard({ prontuario: p, onAbrir, onSolicitarAces
   const Icone = badge.icone;
 
   const idade = pacienteDataNascimento ? formatarIdade(pacienteDataNascimento) : "";
-  const tempo = tempoRelativo(timestamp(p.status === "devolvido" ? p.devolvidoEm : undefined, p.atualizadoEm));
+  const referencia =
+    (p.status === "devolvido" ? timestampValido(p.devolvidoEm) : null) ??
+    timestampValido(p.atualizadoEm) ??
+    timestampValido(p.criadoEm);
+  const tempo = referencia === null ? "" : tempoRelativo(referencia);
+  const comTempo = (rotulo: string, separador = " ") => (tempo ? `${rotulo}${separador}${tempo}` : rotulo);
   const marco = transferido
     ? p.transferidoParaNome
       ? `transferido para ${p.transferidoParaNome}`
@@ -88,13 +94,13 @@ export default function ProntuarioCard({ prontuario: p, onAbrir, onSolicitarAces
     : recusado
     ? "pedido de acesso recusado pelo professor"
     : p.status === "em_andamento"
-      ? `editado ${tempo}`
+      ? comTempo("editado")
       : p.status === "enviado"
         ? emDuplicidade
-          ? `enviado ${tempo} · aguardando análise de duplicidade`
-          : `enviado ${tempo}`
+          ? `${comTempo("enviado")} · aguardando análise de duplicidade`
+          : comTempo("enviado")
         : p.status === "devolvido"
-          ? `devolvido pelo professor · ${tempo}`
+          ? comTempo("devolvido pelo professor", " · ")
           : p.assinadoPorNome
             ? `assinado por ${p.assinadoPorNome}`
             : p.assinadoEm

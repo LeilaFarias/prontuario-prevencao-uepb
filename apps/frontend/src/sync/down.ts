@@ -128,15 +128,18 @@ async function sincronizarProfessoresLiberacao(): Promise<void> {
   try {
     const lista = await api.get<ProfessorLiberacaoRemoto[]>("/sync/professores-liberacao", { timeoutMs: TIMEOUT_SYNC_MS });
     const sincronizadoEm = Date.now();
-    await db.professoresLiberacao.bulkPut(
-      lista.map((p) => ({
-        professorId: p.professorId,
-        nome: p.nome,
-        pinHashClient: p.pinHashClient,
-        saltClient: p.saltClient,
-        sincronizadoEm,
-      })),
-    );
+    await db.transaction("rw", db.professoresLiberacao, async () => {
+      await db.professoresLiberacao.where("professorId").noneOf(lista.map((p) => p.professorId)).delete();
+      await db.professoresLiberacao.bulkPut(
+        lista.map((p) => ({
+          professorId: p.professorId,
+          nome: p.nome,
+          pinHashClient: p.pinHashClient,
+          saltClient: p.saltClient,
+          sincronizadoEm,
+        })),
+      );
+    });
   } catch (e) {
     console.warn("[syncDown] falha ao buscar professores de liberação:", e);
   }
@@ -246,9 +249,9 @@ export async function aplicarRemoto(remoto: ProntuarioRemoto): Promise<boolean> 
       vistoPeloAluno: novoStatus === local.status ? local.vistoPeloAluno : false,
       secoes: { ...local.secoes, ...secoesCifradas },
       secoesPendentes: false,
-      atualizadoEm: remotoEm,
+      atualizadoEm: remotoEm > 0 ? remotoEm : local.atualizadoEm,
       sincronizado: true,
-      alunoTitularId: remoto.alunoTitularId,
+      alunoTitularId: remoto.alunoTitularId ?? local.alunoTitularId,
       professorSupervisorId: remoto.professorSupervisorId ?? undefined,
       professorSupervisorNome: remoto.professorSupervisorNome ?? undefined,
     });

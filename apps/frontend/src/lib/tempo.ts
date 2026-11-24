@@ -14,7 +14,8 @@ export function tempoRelativo(ts: number, agora: number = Date.now()): string {
   const dias = Math.round((inicioDoDia(new Date(agora)) - inicioDoDia(data)) / 86_400_000);
   if (dias === 1) return "ontem";
   if (dias < 7) return `há ${dias} dias`;
-  return `em ${pad(data.getDate())}/${pad(data.getMonth() + 1)}`;
+  const diaMes = `${pad(data.getDate())}/${pad(data.getMonth() + 1)}`;
+  return data.getFullYear() === new Date(agora).getFullYear() ? `em ${diaMes}` : `em ${diaMes}/${data.getFullYear()}`;
 }
 
 export function calcularIdade(dataNascimento?: string, agora: Date = new Date()): number | null {

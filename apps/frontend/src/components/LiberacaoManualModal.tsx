@@ -30,10 +30,8 @@ export default function LiberacaoManualModal({
 
   const professores = useLiveQuery(async () => {
     const lista = await db.professoresLiberacao.toArray();
-    return lista
-      .filter((p) => !professorSupervisorId || p.professorId === professorSupervisorId)
-      .sort((a, b) => a.nome.localeCompare(b.nome));
-  }, [professorSupervisorId]);
+    return lista.sort((a, b) => a.nome.localeCompare(b.nome));
+  }, []);
 
   useEffect(() => {
     if (!open) {
@@ -44,8 +42,13 @@ export default function LiberacaoManualModal({
   }, [open]);
 
   useEffect(() => {
-    if (professores?.length === 1) setProfessorId(professores[0]!.professorId);
-  }, [professores]);
+    if (!professores) return;
+    if (professores.length === 1) {
+      setProfessorId(professores[0]!.professorId);
+    } else if (professorSupervisorId && professores.some((p) => p.professorId === professorSupervisorId)) {
+      setProfessorId((atual) => atual || professorSupervisorId);
+    }
+  }, [professores, professorSupervisorId]);
 
   async function liberar() {
     const professor = professores?.find((p) => p.professorId === professorId);

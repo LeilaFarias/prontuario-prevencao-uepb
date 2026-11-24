@@ -101,6 +101,7 @@ export const syncRoutes: FastifyPluginAsync = async (app) => {
   const registrar = `INSERT INTO "SyncOperationLog" ("id", "prontuarioId", "entity", "entityId", "op", "ts", "descartada")
      VALUES ($1, (SELECT "id" FROM "Prontuario" WHERE "id" = $2), $3, $4, $5, $6, $7)`;
 
+  const buscarProfessorAtivo = `SELECT "id" FROM "Usuario" WHERE "id" = $1 AND UPPER("perfil") = 'PROFESSOR' AND "ativo"`;
   const buscarLiberacaoOffline = `SELECT "id", "alunoId" FROM "LiberacaoOffline" WHERE "id" = $1`;
   const inserirLiberacaoOffline = `INSERT INTO "LiberacaoOffline" ("id", "alunoId", "professorId", "prontuarioId", "liberadoEm", "expiresAt", "sincronizado")
      VALUES ($1, $2, $3, $4, $5, $6, TRUE)`;
@@ -119,7 +120,8 @@ export const syncRoutes: FastifyPluginAsync = async (app) => {
     if (p.data.prontuarioId !== op.prontuarioId) return false;
     if (liberadoEm > Date.now() + TS_TOLERANCIA_FUTURO_MS) return false;
     if (expiresAt <= liberadoEm || expiresAt > liberadoEm + ACESSO_DURACAO_MS) return false;
-    if (pront.professorSupervisorId !== professorId) return false;
+    const professor = await uma<{ id: string }>(tx, buscarProfessorAtivo, [professorId]);
+    if (!professor) return false;
 
     const existente = await uma<{ id: string; alunoId: string }>(tx, buscarLiberacaoOffline, [op.entityId]);
     if (existente) return existente.alunoId === usuario.id;
@@ -218,10 +220,9 @@ export const syncRoutes: FastifyPluginAsync = async (app) => {
     throw new Error(`Entidade "${op.entity}" ainda não suportada na Sprint 1`);
   }
 
-  const buscarProfessoresLiberacao = `SELECT DISTINCT u."id" AS "professorId", u."nome", u."pinHashClient", u."saltClient"
-     FROM "Prontuario" p
-     JOIN "Usuario" u ON u."id" = p."professorSupervisorId"
-     WHERE p."alunoTitularId" = $1
+  const buscarProfessoresLiberacao = `SELECT u."id" AS "professorId", u."nome", u."pinHashClient", u."saltClient"
+     FROM "Usuario" u
+     WHERE UPPER(u."perfil") = 'PROFESSOR'
        AND u."ativo"
        AND u."pinHashClient" IS NOT NULL
        AND u."saltClient" IS NOT NULL
@@ -231,7 +232,7 @@ export const syncRoutes: FastifyPluginAsync = async (app) => {
     if (req.user.perfil !== "aluno") {
       return reply.status(403).send({ message: "Apenas alunos podem baixar dados de liberação." });
     }
-    return todas<ProfessorLiberacaoRow>(db, buscarProfessoresLiberacao, [req.user.sub]);
+    return todas<ProfessorLiberacaoRow>(db, buscarProfessoresLiberacao);
   });
 
   app.post("/sync", { preHandler: app.autenticar }, async (req) => {
