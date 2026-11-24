@@ -54,7 +54,7 @@ export function useSecao<T extends SchemaSecao>(
   const { watch, getValues, reset } = form;
 
   const somenteLeitura =
-    (prontuario.status === "enviado" && prontuario.desfechoEnvio !== "nao_finalizado") ||
+    prontuario.status === "enviado" ||
     prontuario.status === "transferido" ||
     (prontuario.status !== "em_andamento" && !acessoVigente(prontuario));
 

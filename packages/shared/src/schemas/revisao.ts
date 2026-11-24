@@ -106,7 +106,6 @@ export interface ItemFilaRevisao {
   alunoAuxiliar: string;
   duplaAnteriorNome: string | null;
   tipoDesfecho: TipoDesfecho | null;
-  aguardandoConclusao: boolean;
 }
 
 export interface FilaRevisaoResponse {
@@ -144,9 +143,7 @@ export type CodigoErroRevisao =
   | "MATRICULA_NAO_CONFERE"
   | "SENHA_INCORRETA"
   | "NAO_SUPERVISOR"
-  | "NAO_AGUARDANDO"
-  | "AGUARDANDO_CONCLUSAO_ALUNO"
-  | "DEVOLUCAO_NAO_APLICAVEL";
+  | "NAO_AGUARDANDO";
 
 
 export interface NotificacaoAluno {

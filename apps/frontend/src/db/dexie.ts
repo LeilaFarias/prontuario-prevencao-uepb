@@ -16,7 +16,7 @@ export interface LocalProntuario {
   pacienteNome: string;
   pacienteDataNascimento?: string;
   status: LocalStatus;
-  desfechoEnvio?: "concluido" | "encaminhado" | "nao_finalizado";
+  desfechoEnvio?: "concluido" | "encaminhado";
   secoes: Record<string, any>;
   criadoEm: number;
   atualizadoEm: number;

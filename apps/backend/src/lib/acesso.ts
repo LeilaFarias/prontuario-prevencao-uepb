@@ -1,7 +1,7 @@
 import { randomUUID, scrypt, timingSafeEqual } from "node:crypto";
 import { promisify } from "node:util";
 import { z } from "zod";
-import { ACESSO_TEMPORARIO_HORAS, TIPOS_DESFECHO, type TipoDesfecho } from "@prontuario/shared";
+import { ACESSO_TEMPORARIO_HORAS } from "@prontuario/shared";
 import { executar, uma, type Executor } from "../db";
 
 const scryptAsync = promisify(scrypt);
@@ -51,32 +51,10 @@ export function tempoDeEspera(iso: string, agora: number = Date.now()): string {
   return `há ${dias} ${dias === 1 ? "dia" : "dias"}`;
 }
 
-export function desfechoDoEnvio(valor: string | null | undefined): TipoDesfecho | null {
-  return TIPOS_DESFECHO.find((t) => t === valor) ?? null;
-}
-
-export function aguardandoConclusao(status: string, desfechoEnvio: string | null | undefined): boolean {
-  return status.toUpperCase() === "ENVIADO" && desfechoDoEnvio(desfechoEnvio) === "nao_finalizado";
-}
-
-export function alunoPodeEditar(status: string, desfechoEnvio: string | null | undefined): boolean {
+export function alunoPodeEditar(status: string, _desfechoEnvio?: string | null): boolean {
   const s = status.toUpperCase();
-  return s === "EM_ANDAMENTO" || s === "DEVOLVIDO" || aguardandoConclusao(s, desfechoEnvio);
+  return s === "EM_ANDAMENTO" || s === "DEVOLVIDO";
 }
-
-export function professorPodeAssinarOuDevolver(status: string, desfechoEnvio: string | null | undefined): boolean {
-  return status.toUpperCase() === "ENVIADO" && !aguardandoConclusao(status, desfechoEnvio);
-}
-
-export const AGUARDANDO_CONCLUSAO_ALUNO = {
-  message: "O aluno ainda está trabalhando nesta sessão. A assinatura estará disponível quando ele concluir.",
-  codigo: "AGUARDANDO_CONCLUSAO_ALUNO",
-} as const;
-
-export const DEVOLUCAO_NAO_APLICAVEL = {
-  message: "Não é possível devolver um prontuário não finalizado. O aluno já pode editar.",
-  codigo: "DEVOLUCAO_NAO_APLICAVEL",
-} as const;
 
 export const liberacaoManualOnlineSchema = z.object({
   matricula: z.string().trim().min(1),

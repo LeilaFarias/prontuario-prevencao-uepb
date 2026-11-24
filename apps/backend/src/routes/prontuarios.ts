@@ -21,13 +21,8 @@ import {
 import { executar, todas, transacao, uma, type Executor } from "../db";
 import {
   ACESSO_DURACAO_MS,
-  AGUARDANDO_CONCLUSAO_ALUNO,
-  DEVOLUCAO_NAO_APLICAVEL,
-  aguardandoConclusao,
-  desfechoDoEnvio,
   estadoAcesso,
   pedidoPendente,
-  professorPodeAssinarOuDevolver,
   type AcessoRow,
 } from "../lib/acesso";
 import { registrarAuditoria as auditar } from "../lib/auditoria";
@@ -381,7 +376,6 @@ export const prontuariosRoutes: FastifyPluginAsync = async (app) => {
           ...(await lerDupla(db, r.id)),
           duplaAnteriorNome: duplicado ? await nomeDuplaDestino(db, duplicado.id) : null,
           tipoDesfecho: TIPOS_DESFECHO.find((t) => t === r.tipoDesfecho) ?? null,
-          aguardandoConclusao: !statusAlvo && aguardandoConclusao("ENVIADO", r.desfechoEnvio),
         };
       }),
     );
@@ -471,7 +465,7 @@ export const prontuariosRoutes: FastifyPluginAsync = async (app) => {
     const historico = linha.transferidoDe ? await montarHistorico(linha.transferidoDe, req.log) : null;
 
     const ehSupervisor = !alunoUser && linha.professorSupervisorId === req.user.sub;
-    const podeAgir = ehSupervisor && professorPodeAssinarOuDevolver(linha.status, revisao.desfechoEnvio);
+    const podeAgir = ehSupervisor && linha.status.toUpperCase() === "ENVIADO";
 
     const envio = await uma<{ ts: number | null }>(db, buscarEnvio, [linha.id]);
     const enviadoEm = envio?.ts ? new Date(envio.ts).toISOString() : null;
@@ -494,7 +488,6 @@ export const prontuariosRoutes: FastifyPluginAsync = async (app) => {
       secoes,
       historico,
       podeAgir,
-      aguardandoConclusao: aguardandoConclusao(linha.status, revisao.desfechoEnvio),
       ehSupervisor,
       enviadoEm,
     };
@@ -886,7 +879,6 @@ export const prontuariosRoutes: FastifyPluginAsync = async (app) => {
       if (!pront) return { erro: 404 as const };
       if (pront.status.toUpperCase() !== "ENVIADO") return { erro: 409 as const };
       if (pront.professorSupervisorId !== professor.id) return { erro: 403 as const };
-      if (!professorPodeAssinarOuDevolver(pront.status, pront.desfechoEnvio)) return { erro: "aguardando" as const };
 
       const agora = new Date().toISOString();
       await executar(tx, gravarAssinatura, [agora, professor.id, professor.nome, agora, id]);
@@ -898,7 +890,6 @@ export const prontuariosRoutes: FastifyPluginAsync = async (app) => {
 
     if ("erro" in resultado) {
       if (resultado.erro === 404) return reply.status(404).send({ message: "Prontuário não encontrado." });
-      if (resultado.erro === "aguardando") return reply.status(409).send(AGUARDANDO_CONCLUSAO_ALUNO);
       if (resultado.erro === 409) {
         return recusar(reply, 409, "Prontuário não está aguardando assinatura", "NAO_AGUARDANDO");
       }
@@ -927,7 +918,6 @@ export const prontuariosRoutes: FastifyPluginAsync = async (app) => {
       if (!pront) return { erro: 404 as const };
       if (pront.status.toUpperCase() !== "ENVIADO") return { erro: 409 as const };
       if (pront.professorSupervisorId !== professor.id) return { erro: 403 as const };
-      if (!professorPodeAssinarOuDevolver(pront.status, pront.desfechoEnvio)) return { erro: "nao_aplicavel" as const };
 
       const agoraMs = Date.now();
       const agora = new Date(agoraMs).toISOString();
@@ -957,7 +947,6 @@ export const prontuariosRoutes: FastifyPluginAsync = async (app) => {
 
     if ("erro" in resultado) {
       if (resultado.erro === 404) return reply.status(404).send({ message: "Prontuário não encontrado." });
-      if (resultado.erro === "nao_aplicavel") return reply.status(400).send(DEVOLUCAO_NAO_APLICAVEL);
       if (resultado.erro === 409) {
         return recusar(reply, 409, "Prontuário não está aguardando revisão", "NAO_AGUARDANDO");
       }
@@ -993,7 +982,7 @@ export const prontuariosRoutes: FastifyPluginAsync = async (app) => {
         professor.id,
         id,
         "comentario-professor",
-        JSON.stringify({ comentario, desfecho: desfechoDoEnvio(pront.desfechoEnvio) }),
+        JSON.stringify({ comentario }),
       ]);
       if (partes) {
         await notificar(

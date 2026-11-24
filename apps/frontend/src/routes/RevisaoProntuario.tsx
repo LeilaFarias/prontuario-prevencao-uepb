@@ -91,8 +91,6 @@ function ConteudoRevisao({ prontuario, onAtualizar }: ConteudoProps) {
   const nascimento = prontuario.pacienteDataNascimento ?? secoes.dadosPessoais.dataNascimento;
   const idade = nascimento ? formatarIdade(nascimento) : "";
   const aguardando = prontuario.status.toUpperCase() === "ENVIADO";
-  const desfecho = (prontuario.secoes.conclusao as { tipoDesfecho?: string } | undefined)?.tipoDesfecho;
-  const aguardandoConclusao = aguardando && desfecho === "nao_finalizado";
   const bloqueado = !podeAgir || offline;
   const nomeProfessor = getSession()?.user.nome ?? "";
   const procedimentosPendentes = secoes.procedimentos.itens.length;
@@ -181,12 +179,6 @@ function ConteudoRevisao({ prontuario, onAtualizar }: ConteudoProps) {
           </div>
         </section>
 
-        {aguardandoConclusao && (
-          <div role="status" className="rounded-card border border-sync/30 bg-sync-tint p-3 text-[12.5px] text-sync">
-            <p className="mt-1">O aluno ainda está trabalhando neste prontuário. Você poderá revisar e assinar quando ele marcar como Concluído ou Encaminhamento.</p>
-          </div>
-        )}
-
         {aguardando && !ehSupervisor && (
           <div role="note" className="banner-erro flex items-start gap-2">
             <AlertTriangle size={16} className="mt-0.5 shrink-0" aria-hidden="true" />
@@ -213,7 +205,7 @@ function ConteudoRevisao({ prontuario, onAtualizar }: ConteudoProps) {
             Próxima
           </button>
         </div>
-        {aguardando && !aguardandoConclusao ? (
+        {aguardando ? (
           <>
             {offline && podeAgir && (
               <p role="status" className="mb-2 flex items-center gap-1.5 text-[12px] text-ink-soft">

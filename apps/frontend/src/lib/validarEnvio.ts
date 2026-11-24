@@ -227,13 +227,11 @@ conclusao: (c) => {
 
   if (
     v.tipoDesfecho !== "concluido" &&
-    v.tipoDesfecho !== "encaminhado" &&
-    v.tipoDesfecho !== "nao_finalizado"
+    v.tipoDesfecho !== "encaminhado"
   ) {
     return "Falta: desfecho";
   }
 
-  if (v.tipoDesfecho === "nao_finalizado") return null;
 
   const faltas: string[] = [];
 

@@ -1,14 +1,12 @@
 import { randomUUID } from "node:crypto";
 import { TIPOS_DESFECHO, type ResultadoEnvio } from "@prontuario/shared";
 import { executar, uma, type Executor } from "../db";
-import { aguardandoConclusao } from "./acesso";
 
 interface ProntuarioEnvioRow {
   id: string;
   status: string;
   pacienteNome: string;
   pacienteDataNascimento: string | null;
-  desfechoEnvio: string | null;
 }
 
 interface ProfessorRow {
@@ -42,14 +40,13 @@ export function buscarDuplicado(
 export async function enviarProntuario(db: Executor, prontuarioId: string, alunoId: string): Promise<ResultadoEnvio> {
   const pront = await uma<ProntuarioEnvioRow>(
     db,
-    `SELECT "id", "status", "pacienteNome", "pacienteDataNascimento", "desfechoEnvio"
+    `SELECT "id", "status", "pacienteNome", "pacienteDataNascimento"
      FROM "Prontuario" WHERE "id" = $1 AND "alunoTitularId" = $2 AND "descartadoEm" IS NULL
      FOR UPDATE`,
     [prontuarioId, alunoId],
   );
   if (!pront) return { ok: false, erro: "nao_encontrado" };
-  const reenvio = aguardandoConclusao(pront.status, pront.desfechoEnvio);
-  if (pront.status !== "EM_ANDAMENTO" && pront.status !== "DEVOLVIDO" && !reenvio) {
+  if (pront.status !== "EM_ANDAMENTO" && pront.status !== "DEVOLVIDO") {
     return { ok: false, erro: "ja_enviado" };
   }
 
@@ -105,7 +102,7 @@ export async function enviarProntuario(db: Executor, prontuarioId: string, aluno
   await executar(
     db,
     `INSERT INTO "AuditLog" ("id", "usuarioId", "prontuarioId", "acao", "detalhe") VALUES ($1, $2, $3, $4, $5)`,
-    [randomUUID(), alunoId, pront.id, reenvio ? "prontuario-reenviado" : "prontuario-enviado", JSON.stringify({ desfecho })],
+    [randomUUID(), alunoId, pront.id, "prontuario-enviado", JSON.stringify({ desfecho })],
   );
 
   if (duplicado) await executar(db, `UPDATE "Prontuario" SET "atualizadoEm" = $1 WHERE "id" = $2`, [agora, duplicado.id]);

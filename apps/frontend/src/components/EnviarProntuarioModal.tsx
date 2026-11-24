@@ -164,7 +164,7 @@ export default function EnviarProntuarioModal({
         onClose={onClose}
         centralizado
         title="Ficha enviada!"
-        subtitle={conclusao?.tipoDesfecho === "nao_finalizado" ? `${fase.professorNome ? `A ${fase.professorNome}` : "O professor"} recebeu o prontuário. Ele poderá visualizar e comentar enquanto você continua a sessão.` : `${fase.professorNome ? `A ${fase.professorNome}` : "O professor"} recebeu o prontuário e vai revisar.`}
+        subtitle={`${fase.professorNome ? `A ${fase.professorNome}` : "O professor"} recebeu o prontuário e vai revisar.`}
         icone={
           <Icone tom="primary">
             <Check size={30} />
@@ -180,9 +180,7 @@ export default function EnviarProntuarioModal({
             ]}
           />
           <p className="text-[12px] text-ink-faint">
-            {conclusao?.tipoDesfecho === "nao_finalizado"
-              ? "Você pode continuar editando o prontuário e enviá-lo novamente ao professor após concluir a sessão."
-              : "Enquanto a ficha está em revisão, você pode consultá-la mas não editá-la. Se precisar alterar algo, peça liberação de acesso."}
+            Enquanto a ficha está em revisão, você pode consultá-la mas não editá-la. Se precisar alterar algo, peça liberação de acesso.
           </p>
           <button type="button" className="btn-primary" onClick={onVoltarParaLista}>
             Voltar para meus prontuários

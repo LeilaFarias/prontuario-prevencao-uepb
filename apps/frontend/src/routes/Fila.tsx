@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useState, type KeyboardEvent } from "react";
 import { useNavigate } from "react-router-dom";
-import { AlertCircle, AlertTriangle, Check, Clock, RotateCcw } from "lucide-react";
+import { AlertCircle, AlertTriangle, Check, RotateCcw } from "lucide-react";
 import type { AbaFila, FilaRevisaoResponse, FiltroFila, ItemFilaRevisao } from "@prontuario/shared";
 import { ApiError, api } from "../lib/api";
 import { getSession } from "../lib/session";
@@ -114,12 +114,7 @@ function CardFila({
           <div className="break-words text-[14.5px] font-semibold leading-snug text-ink">{item.pacienteNome}</div>
           {idade !== null && <div className="mt-0.5 text-[12px] text-ink-soft">{idade} anos</div>}
         </div>
-        {item.aguardandoConclusao ? (
-          <span className="inline-flex shrink-0 items-center gap-1 rounded-pill bg-sync-tint px-2.5 py-1 text-[11px] font-semibold text-sync">
-            <Clock size={10} aria-hidden="true" />
-            Aguardando conclusão do aluno
-          </span>
-        ) : duplicado ? (
+        {duplicado ? (
           <span className="inline-flex shrink-0 items-center gap-1 rounded-pill bg-alt-tint px-2.5 py-1 text-[11px] font-semibold text-alt">
             <AlertTriangle size={10} aria-hidden="true" />
             Possível duplicidade

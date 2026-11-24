@@ -258,7 +258,7 @@ async function executarFlush(): Promise<void> {
       for (const op of lote) {
         if (retidos.has(op.prontuarioId)) continue;
         const p = await getPront(op.prontuarioId);
-        if (p && (p.status === "enviado" && p.desfechoEnvio !== "nao_finalizado" || p.status === "assinado") && !acessoVigente(p, op.ts)) continue;
+        if (p && (p.status === "enviado" || p.status === "assinado") && !acessoVigente(p, op.ts)) continue;
         const pronta = await prepararParaEnvio(op, chave);
         if (pronta) enviar.push(pronta);
         else retidos.add(op.prontuarioId);

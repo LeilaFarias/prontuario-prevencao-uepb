@@ -55,11 +55,7 @@ async function request<T>(method: string, path: string, body?: unknown, opcoes?:
 
 
   if (!res.ok) {
-    const mensagens: Record<string, string> = {
-      AGUARDANDO_CONCLUSAO_ALUNO: "Não é possível assinar agora. O aluno ainda não concluiu esta sessão.",
-      DEVOLUCAO_NAO_APLICAVEL: "Não é possível devolver um prontuário não finalizado.",
-    };
-    throw new ApiError(mensagens[data?.codigo] ?? (data?.message ?? data?.error) ?? "Algo deu errado. Tente novamente.", res.status, data?.codigo);
+    throw new ApiError((data?.message ?? data?.error) ?? "Algo deu errado. Tente novamente.", res.status, data?.codigo);
   }
   return data as T;
 }

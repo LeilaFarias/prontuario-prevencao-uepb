@@ -326,8 +326,7 @@ export default function Prontuario() {
   const atual = (vivo ?? pront) as LocalProntuario;
   const nomeExibido = (nomeAoVivo ?? pront.pacienteNome).trim();
   const status = atual.status;
-  const aguardandoConclusaoAluno = status === "enviado" && atual.desfechoEnvio === "nao_finalizado";
-  const vigente = acessoVigente(atual) || aguardandoConclusaoAluno;
+  const vigente = acessoVigente(atual);
   const pendenteAcesso = pedidoPendente(atual);
 
   const professorDigitado = String(
@@ -409,7 +408,7 @@ export default function Prontuario() {
   }
 
   const podeEditar =
-    vigente && (status === "em_andamento" || status === "devolvido" || status === "assinado" || (status === "enviado" && atual.desfechoEnvio === "nao_finalizado"));
+    vigente && (status === "em_andamento" || status === "devolvido" || status === "assinado");
   const somenteLeitura = !podeEditar || modoLeitura;
 
   const quandoAssinado = formatarDataHoraCompleta(atual.assinadoEm);
@@ -422,12 +421,7 @@ export default function Prontuario() {
   const PILL = "inline-flex w-fit items-center gap-1.5 rounded-pill px-3 py-1 text-[12px] font-semibold";
 
   const bannerStatus =
-    status === "enviado" && atual.desfechoEnvio === "nao_finalizado" ? (
-      <div className="flex flex-col gap-1.5">
-        <span className={`${PILL} bg-sync-tint text-sync`}><Clock size={12} aria-hidden="true" />Não finalizado nesta sessão</span>
-        <p className="text-[12px] text-ink-soft">Este prontuário foi enviado como 'não finalizado'. Você pode continuar editando. O professor pode visualizar e comentar, mas só poderá assinar quando você marcar como Concluído ou Encaminhamento.</p>
-      </div>
-    ) : status === "enviado" ? (
+    status === "enviado" ? (
       <div className="flex flex-col gap-1.5">
         <span className={`${PILL} bg-sync-tint text-sync`}>
           <Clock size={12} aria-hidden="true" />
@@ -621,7 +615,7 @@ export default function Prontuario() {
             Próxima
           </button>
         </div>
-        {!somenteLeitura && (status === "em_andamento" || (status === "enviado" && atual.desfechoEnvio === "nao_finalizado")) && (
+        {!somenteLeitura && status === "em_andamento" && (
           <button type="button" className="btn-primary" onClick={() => void abrirEnvio()}>
             <Send size={16} aria-hidden="true" />
             Enviar ao professor

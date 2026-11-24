@@ -191,17 +191,27 @@ export const fotoAnexoSchema = z.object({
 
 export type FotoAnexo = z.infer<typeof fotoAnexoSchema>;
 
-export const TIPOS_DESFECHO = ["concluido", "encaminhado", "nao_finalizado"] as const;
+export const TIPOS_DESFECHO = ["concluido", "encaminhado"] as const;
 
 export type TipoDesfecho = (typeof TIPOS_DESFECHO)[number];
 
-export const conclusaoSchema = z.object({
+const conclusaoBaseSchema = z.object({
   tipoDesfecho: z.enum(TIPOS_DESFECHO).nullable().default(null),
   concluidoEm: z.string().default(""),
   encaminhamentoEm: z.string().default(""),
   encaminhamentoPara: z.string().default(""),
   fotos: z.array(fotoAnexoSchema).default([]),
 });
+
+export const conclusaoSchema = z.preprocess((valor) => {
+  if (valor && typeof valor === "object" && !Array.isArray(valor)) {
+    const registro = valor as Record<string, unknown>;
+    if (registro.tipoDesfecho === "nao_finalizado") {
+      return { ...registro, tipoDesfecho: null };
+    }
+  }
+  return valor;
+}, conclusaoBaseSchema);
 
 export type Conclusao = z.infer<typeof conclusaoSchema>;
 
