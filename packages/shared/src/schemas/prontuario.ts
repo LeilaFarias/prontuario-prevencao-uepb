@@ -98,7 +98,6 @@ const estruturaExameSchema = z.enum(["normal", "alteracao"]).nullable().default(
 export const examesSchema = z.object({
   extraOral: z
     .object({
-      naoAvaliado: z.boolean().default(false),
       locomocao: z.string().default(""),
       cicatrizesEdemas: z.string().default(""),
       aberturaAnormal: z.boolean().nullable().default(null),
@@ -108,7 +107,6 @@ export const examesSchema = z.object({
 
   intraOral: z
     .object({
-      naoAvaliado: z.boolean().default(false),
       labios: estruturaExameSchema,
       freioLabial: estruturaExameSchema,
       gengiva: estruturaExameSchema,
@@ -174,7 +172,6 @@ export const procedimentoItemSchema = z.object({
 export type ProcedimentoItem = z.infer<typeof procedimentoItemSchema>;
 
 export const procedimentosSchema = z.object({
-  naoAvaliado: z.boolean().default(false),
   itens: z.array(procedimentoItemSchema).default([]),
 });
 
@@ -227,7 +224,6 @@ export type SessaoPlano = z.infer<typeof sessaoPlanoSchema>;
 
 // Sem UUID no default do schema (ele roda em todo parse). Os 3 slots iniciais nascem em vazioPlano().
 export const planoSchema = z.object({
-  naoAvaliado: z.boolean().default(false),
   sessoes: z.array(sessaoPlanoSchema).default([]),
 });
 
@@ -256,7 +252,6 @@ const gerarIdPadrao = (): string => {
 };
 
 export const vazioPlano = (gerarId: () => string = gerarIdPadrao): Plano => ({
-  naoAvaliado: false,
   sessoes: [
     { id: gerarId(), numero: 1, descricao: "" },
     { id: gerarId(), numero: 2, descricao: "" },
@@ -282,7 +277,6 @@ export const sangramentoDentesSchema = z.record(z.string(), denteSangramentoSche
 export const registroSangramentoSchema = z.object({
   id: z.string(),
   data: z.string().default(""),
-  naoAvaliado: z.boolean().default(false),
   dentes: sangramentoDentesSchema.default({}),
 });
 
@@ -303,7 +297,6 @@ const ausenteIHOS = z.boolean().default(false);
 export const registroIHOSSchema = z.object({
   id: z.string(),
   data: z.string().default(""),
-  naoAvaliado: z.boolean().default(false),
   dentes: z
     .object({
       V11: notaIHOS,
@@ -353,7 +346,6 @@ const calculoManualCEODSchema = z.object({
 export const registroCPODSchema = z.object({
   id: z.string(),
   data: z.string().default(""),
-  naoAvaliado: z.boolean().default(false),
   dentes: z.record(z.string(), z.string()).default({}),
   cpodManual: calculoManualCPODSchema.default({}),
   ceodManual: calculoManualCEODSchema.default({}),
