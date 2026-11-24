@@ -9,7 +9,6 @@ import { useSyncStatus } from "../../hooks/useSyncStatus";
 import { uuid } from "../../lib/uuid";
 import CampoTexto from "./CampoTexto";
 import GrupoFicha from "./GrupoFicha";
-import StatusExame from "./StatusExame";
 
 function IndicadorSalvamento({ salvando, jaSalvou }: { salvando: boolean; jaSalvou: boolean }) {
   const { pendentes, online } = useSyncStatus();
@@ -55,7 +54,6 @@ function FormularioPlano({ prontuario }: { prontuario: LocalProntuario }) {
   );
 
   const sessoes: SessaoPlano[] = useWatch({ control, name: "sessoes" });
-  const naoAvaliado = useWatch({ control, name: "naoAvaliado" });
 
   const adicionarSessao = () => {
     const nova: SessaoPlano = { id: uuid(), numero: sessoes.length + 1, descricao: "" };
@@ -67,7 +65,7 @@ function FormularioPlano({ prontuario }: { prontuario: LocalProntuario }) {
     setValue("sessoes", novas);
   };
 
-  const podeRemover = !somenteLeitura && !naoAvaliado && sessoes.length > 1;
+  const podeRemover = !somenteLeitura && sessoes.length > 1;
 
   return (
     <div className="flex flex-col gap-3 pb-2">
@@ -79,20 +77,7 @@ function FormularioPlano({ prontuario }: { prontuario: LocalProntuario }) {
           Descreva o plano executado hoje e o que será feito no próximo retorno.
         </p>
 
-        <div className="flex justify-end">
-          <StatusExame
-            naoAvaliado={naoAvaliado}
-            disabled={somenteLeitura}
-            onChange={(v) => {
-              setValue("naoAvaliado", v, {
-                shouldDirty: true,
-                shouldTouch: true,
-              });
-            }}
-          />
-        </div>
-
-        {!naoAvaliado && (
+        {(
           <>
             {sessoes.map((sessao, idx) => (
               <div
@@ -135,7 +120,7 @@ function FormularioPlano({ prontuario }: { prontuario: LocalProntuario }) {
                       onChange={field.onChange}
                       placeholder="Descreva as ações previstas para esta sessão"
                       multiline
-                      disabled={somenteLeitura || naoAvaliado}
+                      disabled={somenteLeitura}
                       permiteMarcador={false}
                     />
                   )}

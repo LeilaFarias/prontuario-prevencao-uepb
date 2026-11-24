@@ -31,7 +31,7 @@ type ChaveTexto =
 
 type ChaveEscolaridade = "responsavelEscolaridade" | "paiEscolaridade" | "maeEscolaridade";
 
-type ExtraTexto = Partial<Pick<CampoTextoProps, "placeholder" | "inputMode" | "autoComplete" | "maxLength" | "type">>;
+type ExtraTexto = Partial<Pick<CampoTextoProps, "placeholder" | "inputMode" | "autoComplete" | "maxLength" | "type" | "permiteMarcador">>;
 
 const OPCOES_SEXO = [
   { value: "feminino", label: "Feminino" },

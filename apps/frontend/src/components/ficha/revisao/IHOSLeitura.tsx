@@ -37,10 +37,6 @@ function RegistroLeitura({ registro, indice }: { registro: RegistroIHOSDados; in
         <h3 className="font-display text-[15px] font-semibold text-ink">Registro {indice + 1}</h3>
         <p className="mt-0.5 text-[11.5px] text-ink-faint">{dataOuVazio(registro.data) || "Sem data"}</p>
       </div>
-
-      {registro.naoAvaliado ? (
-        <p className="rounded-field border border-line-soft bg-paper px-3 py-3 text-[13px] font-medium text-ink-soft">Não avaliado nesta sessão</p>
-      ) : <>
       <div>
         {DENTES_IHOS.map(({ chave, label, descricao }) => (
           <EscalaIHOS
@@ -77,7 +73,6 @@ function RegistroLeitura({ registro, indice }: { registro: RegistroIHOSDados; in
         )}
         <p className="mt-1 text-[11px] text-ink-faint">IHOS = soma das notas ÷ dentes presentes examinados</p>
       </div>
-      </>}
     </section>
   );
 }

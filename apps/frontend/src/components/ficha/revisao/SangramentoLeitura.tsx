@@ -35,10 +35,6 @@ function RegistroLeitura({ registro, indice }: { registro: RegistroSangramentoDa
         <h3 className="font-display text-[15px] font-semibold text-ink">Registro {indice + 1}</h3>
         <p className="mt-0.5 text-[11.5px] text-ink-faint">{dataOuVazio(registro.data) || "Sem data"}</p>
       </div>
-
-      {registro.naoAvaliado ? (
-        <p className="rounded-field border border-line-soft bg-paper px-3 py-3 text-[13px] font-medium text-ink-soft">Não avaliado nesta sessão</p>
-      ) : <>
       <div className="mb-4 flex flex-wrap items-center gap-x-3 gap-y-1.5 text-[11.5px] text-ink-soft">
         <span className="flex items-center gap-2">
           <Swatch valor="0" sangrando={false} />
@@ -69,7 +65,6 @@ function RegistroLeitura({ registro, indice }: { registro: RegistroSangramentoDa
         <p className="mt-1 text-[12px] font-semibold text-ink-soft">{resultado.interpretacao}</p>
         <p className="mt-1 text-[11px] text-ink-faint">SG = (faces sangrantes × 100) ÷ (dentes presentes × 2)</p>
       </div>
-      </>}
     </section>
   );
 }

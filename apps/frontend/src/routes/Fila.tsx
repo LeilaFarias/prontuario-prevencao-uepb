@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useState, type KeyboardEvent } from "react";
 import { useNavigate } from "react-router-dom";
-import { AlertCircle, AlertTriangle, Check, RotateCcw } from "lucide-react";
+import { AlertCircle, AlertTriangle, Check, Clock, RotateCcw } from "lucide-react";
 import type { AbaFila, FilaRevisaoResponse, FiltroFila, ItemFilaRevisao } from "@prontuario/shared";
 import { ApiError, api } from "../lib/api";
 import { getSession } from "../lib/session";

@@ -4,15 +4,12 @@ interface Props {
   pendencias: Pendencia[];
   onIrParaSecao: (secaoId: Pendencia["secaoId"]) => void;
   onAplicarMarcador: (pendencia: Pendencia, valor: string) => void;
-  onNaoAvaliado: (pendencia: Pendencia) => void;
   onCancelar: () => void;
 }
 
 const MARCADORES = ["Não informado", "NDN", "Não se aplica"] as const;
 
-export default function PendentesModal({ pendencias, onIrParaSecao, onAplicarMarcador, onNaoAvaliado, onCancelar }: Props) {
-  const permiteNaoAvaliado = (id: Pendencia["secaoId"]) =>
-    id === "exames" || id === "plano-preventivo" || id === "procedimentos";
+export default function PendentesModal({ pendencias, onIrParaSecao, onAplicarMarcador, onCancelar }: Props) {
 
   return (
     <div className="flex flex-col gap-3">
@@ -28,11 +25,6 @@ export default function PendentesModal({ pendencias, onIrParaSecao, onAplicarMar
                 {valor}
               </button>
             ))}
-            {permiteNaoAvaliado(pendencia.secaoId) && (
-              <button type="button" onClick={() => onNaoAvaliado(pendencia)} className="rounded-pill border border-line px-2.5 py-1.5 text-[11px] font-medium text-ink-soft">
-                Não avaliado nesta sessão
-              </button>
-            )}
           </div>
         </section>
       ))}

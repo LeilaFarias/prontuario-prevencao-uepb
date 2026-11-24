@@ -9,7 +9,6 @@ export default function PlanoLeitura({ dados }: { dados: Plano }) {
   return (
     <div className="flex flex-col gap-3 pb-2">
       <GrupoFicha titulo="Plano da dupla" subtitulo="Plano de ações preventivas e de mínima intervenção.">
-        {dados.naoAvaliado ? <p className="rounded-field border border-line-soft bg-paper px-3 py-3 text-[13px] font-medium text-ink-soft">Não avaliado nesta sessão</p> : <>
         {sessoes.length === 0 ? (
           <VazioLeitura texto="A dupla não registrou sessões no plano." />
         ) : (
@@ -17,7 +16,6 @@ export default function PlanoLeitura({ dados }: { dados: Plano }) {
             <CampoLeitura key={s.id || i} label={`${s.numero}ª sessão`} valor={s.descricao} multiline />
           ))
         )}
-        </>}
       </GrupoFicha>
     </div>
   );

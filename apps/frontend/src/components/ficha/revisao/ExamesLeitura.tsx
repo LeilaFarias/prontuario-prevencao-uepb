@@ -1,7 +1,6 @@
 import type { Exames } from "@prontuario/shared";
 import CampoLeitura from "../CampoLeitura";
 import GrupoFicha from "../GrupoFicha";
-import StatusExame from "../StatusExame";
 
 const ESTRUTURAS = [
   { chave: "labios", label: "Lábios" },
@@ -30,20 +29,15 @@ export default function ExamesLeitura({ dados }: { dados: Exames }) {
   return (
     <div className="flex flex-col gap-3 pb-2">
       <GrupoFicha titulo="Exame extra oral">
-        {extraOral.naoAvaliado && <StatusExame naoAvaliado disabled />}
-        {!extraOral.naoAvaliado && <>
         <CampoLeitura label="Locomoção" valor={extraOral.locomocao} multiline />
         <CampoLeitura label="Cicatrizes, edemas, assimetrias, tumefações" valor={extraOral.cicatrizesEdemas} multiline />
         <CampoLeitura label="Abertura anormal da boca?" valor={extraOral.aberturaAnormal} />
         {extraOral.aberturaAnormal === true && (
           <CampoLeitura label="Observações" valor={extraOral.aberturaObservacao} multiline />
         )}
-        </>}
       </GrupoFicha>
 
       <GrupoFicha titulo="Exame intra oral">
-        {intraOral.naoAvaliado && <StatusExame naoAvaliado disabled />}
-        {!intraOral.naoAvaliado && <>
         <div className="rounded-field border border-line-soft bg-paper px-4 py-1.5">
           {ESTRUTURAS.map(({ chave, label }) => {
             const resultado = intraOral[chave];
@@ -64,7 +58,6 @@ export default function ExamesLeitura({ dados }: { dados: Exames }) {
           })}
         </div>
         <CampoLeitura label="Outras alterações" valor={intraOral.outrasAlteracoes} multiline />
-        </>}
       </GrupoFicha>
     </div>
   );

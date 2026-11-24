@@ -256,6 +256,7 @@ const gerarIdPadrao = (): string => {
 };
 
 export const vazioPlano = (gerarId: () => string = gerarIdPadrao): Plano => ({
+  naoAvaliado: false,
   sessoes: [
     { id: gerarId(), numero: 1, descricao: "" },
     { id: gerarId(), numero: 2, descricao: "" },

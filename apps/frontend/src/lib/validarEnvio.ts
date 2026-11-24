@@ -130,7 +130,6 @@ const VERIFICADORES: Partial<Record<SecaoId, Verificador>> = {
     const intra = exame.intraOral ?? {};
     const faltas: string[] = [];
 
-    if (!(extra as { naoAvaliado?: boolean }).naoAvaliado) {
       if (!preenchido((extra as { locomocao?: string }).locomocao)) faltas.push("locomoção");
       if (!preenchido((extra as { cicatrizesEdemas?: string }).cicatrizesEdemas)) faltas.push("cicatrizes, edemas, assimetrias e tumefações");
       if ((extra as { aberturaAnormal?: boolean | null }).aberturaAnormal == null) faltas.push("abertura anormal da boca");
@@ -138,9 +137,7 @@ const VERIFICADORES: Partial<Record<SecaoId, Verificador>> = {
           !preenchido((extra as { aberturaObservacao?: string }).aberturaObservacao)) {
         faltas.push("observações da abertura anormal");
       }
-    }
 
-    if (!(intra as { naoAvaliado?: boolean }).naoAvaliado) {
       const estruturas = [
         ["labios", "lábios"],
         ["freioLabial", "freio labial"],
@@ -160,7 +157,6 @@ const VERIFICADORES: Partial<Record<SecaoId, Verificador>> = {
         .filter(([chave]) => !preenchido(((intra as { observacoes?: Record<string, string> }).observacoes ?? {})[chave]))
         .map(([, nome]) => nome);
       if (semObservacao.length > 0) faltas.push(`observações das alterações: ${semObservacao.join(", ")}`);
-    }
 
     return falta(faltas);
   },
@@ -168,7 +164,7 @@ const VERIFICADORES: Partial<Record<SecaoId, Verificador>> = {
   sangramento: (c) => {
     const registros = lista<Sangramento["registros"][number]>(ler<Sangramento>(c).registros);
     if (registros.length === 0) return "Nenhum registro de sangramento";
-    if (!registros.some((r) => r.naoAvaliado === true || preenchido(r.data))) return "Registro de sangramento sem data";
+    if (!registros.some((r) => preenchido(r.data))) return "Registro de sangramento sem data";
     return null;
   },
 
@@ -176,7 +172,7 @@ const VERIFICADORES: Partial<Record<SecaoId, Verificador>> = {
     const registros = lista<IHOS["registros"][number]>(ler<IHOS>(c).registros);
     if (registros.length === 0) return "Nenhum registro de IHOS";
     const avaliados = (r: Partial<IHOS["registros"][number]>): number =>
-      r.naoAvaliado === true ? 6 : DENTES_IHOS.filter(({ chave }) => {
+      DENTES_IHOS.filter(({ chave }) => {
         if (r.ausentes?.[chave] === true) return true;
         const nota = r.dentes?.[chave];
         return nota !== null && nota !== undefined;
@@ -191,7 +187,7 @@ const VERIFICADORES: Partial<Record<SecaoId, Verificador>> = {
     if (registros.length === 0) return "Nenhum registro de CPO-D/ceo-d";
 
     const faltasDe = (r: Partial<CPOD["registros"][number]>): string[] => {
-      if (r.naoAvaliado === true) return [];
+
       const faltas: string[] = [];
       if (!preenchido(r.data)) faltas.push("data");
       if (!Object.values(r.dentes ?? {}).some((codigo) => preenchido(codigo))) faltas.push("código em ao menos 1 dente");
@@ -209,13 +205,11 @@ const VERIFICADORES: Partial<Record<SecaoId, Verificador>> = {
   },
 
   "plano-preventivo": (c) => {
-    if (ler<Plano>(c).naoAvaliado === true) return null;
     const sessoes = lista<Plano["sessoes"][number]>(ler<Plano>(c).sessoes);
     return preenchido(sessoes[0]?.descricao) ? null : "Falta: descrição da 1ª sessão";
   },
 
   procedimentos: (c) => {
-    if (ler<Procedimentos>(c).naoAvaliado === true) return null;
     const itens = lista<Procedimentos["itens"][number]>(ler<Procedimentos>(c).itens);
     if (itens.length === 0) return "Nenhum procedimento registrado";
     if (!itens.some((i) => preenchido(i.data) && preenchido(i.descricao))) return "Procedimento sem data ou descrição";
