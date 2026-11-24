@@ -196,6 +196,7 @@ export async function aplicarRemoto(remoto: ProntuarioRemoto): Promise<boolean> 
         criadoEm: paraTimestamp(remoto.criadoEm),
         atualizadoEm: remotoEm,
         sincronizado: true,
+        conteudoBaixado: true,
         alunoTitularId: remoto.alunoTitularId,
         professorSupervisorId: remoto.professorSupervisorId ?? undefined,
         professorSupervisorNome: remoto.professorSupervisorNome ?? undefined,
@@ -235,7 +236,7 @@ export async function aplicarRemoto(remoto: ProntuarioRemoto): Promise<boolean> 
       return true;
     }
 
-    if (remotoEm <= local.atualizadoEm && !acessoMudou && !local.secoesPendentes) return false;
+    if (remotoEm <= local.atualizadoEm && !acessoMudou && !local.secoesPendentes && local.conteudoBaixado) return false;
 
     await db.prontuarios.put({
       ...local,
@@ -251,6 +252,7 @@ export async function aplicarRemoto(remoto: ProntuarioRemoto): Promise<boolean> 
       secoesPendentes: false,
       atualizadoEm: remotoEm > 0 ? remotoEm : local.atualizadoEm,
       sincronizado: true,
+      conteudoBaixado: true,
       alunoTitularId: remoto.alunoTitularId ?? local.alunoTitularId,
       professorSupervisorId: remoto.professorSupervisorId ?? undefined,
       professorSupervisorNome: remoto.professorSupervisorNome ?? undefined,
@@ -263,6 +265,7 @@ async function precisaAtualizar(resumo: ProntuarioRemotoResumo): Promise<boolean
   const local = await db.prontuarios.get(resumo.id);
   if (!local) return true;
   if (local.secoesPendentes && getChave()) return true;
+  if (local.sincronizado && !local.conteudoBaixado && !local.descartadoEm) return true;
   return paraTimestamp(resumo.atualizadoEm) > local.atualizadoEm;
 }
 

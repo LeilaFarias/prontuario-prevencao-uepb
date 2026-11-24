@@ -471,30 +471,6 @@ export const prontuariosRoutes: FastifyPluginAsync = async (app) => {
 
     const podeVerConteudo = !alunoUser || estado.acessoVigente;
 
-    if (!podeVerConteudo) {
-      return {
-        id: linha.id,
-        pacienteNome: linha.pacienteNome,
-        status: linha.status,
-        criadoEm: linha.criadoEm,
-        atualizadoEm: linha.atualizadoEm,
-        alunoTitularId: linha.alunoTitularId,
-        bloqueado: true,
-        acessoExpiraEm: revisao.acessoExpiraEm,
-        acessoSolicitadoEm: revisao.acessoSolicitadoEm,
-        acessoRevogadoEm: revisao.acessoRevogadoEm,
-        acessoRecusadoEm: revisao.acessoRecusadoEm,
-        professorSupervisorId: linha.professorSupervisorId,
-        professorSupervisorNome,
-        sinalizadoDuplicidade: linha.sinalizadoDuplicidade,
-        duplicidadeEmAnalise: linha.duplicidadeEmAnalise,
-        transferidoDe: linha.transferidoDe,
-        transferidoPara: linha.transferidoPara,
-        transferidoParaNome: await nomeDuplaDestino(db, linha.transferidoPara),
-        secoes: {},
-      };
-    }
-
     const ehSupervisor = !alunoUser && linha.professorSupervisorId === req.user.sub;
     const podeAgir = ehSupervisor && linha.status.toUpperCase() === "ENVIADO";
 
@@ -506,7 +482,7 @@ export const prontuariosRoutes: FastifyPluginAsync = async (app) => {
       auditar(
         db,
         req.user.sub,
-        "prontuario-lido",
+        podeVerConteudo ? "prontuario-lido" : "prontuario-baixado-sem-acesso",
         { prontuarioId: linha.id, status: linha.status, perfil: req.user.perfil },
         linha.id,
       ),
@@ -517,7 +493,7 @@ export const prontuariosRoutes: FastifyPluginAsync = async (app) => {
       ...linha,
       ...revisao,
       ...estado,
-      bloqueado: false,
+      bloqueado: !podeVerConteudo,
       professorSupervisorNome,
       transferidoParaNome,
       secoes,

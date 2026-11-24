@@ -21,6 +21,7 @@ export interface LocalProntuario {
   criadoEm: number;
   atualizadoEm: number;
   sincronizado: boolean;
+  conteudoBaixado?: boolean;
   alunoTitularId?: string;
   erroEnvio?: "professor_nao_encontrado" | "falha";
   assinadoEm?: string;
