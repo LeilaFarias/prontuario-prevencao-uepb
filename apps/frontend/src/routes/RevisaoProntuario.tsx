@@ -32,6 +32,7 @@ import AssinarModal from "../components/revisao/AssinarModal";
 import DevolverModal from "../components/revisao/DevolverModal";
 import StatusBanner from "../components/revisao/StatusBanner";
 import { api, ApiError } from "../lib/api";
+import Skeleton from "../components/Skeleton";
 import Topbar from "../components/Topbar";
 import { useProntuario, type ProntuarioRevisao } from "../hooks/useProntuario";
 import { temDivergenciaCPOD } from "../lib/comparacaoCPOD";
@@ -271,8 +272,18 @@ export default function RevisaoProntuario() {
 
   if (estado.situacao === "carregando") {
     return (
-      <div className="flex flex-1 flex-col">
-        <Topbar titulo="Carregando…" tituloClassName="text-[18px]" onVoltar={() => navigate("/fila")} />
+      <div className="flex flex-1 flex-col" aria-busy="true" aria-label="Carregando prontuário">
+        <Topbar titulo="Prontuário" tituloClassName="text-[18px]" onVoltar={() => navigate("/fila")} />
+        <div className="flex gap-2 overflow-hidden px-5 pb-3 pt-1">
+          {[0, 1, 2, 3].map((i) => (
+            <Skeleton key={i} className="h-8 w-24 shrink-0 rounded-pill" />
+          ))}
+        </div>
+        <div className="flex flex-col gap-3 px-5 pt-2">
+          <Skeleton className="h-24 w-full rounded-card" />
+          <Skeleton className="h-28 w-full rounded-card" />
+          <Skeleton className="h-40 w-full rounded-card" />
+        </div>
       </div>
     );
   }

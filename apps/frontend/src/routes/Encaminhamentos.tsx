@@ -2,6 +2,7 @@ import { useState } from "react";
 import { useNavigate } from "react-router-dom";
 import { ChevronRight, Send } from "lucide-react";
 import type { Encaminhamento } from "@prontuario/shared";
+import { SkeletonCardLista } from "../components/Skeleton";
 import TabBarProfessor from "../components/TabBarProfessor";
 import { useEncaminhamentos, type FiltroEncaminhamentos } from "../hooks/useEncaminhamentos";
 import { formatarDataBR } from "../lib/data";
@@ -92,7 +93,15 @@ export default function Encaminhamentos() {
           ))}
         </div>
 
-        {carregando && <p className="my-auto text-center text-[13px] text-ink-soft">Carregando…</p>}
+        {carregando && (
+          <ul className="flex flex-col gap-2.5" aria-busy="true" aria-label="Carregando encaminhamentos">
+            {[0, 1, 2].map((i) => (
+              <li key={i}>
+                <SkeletonCardLista />
+              </li>
+            ))}
+          </ul>
+        )}
 
         {!carregando && erro && (
           <div className="flex flex-col gap-3">

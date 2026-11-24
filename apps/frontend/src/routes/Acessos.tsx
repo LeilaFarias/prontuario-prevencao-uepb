@@ -1,6 +1,7 @@
 import { useState, type ReactNode } from "react";
 import { Check, Clock } from "lucide-react";
 import { ACESSO_TEMPORARIO_HORAS, type AcessoPendente, type AcessoVigente } from "@prontuario/shared";
+import Skeleton from "../components/Skeleton";
 import TabBarProfessor from "../components/TabBarProfessor";
 import TimerAcesso from "../components/TimerAcesso";
 import { useAcessos } from "../hooks/useAcessos";
@@ -41,6 +42,31 @@ function Secao({
         <span className={`rounded-full px-2 py-0.5 text-[11px] font-bold ${classeBadge}`}>{total}</span>
       </h2>
       {total === 0 ? <p className="text-[12.5px] text-ink-soft">{vazio}</p> : <ul className="flex flex-col gap-2.5">{children}</ul>}
+    </section>
+  );
+}
+
+function SkeletonSecaoAcessos() {
+  return (
+    <section className="flex flex-col" aria-hidden="true">
+      <div className="mb-3 flex items-center gap-2">
+        <Skeleton className="h-4 w-36 rounded-md" />
+        <Skeleton className="h-5 w-6 rounded-full" />
+      </div>
+      <div className="flex flex-col gap-2.5">
+        {[0, 1].map((i) => (
+          <div key={i} className="flex flex-col gap-3 rounded-card border border-line bg-raised p-4">
+            <div className="flex items-start gap-3">
+              <Skeleton className="h-10 w-10 shrink-0 rounded-full" />
+              <div className="flex flex-1 flex-col gap-2 pt-1">
+                <Skeleton className="h-3.5 w-1/2 rounded-md" />
+                <Skeleton className="h-3 w-2/5 rounded-md" />
+              </div>
+            </div>
+            <Skeleton className="h-10 w-full rounded-lg" />
+          </div>
+        ))}
+      </div>
     </section>
   );
 }
@@ -88,6 +114,13 @@ export default function Acessos() {
       </header>
 
       <main className="flex flex-1 flex-col gap-6 px-5 pb-4 pt-4">
+        {estado.situacao === "carregando" && (
+          <div className="flex flex-col gap-6" aria-busy="true" aria-label="Carregando acessos">
+            <SkeletonSecaoAcessos />
+            <SkeletonSecaoAcessos />
+          </div>
+        )}
+
         {estado.situacao === "erro" && (
           <div className="flex flex-col gap-3">
             <p role="alert" className="banner-erro">

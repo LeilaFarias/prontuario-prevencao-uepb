@@ -4,6 +4,7 @@ import { AlertCircle, AlertTriangle, Check, Clock, RotateCcw } from "lucide-reac
 import type { AbaFila, FilaRevisaoResponse, FiltroFila, ItemFilaRevisao } from "@prontuario/shared";
 import { ApiError, api } from "../lib/api";
 import { getSession } from "../lib/session";
+import Skeleton, { SkeletonCardLista } from "../components/Skeleton";
 import TabBarProfessor from "../components/TabBarProfessor";
 import TransferirTitularidadeModal from "../components/TransferirTitularidadeModal";
 import { useIndicadorPacientes } from "../hooks/useIndicadorPacientes";
@@ -250,7 +251,11 @@ export default function Fila() {
         <div className="flex items-start justify-between gap-3">
           <div className="min-w-0">
             <h1 className="font-display text-[26px] font-semibold leading-[1.15] text-ink">Fila de revisão</h1>
-            <p className="mt-0.5 text-[12.5px] text-ink-soft">{subtitulo}</p>
+            {subtitulo ? (
+              <p className="mt-0.5 text-[12.5px] text-ink-soft">{subtitulo}</p>
+            ) : (
+              <Skeleton className="mt-1.5 h-3.5 w-40 rounded-md" />
+            )}
           </div>
         </div>
       </header>
@@ -309,6 +314,16 @@ export default function Fila() {
       )}
 
       <main className="flex flex-1 flex-col px-5 pb-4 pt-1">
+        {estado.situacao === "carregando" && (
+          <ul className="flex flex-col gap-2.5" aria-busy="true" aria-label="Carregando fila">
+            {[0, 1, 2].map((i) => (
+              <li key={i}>
+                <SkeletonCardLista />
+              </li>
+            ))}
+          </ul>
+        )}
+
         {estado.situacao === "erro" && (
           <div className="flex flex-col gap-3">
             <p role="alert" className="banner-erro">
