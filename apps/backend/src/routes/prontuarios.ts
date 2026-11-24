@@ -164,16 +164,14 @@ export const prontuariosRoutes: FastifyPluginAsync = async (app) => {
      LEFT JOIN "Usuario" pr ON pr."id" = p."professorSupervisorId"
      WHERE p."alunoTitularId" = $1 AND p."descartadoEm" IS NULL
      ORDER BY "atualizadoEm" DESC`;
-  const buscarUm = `SELECT ${COLUNAS}
-     FROM "Prontuario" p
-     JOIN "Usuario" u ON u."id" = p."alunoTitularId"
-     LEFT JOIN "Usuario" pr ON pr."id" = p."professorSupervisorId"
-     WHERE p."id" = $1 AND p."descartadoEm" IS NULL`;
-  const listarConclusoesDoProfessor = `SELECT p."id", p."pacienteNome", u."nome" AS "alunoNome", s."conteudo"
+  const listarEncaminhamentosDoProfessor = `SELECT p."id", p."pacienteNome", u."nome" AS "alunoNome", s."conteudo",
+            c."conteudo" AS "consentimento"
      FROM "Prontuario" p
      JOIN "Secao" s ON s."prontuarioId" = p."id" AND s."secaoId" = 'conclusao'
      JOIN "Usuario" u ON u."id" = p."alunoTitularId"
+     LEFT JOIN "Secao" c ON c."prontuarioId" = p."id" AND c."secaoId" = 'consentimento'
      WHERE p."professorSupervisorId" = $1 AND p."status" = 'ASSINADO' AND p."descartadoEm" IS NULL
+       AND s."conteudo"->>'tipoDesfecho' = 'encaminhado'
      ORDER BY p."atualizadoEm" DESC`;
   const selecionarFila = `SELECT p."id", p."pacienteNome", p."pacienteDataNascimento", p."sinalizadoDuplicidade", p."professorSupervisorId",
             p."alunoTitularId", ${ATUALIZADO_EM_EFETIVO} AS "atualizadoEm", u."nome" AS "alunoNome",
@@ -186,14 +184,27 @@ export const prontuariosRoutes: FastifyPluginAsync = async (app) => {
   const listarEnviados = `${selecionarFila}
      WHERE p."status" = 'ENVIADO' AND p."descartadoEm" IS NULL
      ORDER BY "atualizadoEm" DESC`;
+  const listarEnviadosDoProfessor = `${selecionarFila}
+     WHERE p."status" = 'ENVIADO' AND p."professorSupervisorId" = $1 AND p."descartadoEm" IS NULL
+     ORDER BY "atualizadoEm" DESC`;
+  const contarEnviados = `SELECT COUNT(*)::int AS "todos",
+            COUNT(*) FILTER (WHERE "professorSupervisorId" = $1)::int AS "meus"
+     FROM "Prontuario" WHERE "status" = 'ENVIADO' AND "descartadoEm" IS NULL`;
+  const buscarConsentimentosEmLote = `SELECT "prontuarioId", "conteudo" FROM "Secao"
+     WHERE "prontuarioId" = ANY($1::text[]) AND "secaoId" = 'consentimento'`;
   const listarDoProfessorPorStatus = `${selecionarFila}
      WHERE p."status" = $1 AND p."professorSupervisorId" = $2 AND p."descartadoEm" IS NULL
      ORDER BY "atualizadoEm" DESC`;
   const buscarSecoes = `SELECT "secaoId", "conteudo" FROM "Secao" WHERE "prontuarioId" = $1`;
   const buscarSecaoProcedimentos = `SELECT "conteudo" FROM "Secao" WHERE "prontuarioId" = $1 AND "secaoId" = 'procedimentos'`;
-  const buscarRevisao = `SELECT "desfechoEnvio", "assinadoEm", "assinadoPorNome", "devolvidoEm", "devolvidoPorNome", "motivoDevolucao", "comentarioDevolucao",
-       "acessoSolicitadoEm", "acessoExpiraEm", "acessoRevogadoEm", "acessoRecusadoEm"
-      FROM "Prontuario" WHERE "id" = $1`;
+  const buscarDetalhe = `SELECT ${COLUNAS},
+            p."desfechoEnvio", p."assinadoEm", p."assinadoPorNome", p."devolvidoEm", p."devolvidoPorNome",
+            p."motivoDevolucao", p."comentarioDevolucao",
+            p."acessoSolicitadoEm", p."acessoExpiraEm", p."acessoRevogadoEm", p."acessoRecusadoEm"
+     FROM "Prontuario" p
+     JOIN "Usuario" u ON u."id" = p."alunoTitularId"
+     LEFT JOIN "Usuario" pr ON pr."id" = p."professorSupervisorId"
+     WHERE p."id" = $1 AND p."descartadoEm" IS NULL`;
   const buscarPartes = `SELECT p."id" AS "prontuarioId", p."pacienteNome", p."pacienteDataNascimento", p."status", p."criadoEm",
             p."sinalizadoDuplicidade", p."alunoTitularId" AS "alunoId", u."nome" AS "alunoNome",
             p."professorSupervisorId" AS "professorId", pr."nome" AS "professorNome"
@@ -265,13 +276,9 @@ export const prontuariosRoutes: FastifyPluginAsync = async (app) => {
 
   const ehAluno = (perfil: string): boolean => perfil.toLowerCase() === "aluno";
 
-  const lerDupla = async (
-    ex: Executor,
-    prontuarioId: string,
-  ): Promise<{ alunoOperador: string; alunoAuxiliar: string }> => {
-    const secao = await uma<{ conteudo: string }>(ex, buscarConsentimento, [prontuarioId]);
+  const duplaDoConsentimento = (conteudo: string | null | undefined): { alunoOperador: string; alunoAuxiliar: string } => {
     try {
-      const c = JSON.parse(secao?.conteudo ?? "{}") as { alunoOperador?: unknown; alunoAuxiliar?: unknown };
+      const c = JSON.parse(conteudo ?? "{}") as { alunoOperador?: unknown; alunoAuxiliar?: unknown };
       return {
         alunoOperador: typeof c.alunoOperador === "string" ? c.alunoOperador.trim() : "",
         alunoAuxiliar: typeof c.alunoAuxiliar === "string" ? c.alunoAuxiliar.trim() : "",
@@ -279,6 +286,25 @@ export const prontuariosRoutes: FastifyPluginAsync = async (app) => {
     } catch {
       return { alunoOperador: "", alunoAuxiliar: "" };
     }
+  };
+
+  const lerDupla = async (
+    ex: Executor,
+    prontuarioId: string,
+  ): Promise<{ alunoOperador: string; alunoAuxiliar: string }> => {
+    const secao = await uma<{ conteudo: string }>(ex, buscarConsentimento, [prontuarioId]);
+    return duplaDoConsentimento(secao?.conteudo);
+  };
+
+  const lerDuplasEmLote = async (
+    ex: Executor,
+    prontuarioIds: string[],
+  ): Promise<Map<string, { alunoOperador: string; alunoAuxiliar: string }>> => {
+    const duplas = new Map<string, { alunoOperador: string; alunoAuxiliar: string }>();
+    if (prontuarioIds.length === 0) return duplas;
+    const linhas = await todas<{ prontuarioId: string; conteudo: string }>(ex, buscarConsentimentosEmLote, [prontuarioIds]);
+    for (const l of linhas) duplas.set(l.prontuarioId, duplaDoConsentimento(l.conteudo));
+    return duplas;
   };
 
   const textoDupla = (p: PartesDuplicidade): string =>
@@ -352,13 +378,18 @@ export const prontuariosRoutes: FastifyPluginAsync = async (app) => {
     const { filtro } = req.query;
     const statusAlvo = filtro === "assinados" ? "ASSINADO" : filtro === "devolvidos" ? "DEVOLVIDO" : null;
 
-    const enviados = await todas<FilaRow>(db, listarEnviados);
-    const meus = enviados.filter((r) => r.professorSupervisorId === req.user.sub);
-    const visiveis = statusAlvo
-      ? await todas<FilaRow>(db, listarDoProfessorPorStatus, [statusAlvo, req.user.sub])
-      : filtro === "todos"
-        ? enviados
-        : meus;
+    const [contagem, visiveis] = await Promise.all([
+      uma<{ todos: number; meus: number }>(db, contarEnviados, [req.user.sub]),
+      statusAlvo
+        ? todas<FilaRow>(db, listarDoProfessorPorStatus, [statusAlvo, req.user.sub])
+        : filtro === "todos"
+          ? todas<FilaRow>(db, listarEnviados)
+          : todas<FilaRow>(db, listarEnviadosDoProfessor, [req.user.sub]),
+    ]);
+    const duplas = await lerDuplasEmLote(
+      db,
+      visiveis.map((r) => r.id),
+    );
 
     const prontuarios: ItemFilaRevisao[] = await Promise.all(
       visiveis.map(async (r): Promise<ItemFilaRevisao> => {
@@ -373,7 +404,7 @@ export const prontuariosRoutes: FastifyPluginAsync = async (app) => {
           professorSupervisorId: r.professorSupervisorId,
           professorSupervisorNome: r.professorSupervisorNome,
           alunoNome: r.alunoNome,
-          ...(await lerDupla(db, r.id)),
+          ...(duplas.get(r.id) ?? { alunoOperador: "", alunoAuxiliar: "" }),
           duplaAnteriorNome: duplicado ? await nomeDuplaDestino(db, duplicado.id) : null,
           tipoDesfecho: TIPOS_DESFECHO.find((t) => t === r.tipoDesfecho) ?? null,
         };
@@ -381,7 +412,7 @@ export const prontuariosRoutes: FastifyPluginAsync = async (app) => {
     );
 
     const resposta: FilaRevisaoResponse = {
-      contadores: { meus: meus.length, todos: enviados.length },
+      contadores: { meus: contagem?.meus ?? 0, todos: contagem?.todos ?? 0 },
       prontuarios,
     };
     return resposta;
@@ -397,7 +428,8 @@ export const prontuariosRoutes: FastifyPluginAsync = async (app) => {
       pacienteNome: string;
       alunoNome: string;
       conteudo: string;
-    }>(db, listarConclusoesDoProfessor, [req.user.sub]);
+      consentimento: string | null;
+    }>(db, listarEncaminhamentosDoProfessor, [req.user.sub]);
 
     const encaminhamentos: Encaminhamento[] = [];
     for (const linha of linhas) {
@@ -408,10 +440,11 @@ export const prontuariosRoutes: FastifyPluginAsync = async (app) => {
           encaminhamentoPara?: unknown;
         };
         if (c.tipoDesfecho !== "encaminhado") continue;
+        const dupla = duplaDoConsentimento(linha.consentimento);
         encaminhamentos.push({
           prontuarioId: linha.id,
           pacienteNome: linha.pacienteNome,
-          duplaNome: await nomeDuplaDe(db, linha.id, linha.alunoNome),
+          duplaNome: [dupla.alunoOperador, dupla.alunoAuxiliar].filter(Boolean).join(" e ") || linha.alunoNome,
           encaminhamentoEm: typeof c.encaminhamentoEm === "string" ? c.encaminhamentoEm : "",
           encaminhamentoPara: typeof c.encaminhamentoPara === "string" ? c.encaminhamentoPara.trim() : "",
         });
@@ -423,20 +456,18 @@ export const prontuariosRoutes: FastifyPluginAsync = async (app) => {
   });
 
   app.get<{ Params: { id: string } }>("/prontuarios/:id", protegida, async (req, reply) => {
-    const linha = await uma<ProntuarioListaRow>(db, buscarUm, [req.params.id]);
-    if (!linha) return reply.status(404).send({ message: "Prontuário não encontrado." });
+    const detalhe = await uma<ProntuarioListaRow & RevisaoDetalheRow>(db, buscarDetalhe, [req.params.id]);
+    if (!detalhe) return reply.status(404).send({ message: "Prontuário não encontrado." });
 
     const alunoUser = ehAluno(req.user.perfil);
-    if (alunoUser && linha.alunoTitularId !== req.user.sub) {
+    if (alunoUser && detalhe.alunoTitularId !== req.user.sub) {
       return reply.status(403).send({ message: "Você não tem acesso a este prontuário." });
     }
 
-    const revisao = (await uma<RevisaoDetalheRow>(db, buscarRevisao, [linha.id])) as RevisaoDetalheRow;
+    const linha = detalhe;
+    const revisao = detalhe;
     const estado = estadoAcesso(revisao);
-    const professor = linha.professorSupervisorId
-      ? await uma<{ nome: string }>(db, buscarNomeProfessor, [linha.professorSupervisorId])
-      : undefined;
-    const professorSupervisorNome = professor?.nome ?? null;
+    const professorSupervisorNome = detalhe.professorSupervisorNome ?? null;
 
     const podeVerConteudo = !alunoUser || estado.acessoVigente;
 
@@ -461,22 +492,23 @@ export const prontuariosRoutes: FastifyPluginAsync = async (app) => {
       };
     }
 
-    const secoes = await lerSecoes(linha.id, req.log);
-    const historico = linha.transferidoDe ? await montarHistorico(linha.transferidoDe, req.log) : null;
-
     const ehSupervisor = !alunoUser && linha.professorSupervisorId === req.user.sub;
     const podeAgir = ehSupervisor && linha.status.toUpperCase() === "ENVIADO";
 
-    const envio = await uma<{ ts: number | null }>(db, buscarEnvio, [linha.id]);
+    const [secoes, historico, envio, transferidoParaNome] = await Promise.all([
+      lerSecoes(linha.id, req.log),
+      linha.transferidoDe ? montarHistorico(linha.transferidoDe, req.log) : Promise.resolve(null),
+      uma<{ ts: number | null }>(db, buscarEnvio, [linha.id]),
+      nomeDuplaDestino(db, linha.transferidoPara),
+      auditar(
+        db,
+        req.user.sub,
+        "prontuario-lido",
+        { prontuarioId: linha.id, status: linha.status, perfil: req.user.perfil },
+        linha.id,
+      ),
+    ]);
     const enviadoEm = envio?.ts ? new Date(envio.ts).toISOString() : null;
-
-    await auditar(
-      db,
-      req.user.sub,
-      "prontuario-lido",
-      { prontuarioId: linha.id, status: linha.status, perfil: req.user.perfil },
-      linha.id,
-    );
 
     return {
       ...linha,
@@ -484,7 +516,7 @@ export const prontuariosRoutes: FastifyPluginAsync = async (app) => {
       ...estado,
       bloqueado: false,
       professorSupervisorNome,
-      transferidoParaNome: await nomeDuplaDestino(db, linha.transferidoPara),
+      transferidoParaNome,
       secoes,
       historico,
       podeAgir,

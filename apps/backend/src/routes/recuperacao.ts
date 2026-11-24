@@ -8,6 +8,7 @@ import {
 import { executar, transacao, uma } from "../db";
 import { env } from "../env";
 import { enviarEmailRedefinicao } from "../lib/mail";
+import { invalidarSessaoCache } from "../lib/sessaoCache";
 import { hashSenha } from "../lib/senha";
 
 const EXPIRA_EM_MS = 30 * 60 * 1000;
@@ -128,6 +129,7 @@ export const recuperacaoRoutes: FastifyPluginAsync = async (app) => {
     });
 
     if (!aplicado) return reply.status(400).send(LINK_INVALIDO);
+    invalidarSessaoCache(registro.userId);
     return { ok: true };
   });
 };

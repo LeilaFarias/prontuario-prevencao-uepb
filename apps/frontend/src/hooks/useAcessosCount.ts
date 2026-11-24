@@ -1,31 +1,18 @@
-import { useEffect, useState } from "react";
-import type { AcessosResponse } from "@prontuario/shared";
-import { api } from "../lib/api";
+import { useEffect } from "react";
 import { ACESSOS_ATUALIZADOS_EVENT } from "../lib/acesso";
+import { useAcessosDados } from "./useAcessos";
 
 const POLLING_MS = 30_000;
+const INTERVALO_MINIMO_EVENTO_MS = 1_000;
 
 export function useAcessosCount(): number {
-  const [total, setTotal] = useState(0);
+  const { dados, recarregarSeAntigo } = useAcessosDados(POLLING_MS);
 
   useEffect(() => {
-    let ativo = true;
-    const atualizar = () => {
-      api
-        .get<AcessosResponse>("/acessos")
-        .then((r) => ativo && setTotal(r.pendentes.length))
-        .catch(() => undefined);
-    };
+    const aoAtualizar = () => void recarregarSeAntigo(INTERVALO_MINIMO_EVENTO_MS);
+    window.addEventListener(ACESSOS_ATUALIZADOS_EVENT, aoAtualizar);
+    return () => window.removeEventListener(ACESSOS_ATUALIZADOS_EVENT, aoAtualizar);
+  }, [recarregarSeAntigo]);
 
-    atualizar();
-    const t = window.setInterval(atualizar, POLLING_MS);
-    window.addEventListener(ACESSOS_ATUALIZADOS_EVENT, atualizar);
-    return () => {
-      ativo = false;
-      window.clearInterval(t);
-      window.removeEventListener(ACESSOS_ATUALIZADOS_EVENT, atualizar);
-    };
-  }, []);
-
-  return total;
+  return dados?.pendentes.length ?? 0;
 }

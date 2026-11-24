@@ -1,7 +1,9 @@
-import { useCallback, useEffect, useState } from "react";
+import { useEffect } from "react";
 import type { AcessosResponse } from "@prontuario/shared";
-import { ApiError, api } from "../lib/api";
+import { api } from "../lib/api";
 import { ACESSO_EXPIRADO_EVENT } from "../lib/acesso";
+import { getSession } from "../lib/session";
+import { useDadosCache } from "./useDadosCache";
 
 const POLLING_MS = 15_000;
 
@@ -10,29 +12,27 @@ export type EstadoAcessos =
   | { situacao: "erro"; mensagem: string }
   | { situacao: "ok"; dados: AcessosResponse };
 
-export function useAcessos() {
-  const [estado, setEstado] = useState<EstadoAcessos>({ situacao: "carregando" });
+export function useAcessosDados(pollingMs: number) {
+  const usuarioId = getSession()?.user.id;
+  return useDadosCache<AcessosResponse>(usuarioId ? `${usuarioId}:acessos` : null, () => api.get<AcessosResponse>("/acessos"), {
+    pollingMs,
+  });
+}
 
-  const recarregar = useCallback(async () => {
-    try {
-      const dados = await api.get<AcessosResponse>("/acessos");
-      setEstado({ situacao: "ok", dados });
-    } catch (err) {
-      const mensagem = err instanceof ApiError ? err.message : "Não foi possível carregar os acessos.";
-      setEstado((atual) => (atual.situacao === "ok" ? atual : { situacao: "erro", mensagem }));
-    }
-  }, []);
+export function useAcessos() {
+  const { dados, erro, recarregar } = useAcessosDados(POLLING_MS);
 
   useEffect(() => {
-    void recarregar();
-    const t = window.setInterval(() => void recarregar(), POLLING_MS);
     const aoAtualizar = () => void recarregar();
     window.addEventListener(ACESSO_EXPIRADO_EVENT, aoAtualizar);
-    return () => {
-      window.clearInterval(t);
-      window.removeEventListener(ACESSO_EXPIRADO_EVENT, aoAtualizar);
-    };
+    return () => window.removeEventListener(ACESSO_EXPIRADO_EVENT, aoAtualizar);
   }, [recarregar]);
+
+  const estado: EstadoAcessos = dados
+    ? { situacao: "ok", dados }
+    : erro
+      ? { situacao: "erro", mensagem: erro.mensagem }
+      : { situacao: "carregando" };
 
   return { estado, recarregar };
 }

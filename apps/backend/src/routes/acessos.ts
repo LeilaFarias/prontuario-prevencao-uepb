@@ -45,7 +45,11 @@ export const acessosRoutes: FastifyPluginAsync = async (app) => {
     }
 
     const agora = Date.now();
-    const pendentes = (await todas<PendenteRow>(db, listarPendentes, [req.user.sub])).map(
+    const [linhasPendentes, linhasVigentes] = await Promise.all([
+      todas<PendenteRow>(db, listarPendentes, [req.user.sub]),
+      todas<VigenteRow>(db, listarVigentes, [req.user.sub, new Date(agora).toISOString()]),
+    ]);
+    const pendentes = linhasPendentes.map(
       (r): AcessoPendente => ({
         prontuarioId: r.id,
         pacienteNome: r.pacienteNome,
@@ -54,7 +58,7 @@ export const acessosRoutes: FastifyPluginAsync = async (app) => {
         tempoEspera: tempoDeEspera(r.acessoSolicitadoEm, agora),
       }),
     );
-    const vigentes = (await todas<VigenteRow>(db, listarVigentes, [req.user.sub, new Date(agora).toISOString()])).map(
+    const vigentes = linhasVigentes.map(
       (r): AcessoVigente => ({
         prontuarioId: r.id,
         pacienteNome: r.pacienteNome,

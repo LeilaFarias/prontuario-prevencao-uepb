@@ -10,6 +10,7 @@ import {
 } from "@prontuario/shared";
 import { executar, todas, transacao, uma } from "../db";
 import { gerarHashesPinCriptografia, gerarHashesPinLiberacao, verificarPinCriptografia } from "../lib/pin";
+import { invalidarSessaoCache } from "../lib/sessaoCache";
 import { hashSenha, verificarSenha } from "../lib/senha";
 
 const definirPinSchema = z.object({
@@ -106,6 +107,7 @@ export const userRoutes: FastifyPluginAsync = async (app) => {
       await hashSenha(dados.novaSenha),
       id,
     ]);
+    invalidarSessaoCache(id);
     return { ok: true };
   });
 
@@ -206,6 +208,7 @@ export const userRoutes: FastifyPluginAsync = async (app) => {
         JSON.stringify({ usuarioId: id, motivo: motivoExclusao }),
       ]);
     });
+    invalidarSessaoCache(id);
     return { ok: true };
   });
 };
