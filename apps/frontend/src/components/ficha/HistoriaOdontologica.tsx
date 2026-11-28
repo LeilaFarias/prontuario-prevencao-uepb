@@ -1,9 +1,11 @@
 import { Controller, useWatch } from "react-hook-form";
+import { Ban, Check } from "lucide-react";
 import { useLiveQuery } from "dexie-react-hooks";
 import { historiaOdontologicaSchema } from "@prontuario/shared";
 import { lerProntuarioDecifrado, type LocalProntuario } from "../../db/dexie";
 import { useSecao } from "../../hooks/useSecao";
 import { useSyncStatus } from "../../hooks/useSyncStatus";
+import { NAO_SE_APLICA, NENHUM_HABITO } from "../../lib/habitos";
 import CampoTexto from "./CampoTexto";
 import CheckboxGroup, { type OpcaoCheckbox } from "./CheckboxGroup";
 import GrupoFicha from "./GrupoFicha";
@@ -59,7 +61,10 @@ export const HABITOS: ReadonlyArray<OpcaoCheckbox> = [
   { value: "morde-labio", label: "Morde lábio" },
   { value: "morde-objetos", label: "Morde objetos" },
   { value: "bruxismo", label: "Bruxismo" },
+  { value: NENHUM_HABITO, label: "Nenhum" },
 ];
+
+const HABITOS_LISTA = HABITOS.filter((h) => h.value !== NENHUM_HABITO);
 
 function IndicadorSalvamento({ salvando, jaSalvou }: { salvando: boolean; jaSalvou: boolean }) {
   const { pendentes, online } = useSyncStatus();
@@ -77,7 +82,7 @@ function IndicadorSalvamento({ salvando, jaSalvou }: { salvando: boolean; jaSalv
 }
 
 function FormularioHistoriaOdontologica({ prontuario }: { prontuario: LocalProntuario }) {
-  const { control, setValue, salvando, salvoEm, somenteLeitura } = useSecao(
+  const { control, setValue, getValues, salvando, salvoEm, somenteLeitura } = useSecao(
     prontuario,
     "historia-odontologica",
     historiaOdontologicaSchema,
@@ -87,6 +92,19 @@ function FormularioHistoriaOdontologica({ prontuario }: { prontuario: LocalPront
   const acoesRecebidas = useWatch({ control, name: "acoesPreventivasRecebidas" });
   const escova = useWatch({ control, name: "escovaDiariamente" });
   const habitos = useWatch({ control, name: "habitosParafuncionais" });
+
+  const nenhumHabito = habitos.includes(NENHUM_HABITO);
+
+  const resolverHabitos = (novos: string[], anteriores: string[]): string[] => {
+    const eraNenhum = anteriores.includes(NENHUM_HABITO);
+    const marcouNenhum = novos.includes(NENHUM_HABITO) && !eraNenhum;
+    if (marcouNenhum) {
+      setValue("frequenciaHabitos", NAO_SE_APLICA);
+      return [NENHUM_HABITO];
+    }
+    if (eraNenhum && getValues("frequenciaHabitos") === NAO_SE_APLICA) setValue("frequenciaHabitos", "");
+    return novos.filter((h) => h !== NENHUM_HABITO);
+  };
 
   const simNao = (name: ChaveSimNao, label: string, aoDesmarcar?: () => void) => (
     <Controller
@@ -246,21 +264,51 @@ function FormularioHistoriaOdontologica({ prontuario }: { prontuario: LocalPront
           control={control}
           name="habitosParafuncionais"
           render={({ field }) => (
-            <CheckboxGroup
-              label="Hábitos identificados"
-              options={HABITOS}
-              values={field.value}
-              onChange={(novos) => {
-                field.onChange(novos);
-                if (novos.length === 0) setValue("frequenciaHabitos", "Não se aplica");
-              }}
-              disabled={somenteLeitura}
-            />
+            <>
+              <CheckboxGroup
+                label="Hábitos identificados"
+                options={HABITOS_LISTA}
+                values={field.value}
+                onChange={(novos) => field.onChange(resolverHabitos(novos, field.value))}
+                disabled={somenteLeitura}
+              />
+              <button
+                type="button"
+                aria-pressed={nenhumHabito}
+                disabled={somenteLeitura}
+                onClick={() =>
+                  field.onChange(resolverHabitos(nenhumHabito ? [] : [...field.value, NENHUM_HABITO], field.value))
+                }
+                className={`flex w-full items-center justify-center gap-2 rounded-lg border-2 px-3 py-2.5 text-[13px] font-semibold transition ${
+                  somenteLeitura ? "cursor-not-allowed opacity-60" : ""
+                } ${
+                  nenhumHabito
+                    ? "border-primary bg-primary-tint text-primary"
+                    : "border-dashed border-ink-faint bg-transparent text-ink-soft"
+                }`}
+              >
+                {nenhumHabito ? <Check size={14} aria-hidden="true" /> : <Ban size={14} aria-hidden="true" />}
+                Nenhum hábito
+              </button>
+            </>
           )}
         />
 
-        {habitos.length > 0 &&
-          textoCurto("frequenciaHabitos", "Frequência do(s) hábito(s)", "Ex.: ocasional, diariamente, em momentos de ansiedade")}
+        {habitos.length > 0 && (
+          <Controller
+            control={control}
+            name="frequenciaHabitos"
+            render={({ field }) => (
+              <CampoTexto
+                label="Frequência do(s) hábito(s)"
+                value={field.value}
+                onChange={field.onChange}
+                placeholder="Ex.: ocasional, diariamente, em momentos de ansiedade"
+                disabled={somenteLeitura || nenhumHabito}
+              />
+            )}
+          />
+        )}
       </GrupoFicha>
 
       <GrupoFicha

@@ -14,6 +14,7 @@ import {
   type Sangramento,
 } from "@prontuario/shared";
 import type { LocalProntuario } from "../db/dexie";
+import { NENHUM_HABITO } from "./habitos";
 import { DENTES_IHOS } from "./ihos";
 
 export interface Pendencia {
@@ -118,7 +119,9 @@ const VERIFICADORES: Partial<Record<SecaoId, Verificador>> = {
       if (!preenchido(v.frequenciaEscovacao)) faltas.push("frequência de escovação");
       if (!(v.recursosUtilizados?.length)) faltas.push("recursos utilizados na higiene bucal");
     }
-    if ((v.habitosParafuncionais?.length ?? 0) > 0 && !preenchido(v.frequenciaHabitos)) {
+    const habitos = v.habitosParafuncionais ?? [];
+    if (habitos.length === 0) faltas.push("hábitos parafuncionais (marque um hábito ou \"Nenhum\")");
+    else if (habitos.some((h) => h !== NENHUM_HABITO) && !preenchido(v.frequenciaHabitos)) {
       faltas.push("frequência dos hábitos parafuncionais");
     }
     return falta(faltas);
