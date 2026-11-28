@@ -32,6 +32,7 @@ import { ACESSO_EXPIRADO_EVENT, acessoVigente, pedidoPendente, pedidoRecusado } 
 import { getChave } from "../lib/chaveLocal";
 import { confirmarInvalidacaoAssinatura, registrarConfirmadorInvalidacao } from "../lib/invalidacaoAssinatura";
 import { tempoRelativo } from "../lib/tempo";
+import { validarEnvio } from "../lib/validarEnvio";
 import { formatarDataHoraCompleta } from "../components/ficha/revisao/rotulos";
 import { AppBloqueadoError, marcarComoVisto, reabrirParaCorrecao, salvarSecaoLocal } from "../sync/queue";
 
@@ -466,6 +467,8 @@ export default function Prontuario() {
     ) : null;
 
   const secao = SECOES[indice]!;
+  const ultimaSecao = indice === SECOES.length - 1;
+  const secoesPendentes = ultimaSecao ? validarEnvio(atual).pendencias.length : 0;
 
   return (
     <div className="flex flex-1 flex-col">
@@ -606,15 +609,24 @@ export default function Prontuario() {
           <button type="button" className="btn-ghost" disabled={indice === 0} onClick={() => irPara(indice - 1)}>
             Anterior
           </button>
-          <button
-            type="button"
-            className="btn-primary"
-            disabled={indice === SECOES.length - 1}
-            onClick={() => irPara(indice + 1)}
-          >
-            Próxima
-          </button>
+          {ultimaSecao ? (
+            <p
+              role="status"
+              className="flex items-center justify-center rounded-field border border-dashed border-line px-3 text-[13px] font-semibold text-ink-soft"
+            >
+              Fim da ficha
+            </p>
+          ) : (
+            <button type="button" className="btn-primary" onClick={() => irPara(indice + 1)}>
+              Próxima
+            </button>
+          )}
         </div>
+        {!somenteLeitura && status === "em_andamento" && ultimaSecao && secoesPendentes > 0 && (
+          <p role="status" className="text-center text-[12.5px] font-medium text-alt">
+            {secoesPendentes} {secoesPendentes === 1 ? "seção com campos pendentes" : "seções com campos pendentes"}
+          </p>
+        )}
         {!somenteLeitura && status === "em_andamento" && (
           <button type="button" className="btn-primary" onClick={() => void abrirEnvio()}>
             <Send size={16} aria-hidden="true" />

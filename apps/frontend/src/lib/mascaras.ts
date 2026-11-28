@@ -25,3 +25,32 @@ export function limparUf(entrada: string): string {
   if (marcador) return marcador;
   return entrada.toUpperCase().replace(/[^A-Z]/g, "").slice(0, 2);
 }
+
+export function formatarCpf(entrada: string): string {
+  const marcador = preservarMarcador(entrada);
+  if (marcador) return marcador;
+  const d = apenasDigitos(entrada).slice(0, 11);
+  if (d.length > 9) return `${d.slice(0, 3)}.${d.slice(3, 6)}.${d.slice(6, 9)}-${d.slice(9)}`;
+  if (d.length > 6) return `${d.slice(0, 3)}.${d.slice(3, 6)}.${d.slice(6)}`;
+  if (d.length > 3) return `${d.slice(0, 3)}.${d.slice(3)}`;
+  return d;
+}
+
+export function limparCpf(entrada: string): string {
+  const marcador = preservarMarcador(entrada);
+  if (marcador) return marcador;
+  return apenasDigitos(entrada).slice(0, 11);
+}
+
+export function formatarCartaoSus(entrada: string): string {
+  const marcador = preservarMarcador(entrada);
+  if (marcador) return marcador;
+  const d = apenasDigitos(entrada).slice(0, 15);
+  return [d.slice(0, 3), d.slice(3, 7), d.slice(7, 11), d.slice(11)].filter(Boolean).join(" ");
+}
+
+export function limparCartaoSus(entrada: string): string {
+  const marcador = preservarMarcador(entrada);
+  if (marcador) return marcador;
+  return apenasDigitos(entrada).slice(0, 15);
+}

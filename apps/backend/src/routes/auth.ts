@@ -155,7 +155,7 @@ export const authRoutes: FastifyPluginAsync = async (app) => {
     return { ok: true, message: "Se houver uma conta aguardando confirmação para esse e-mail, enviaremos um novo link." };
   });
 
-  app.post("/auth/login", { config: { rateLimit: env.LOGIN_RATE_LIMIT_MAX === 0 ? false : { max: env.LOGIN_RATE_LIMIT_MAX } } }, async (req, reply) => {
+  app.post("/auth/login", { config: { rateLimit: env.LOGIN_RATE_LIMIT_MAX === 0 ? false : { max: env.LOGIN_RATE_LIMIT_MAX, timeWindow: "1 minute" } } }, async (req, reply) => {
     const dados = loginSchema.parse(req.body);
     const usuario = await uma<UsuarioRow>(db, `SELECT * FROM "Usuario" WHERE "email" = $1`, [dados.email]);
     const ok = usuario ? await verificarSenha(dados.senha, usuario.senhaHash) : false;

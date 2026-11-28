@@ -5,7 +5,15 @@ import { lerProntuarioDecifrado, type LocalProntuario } from "../../db/dexie";
 import { useSecao } from "../../hooks/useSecao";
 import { useSyncStatus } from "../../hooks/useSyncStatus";
 import { formatarIdade } from "../../lib/idade";
-import { formatarCep, limparCep, limparUf } from "../../lib/mascaras";
+import {
+  formatarCartaoSus,
+  formatarCep,
+  formatarCpf,
+  limparCartaoSus,
+  limparCep,
+  limparCpf,
+  limparUf,
+} from "../../lib/mascaras";
 import CampoData from "./CampoData";
 import CampoSelect from "./CampoSelect";
 import CampoTexto, { type CampoTextoProps } from "./CampoTexto";
@@ -141,6 +149,38 @@ function FormularioDadosPessoais({ prontuario }: { prontuario: LocalProntuario }
             render={({ field }) => <CampoTexto label="Idade" value={field.value} onChange={field.onChange} disabled />}
           />
         </div>
+
+        <Controller
+          control={control}
+          name="cpfCrianca"
+          render={({ field }) => (
+            <CampoTexto
+              label="CPF"
+              value={formatarCpf(field.value)}
+              onChange={(v) => field.onChange(limparCpf(v))}
+              placeholder="000.000.000-00"
+              inputMode="numeric"
+              maxLength={14}
+              disabled={somenteLeitura}
+            />
+          )}
+        />
+
+        <Controller
+          control={control}
+          name="cartaoSus"
+          render={({ field }) => (
+            <CampoTexto
+              label="Número do Cartão SUS"
+              value={formatarCartaoSus(field.value)}
+              onChange={(v) => field.onChange(limparCartaoSus(v))}
+              placeholder="000 0000 0000 0000"
+              inputMode="numeric"
+              maxLength={18}
+              disabled={somenteLeitura}
+            />
+          )}
+        />
 
         <Controller
           control={control}

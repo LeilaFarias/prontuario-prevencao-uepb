@@ -31,7 +31,7 @@ export default function ExamesLeitura({ dados }: { dados: Exames }) {
       <GrupoFicha titulo="Exame extra oral">
         <CampoLeitura label="Locomoção" valor={extraOral.locomocao} multiline />
         <CampoLeitura label="Cicatrizes, edemas, assimetrias, tumefações" valor={extraOral.cicatrizesEdemas} multiline />
-        <CampoLeitura label="Abertura anormal da boca?" valor={extraOral.aberturaAnormal} />
+        <CampoLeitura label="Alteração da abertura bucal?" valor={extraOral.aberturaAnormal} />
         {extraOral.aberturaAnormal === true && (
           <CampoLeitura label="Observações" valor={extraOral.aberturaObservacao} multiline />
         )}

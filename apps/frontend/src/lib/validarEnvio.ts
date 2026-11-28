@@ -65,6 +65,8 @@ const VERIFICADORES: Partial<Record<SecaoId, Verificador>> = {
     if (!preenchido(v.nomeCompleto)) faltas.push("nome completo");
     if (!preenchido(v.dataNascimento)) faltas.push("data de nascimento");
     if (v.sexo !== "feminino" && v.sexo !== "masculino") faltas.push("sexo");
+    if (!preenchido(v.cpfCrianca)) faltas.push("CPF da criança");
+    if (!preenchido(v.cartaoSus)) faltas.push("número do Cartão SUS");
     if (v.estudante == null) faltas.push("se é estudante");
     if (v.estudante === true) {
       if (!preenchido(v.escola)) faltas.push("escola");
@@ -135,7 +137,7 @@ const VERIFICADORES: Partial<Record<SecaoId, Verificador>> = {
 
       if (!preenchido((extra as { locomocao?: string }).locomocao)) faltas.push("locomoção");
       if (!preenchido((extra as { cicatrizesEdemas?: string }).cicatrizesEdemas)) faltas.push("cicatrizes, edemas, assimetrias e tumefações");
-      if ((extra as { aberturaAnormal?: boolean | null }).aberturaAnormal == null) faltas.push("abertura anormal da boca");
+      if ((extra as { aberturaAnormal?: boolean | null }).aberturaAnormal == null) faltas.push("alteração da abertura bucal");
       if ((extra as { aberturaAnormal?: boolean | null }).aberturaAnormal === true &&
           !preenchido((extra as { aberturaObservacao?: string }).aberturaObservacao)) {
         faltas.push("observações da abertura anormal");

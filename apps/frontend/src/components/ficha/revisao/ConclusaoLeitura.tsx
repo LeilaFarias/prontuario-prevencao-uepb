@@ -27,6 +27,10 @@ export default function ConclusaoLeitura({ dados }: { dados: Conclusao }) {
         )}
       </GrupoFicha>
 
+      <GrupoFicha titulo="Observações finais">
+        <CampoLeitura label="Informações adicionais" valor={dados.informacoesAdicionais} />
+      </GrupoFicha>
+
       <GrupoFicha
         titulo="Anexos fotográficos"
         subtitulo={dados.fotos.length === 0 ? undefined : `${dados.fotos.length} ${dados.fotos.length === 1 ? "foto" : "fotos"} · toque para ampliar`}

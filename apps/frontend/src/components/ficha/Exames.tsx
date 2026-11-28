@@ -93,7 +93,7 @@ function FormularioExames({ prontuario }: { prontuario: LocalProntuario }) {
           name="extraOral.aberturaAnormal"
           render={({ field }) => (
             <SegmentedToggle
-              label="Abertura anormal da boca?"
+              label="Alteração da abertura bucal?"
               value={field.value === null ? null : field.value ? "sim" : "nao"}
               onChange={(v) => {
                 const resposta = v === "sim";

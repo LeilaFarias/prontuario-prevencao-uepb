@@ -25,6 +25,8 @@ export const dadosPessoaisSchema = z.object({
   idade: z.string().default(""), 
   sexo: z.enum(["feminino", "masculino"]).nullable().default(null),
   cor: z.string().nullable().default(null),
+  cpfCrianca: z.string().default(""),
+  cartaoSus: z.string().default(""),
 
   cep: z.string().default(""), 
   endereco: z.string().default(""),
@@ -197,6 +199,7 @@ const conclusaoBaseSchema = z.object({
   concluidoEm: z.string().default(""),
   encaminhamentoEm: z.string().default(""),
   encaminhamentoPara: z.string().default(""),
+  informacoesAdicionais: z.string().default(""),
   fotos: z.array(fotoAnexoSchema).default([]),
 });
 

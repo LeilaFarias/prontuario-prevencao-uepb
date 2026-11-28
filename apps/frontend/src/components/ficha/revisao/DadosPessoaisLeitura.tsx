@@ -1,6 +1,7 @@
 import type { DadosPessoais } from "@prontuario/shared";
 import CampoLeitura from "../CampoLeitura";
 import GrupoFicha from "../GrupoFicha";
+import { formatarCartaoSus, formatarCpf } from "../../../lib/mascaras";
 import { ESCOLARIDADES } from "../opcoes";
 import { capitalizar, dataOuVazio, rotuloDe } from "./rotulos";
 
@@ -13,6 +14,8 @@ export default function DadosPessoaisLeitura({ dados }: { dados: DadosPessoais }
         <CampoLeitura label="Nome completo" valor={dados.nomeCompleto} />
         <CampoLeitura label="Data de nascimento" valor={dataOuVazio(dados.dataNascimento)} />
         <CampoLeitura label="Idade" valor={dados.idade} />
+        <CampoLeitura label="CPF da criança" valor={formatarCpf(dados.cpfCrianca)} />
+        <CampoLeitura label="Número do Cartão SUS" valor={formatarCartaoSus(dados.cartaoSus)} />
         <CampoLeitura label="Sexo" valor={capitalizar(dados.sexo)} />
         <CampoLeitura label="Cor (autodeclarada)" valor={capitalizar(dados.cor)} />
       </GrupoFicha>

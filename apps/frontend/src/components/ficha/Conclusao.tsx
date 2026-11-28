@@ -232,6 +232,25 @@ function FormularioConclusao({ prontuario }: { prontuario: LocalProntuario }) {
         )}
       </GrupoFicha>
 
+      <GrupoFicha titulo="Observações finais">
+        <Controller
+          control={control}
+          name="informacoesAdicionais"
+          render={({ field }) => (
+            <CampoTexto
+              label="Informações adicionais"
+              value={field.value}
+              onChange={field.onChange}
+              placeholder="Observações finais sobre o caso (opcional)"
+              multiline
+              rows={4}
+              permiteMarcador={false}
+              disabled={somenteLeitura}
+            />
+          )}
+        />
+      </GrupoFicha>
+
       <GrupoFicha titulo="Anexos fotográficos" subtitulo="Fotos clínicas (ex. raio-x)">
         {!somenteLeitura && (
           <input
