@@ -1,7 +1,7 @@
 import { Controller, useWatch } from "react-hook-form";
-import { useLiveQuery } from "dexie-react-hooks";
 import { dadosPessoaisSchema, type DadosPessoais as DadosPessoaisValores } from "@prontuario/shared";
-import { lerProntuarioDecifrado, type LocalProntuario } from "../../db/dexie";
+import type { LocalProntuario } from "../../db/dexie";
+import { useProntuarioFicha } from "../../hooks/useProntuarioFicha";
 import { useSecao } from "../../hooks/useSecao";
 import { useSyncStatus } from "../../hooks/useSyncStatus";
 import { formatarIdade } from "../../lib/idade";
@@ -155,7 +155,7 @@ function FormularioDadosPessoais({ prontuario }: { prontuario: LocalProntuario }
           name="cpfCrianca"
           render={({ field }) => (
             <CampoTexto
-              label="CPF"
+              label="CPF da criança"
               value={formatarCpf(field.value)}
               onChange={(v) => field.onChange(limparCpf(v))}
               placeholder="000.000.000-00"
@@ -315,7 +315,7 @@ function FormularioDadosPessoais({ prontuario }: { prontuario: LocalProntuario }
 }
 
 export default function DadosPessoais({ prontuarioId }: { prontuarioId: string }) {
-  const prontuario = useLiveQuery(() => lerProntuarioDecifrado(prontuarioId), [prontuarioId]);
+  const prontuario = useProntuarioFicha(prontuarioId);
   if (!prontuario) return <EsqueletoSecao />;
   return <FormularioDadosPessoais prontuario={prontuario} />;
 }

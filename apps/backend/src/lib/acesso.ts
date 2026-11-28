@@ -56,6 +56,17 @@ export function alunoPodeEditar(status: string, _desfechoEnvio?: string | null):
   return s === "EM_ANDAMENTO" || s === "DEVOLVIDO";
 }
 
+export function professorPodeEditar(
+  prontuario: { status: string; professorSupervisorId: string | null },
+  usuario: { id: string; perfil: string },
+): boolean {
+  return (
+    usuario.perfil === "professor" &&
+    prontuario.professorSupervisorId === usuario.id &&
+    prontuario.status.toUpperCase() === "ENVIADO"
+  );
+}
+
 export const liberacaoManualOnlineSchema = z.object({
   matricula: z.string().trim().min(1),
   pin: z.string().regex(/^\d{8}$/),

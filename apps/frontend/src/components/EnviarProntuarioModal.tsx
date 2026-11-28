@@ -306,8 +306,8 @@ export default function EnviarProntuarioModal({
         open
         onClose={onClose}
         centralizado
-        title="Faltam informações obrigatórias"
-        subtitle="Complete as seções abaixo antes de enviar."
+        title="Enviar com pendências?"
+        subtitle="Alguns campos ainda estão vazios. É comum quando um exame só é concluído no retorno do paciente."
         icone={
           <Icone tom="alt">
             <AlertTriangle size={28} />
@@ -317,6 +317,9 @@ export default function EnviarProntuarioModal({
         <div className="flex flex-col gap-3">
           <p className="rounded-xl border border-line-soft bg-paper px-3 py-2.5 text-[12px] leading-relaxed text-ink-soft">
             Você pode preencher com “Não informado”, “NDN” ou “Não se aplica” nos campos correspondentes, se for o caso.
+          </p>
+          <p className="rounded-xl border border-alt/30 bg-alt-tint px-3 py-2.5 text-[12px] leading-relaxed text-ink">
+            O professor receberá a ficha com esta lista de pendências e poderá devolvê-la para você concluir depois.
           </p>
           <ul className="flex flex-col overflow-hidden rounded-card border border-line-soft">
             {validacao.pendencias.map((p) => (
@@ -335,7 +338,10 @@ export default function EnviarProntuarioModal({
               </li>
             ))}
           </ul>
-          <button type="button" className="btn-primary" onClick={() => irPara(primeira.primeiraSecao)}>
+          <button type="button" className="btn-primary" onClick={() => void enviar()}>
+            Enviar com pendências
+          </button>
+          <button type="button" className="btn-ghost" onClick={() => irPara(primeira.primeiraSecao)}>
             Ir para a primeira pendência
           </button>
           <button type="button" className="btn-ghost" onClick={onClose}>

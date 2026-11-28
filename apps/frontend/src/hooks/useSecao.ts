@@ -1,11 +1,12 @@
 
-import { useCallback, useEffect, useReducer, useRef, useState } from "react";
+import { useCallback, useContext, useEffect, useReducer, useRef, useState } from "react";
 import { useForm, type DefaultValues, type FieldValues, type UseFormReturn } from "react-hook-form";
 import type { z } from "zod";
 import type { SecaoId } from "@prontuario/shared";
 import { lerProntuarioDecifrado, type LocalProntuario } from "../db/dexie";
 import { acessoVigente } from "../lib/acesso";
 import { confirmarInvalidacaoAssinatura } from "../lib/invalidacaoAssinatura";
+import { EdicaoProfessorContext } from "../lib/edicaoProfessor";
 import { AcessoExpiradoError, salvarSecaoLocal, type CabecalhoPaciente } from "../sync/queue";
 
 const DEBOUNCE_MS = 800;
@@ -53,10 +54,13 @@ export function useSecao<T extends SchemaSecao>(
   const form = useForm<V>({ defaultValues: inicial as unknown as DefaultValues<V> });
   const { watch, getValues, reset } = form;
 
-  const somenteLeitura =
-    prontuario.status === "enviado" ||
-    prontuario.status === "transferido" ||
-    (prontuario.status !== "em_andamento" && !acessoVigente(prontuario));
+  const edicaoProfessor = useContext(EdicaoProfessorContext);
+
+  const somenteLeitura = edicaoProfessor
+    ? false
+    : prontuario.status === "enviado" ||
+      prontuario.status === "transferido" ||
+      (prontuario.status !== "em_andamento" && !acessoVigente(prontuario));
 
   const assinadoRef = useRef(false);
   assinadoRef.current = prontuario.status === "assinado";
@@ -109,12 +113,16 @@ export function useSecao<T extends SchemaSecao>(
         return;
       }
 
-      await salvarSecaoLocal(
-        prontuario.id,
-        secaoId,
-        JSON.parse(json) as Record<string, unknown>,
-        opcoesRef.current?.cabecalho?.(valores),
-      );
+      if (edicaoProfessor) {
+        await edicaoProfessor.salvarSecao(secaoId, JSON.parse(json) as Record<string, unknown>);
+      } else {
+        await salvarSecaoLocal(
+          prontuario.id,
+          secaoId,
+          JSON.parse(json) as Record<string, unknown>,
+          opcoesRef.current?.cabecalho?.(valores),
+        );
+      }
 
       if (montado.current) setSalvoEm(Date.now());
     } catch (err) {
@@ -126,7 +134,7 @@ export function useSecao<T extends SchemaSecao>(
         setSalvando(false);
       }
     }
-  }, [getValues, reset, prontuario.id, secaoId]);
+  }, [getValues, reset, prontuario.id, secaoId, edicaoProfessor]);
 
   const salvarRef = useRef(salvar);
   salvarRef.current = salvar;
@@ -173,6 +181,7 @@ export function useSecao<T extends SchemaSecao>(
       primeiraExecucao.current = false;
       return;
     }
+    if (edicaoProfessor) return;
 
     let ativo = true;
 
@@ -195,7 +204,7 @@ export function useSecao<T extends SchemaSecao>(
     return () => {
       ativo = false;
     };
-  }, [secaoNoDexie, prontuario.id, secaoId, getValues, reset, ler]);
+  }, [secaoNoDexie, prontuario.id, secaoId, getValues, reset, ler, edicaoProfessor]);
 
   return { ...form, salvando, salvoEm, somenteLeitura };
 }

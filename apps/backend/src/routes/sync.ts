@@ -9,7 +9,13 @@ import {
   type SyncResponse,
 } from "@prontuario/shared";
 import { comSavepoint, executar, todas, transacao, uma, type Executor } from "../db";
-import { ACESSO_DURACAO_MS, acessoCobreOperacaoOuLiberacao, alunoPodeEditar, type AcessoRow } from "../lib/acesso";
+import {
+  ACESSO_DURACAO_MS,
+  acessoCobreOperacaoOuLiberacao,
+  alunoPodeEditar,
+  professorPodeEditar,
+  type AcessoRow,
+} from "../lib/acesso";
 import { enviarProntuario } from "../lib/envio";
 import { reabrirProntuario } from "../lib/reabertura";
 
@@ -259,6 +265,11 @@ export const syncRoutes: FastifyPluginAsync = async (app) => {
         const transferido = status === "TRANSFERIDO";
         const negado = !!pront && (pront.descartadoEm !== null || !temPermissao(pront));
         const tsFuturo = op.ts > Date.now() + TS_TOLERANCIA_FUTURO_MS;
+        const professorEditaSecao =
+          !!pront &&
+          op.entity === "secao" &&
+          (op.op === "update" || op.op === "create") &&
+          professorPodeEditar(pront, usuario);
         let descartar = negado || tsFuturo;
         if (negado) {
           req.log.warn(
@@ -282,7 +293,11 @@ export const syncRoutes: FastifyPluginAsync = async (app) => {
               descartar = true;
               acessoExpirado.add(op.prontuarioId);
             }
-          } else if (enviado && !(usuario.perfil === "aluno" && alunoPodeEditar(pront.status, pront.desfechoEnvio))) {
+          } else if (
+            enviado &&
+            !(usuario.perfil === "aluno" && alunoPodeEditar(pront.status, pront.desfechoEnvio)) &&
+            !professorEditaSecao
+          ) {
             descartar = true;
             if (!(await acessoCobreOperacaoOuLiberacao(tx, pront, op.ts))) acessoExpirado.add(op.prontuarioId);
           }
@@ -293,6 +308,7 @@ export const syncRoutes: FastifyPluginAsync = async (app) => {
         if (
           !descartar &&
           !liberacaoOffline &&
+          !professorEditaSecao &&
           pront?.acessoRevogadoEm &&
           op.ts > new Date(pront.acessoRevogadoEm).getTime()
         ) {
@@ -314,6 +330,16 @@ export const syncRoutes: FastifyPluginAsync = async (app) => {
                 if ((await reabrirProntuario(tx, op.prontuarioId, req.user.sub)) !== "ok") descartar = true;
               } else {
                 await aplicar(tx, op, !!pront, usuario);
+                if (professorEditaSecao) {
+                  const secao = secaoPayload.safeParse(op.payload);
+                  await executar(tx, registrarAuditoria, [
+                    randomUUID(),
+                    usuario.id,
+                    op.prontuarioId,
+                    "secao-editada-professor",
+                    JSON.stringify({ secaoId: secao.success ? secao.data.secaoId : null, status: "ENVIADO" }),
+                  ]);
+                }
               }
             });
           } catch (err) {

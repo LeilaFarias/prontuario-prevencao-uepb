@@ -1,13 +1,13 @@
 import { useState } from "react";
 import { Controller, useWatch } from "react-hook-form";
-import { useLiveQuery } from "dexie-react-hooks";
 import { AlertCircle, Check, ChevronDown, ChevronUp, Clock } from "lucide-react";
 import {
   consentimentoSchema,
   type Consentimento as ConsentimentoValores,
   type DadosPessoais as DadosPessoaisValores,
 } from "@prontuario/shared";
-import { lerProntuarioDecifrado, type LocalProntuario } from "../../db/dexie";
+import type { LocalProntuario } from "../../db/dexie";
+import { useProntuarioFicha } from "../../hooks/useProntuarioFicha";
 import { useSecao } from "../../hooks/useSecao";
 import { useSyncStatus } from "../../hooks/useSyncStatus";
 import { hojeISO, formatarDataHora } from "../../lib/data";
@@ -318,7 +318,7 @@ export default function Consentimento({
   prontuarioId: string;
   onIrParaDadosPessoais: () => void;
 }) {
-  const prontuario = useLiveQuery(() => lerProntuarioDecifrado(prontuarioId), [prontuarioId]);
+  const prontuario = useProntuarioFicha(prontuarioId);
   if (!prontuario) return <EsqueletoSecao />;
   return <FormularioConsentimento prontuario={prontuario} onIrParaDadosPessoais={onIrParaDadosPessoais} />;
 }

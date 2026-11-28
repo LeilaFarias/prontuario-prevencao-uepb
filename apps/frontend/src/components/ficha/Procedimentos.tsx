@@ -1,9 +1,9 @@
 import { useEffect, useRef, useState } from "react";
 import { useWatch } from "react-hook-form";
-import { useLiveQuery } from "dexie-react-hooks";
 import { Paperclip, Plus } from "lucide-react";
 import { procedimentosSchema, type ProcedimentoItem } from "@prontuario/shared";
-import { lerProntuarioDecifrado, type LocalProntuario } from "../../db/dexie";
+import type { LocalProntuario } from "../../db/dexie";
+import { useProntuarioFicha } from "../../hooks/useProntuarioFicha";
 import { useSecao } from "../../hooks/useSecao";
 import { useSyncStatus } from "../../hooks/useSyncStatus";
 import { uuid } from "../../lib/uuid";
@@ -171,7 +171,7 @@ function FormularioProcedimentos({ prontuario }: { prontuario: LocalProntuario }
 }
 
 export default function Procedimentos({ prontuarioId }: { prontuarioId: string }) {
-  const prontuario = useLiveQuery(() => lerProntuarioDecifrado(prontuarioId), [prontuarioId]);
+  const prontuario = useProntuarioFicha(prontuarioId);
   if (!prontuario) return <EsqueletoSecao />;
   return <FormularioProcedimentos prontuario={prontuario} />;
 }

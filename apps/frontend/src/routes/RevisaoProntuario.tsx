@@ -16,6 +16,17 @@ import {
   sangramentoSchema,
   type SecaoId,
 } from "@prontuario/shared";
+import ConclusaoForm from "../components/ficha/Conclusao";
+import ConsentimentoForm from "../components/ficha/Consentimento";
+import CPODForm from "../components/ficha/CPOD";
+import DadosPessoaisForm from "../components/ficha/DadosPessoais";
+import ExamesForm from "../components/ficha/Exames";
+import HistoriaMedicaForm from "../components/ficha/HistoriaMedica";
+import HistoriaOdontologicaForm from "../components/ficha/HistoriaOdontologica";
+import IHOSForm from "../components/ficha/IHOS";
+import PlanoForm from "../components/ficha/Plano";
+import ProcedimentosForm from "../components/ficha/Procedimentos";
+import SangramentoForm from "../components/ficha/Sangramento";
 import ConclusaoLeitura from "../components/ficha/revisao/ConclusaoLeitura";
 import ConsentimentoLeitura from "../components/ficha/revisao/ConsentimentoLeitura";
 import CPODLeitura from "../components/ficha/revisao/CPODLeitura";
@@ -34,9 +45,13 @@ import StatusBanner from "../components/revisao/StatusBanner";
 import { api, ApiError } from "../lib/api";
 import Skeleton from "../components/Skeleton";
 import Topbar from "../components/Topbar";
+import { useEdicaoSecoesProfessor } from "../hooks/useEdicaoSecoesProfessor";
 import { useProntuario, type ProntuarioRevisao } from "../hooks/useProntuario";
+import { salvarSecoesPendentes } from "../hooks/useSecao";
+import { EdicaoProfessorContext, type EdicaoProfessor } from "../lib/edicaoProfessor";
 import { temDivergenciaCPOD } from "../lib/comparacaoCPOD";
 import { formatarIdade } from "../lib/idade";
+import { validarEnvio } from "../lib/validarEnvio";
 import { getSession } from "../lib/session";
 
 interface ConteudoProps {
@@ -50,7 +65,17 @@ function ConteudoRevisao({ prontuario, onAtualizar }: ConteudoProps) {
   const [modalAssinar, setModalAssinar] = useState(false);
   const [modalDevolver, setModalDevolver] = useState(false);
   const [offline, setOffline] = useState(!navigator.onLine);
+  const [editando, setEditando] = useState(false);
   const chipAtivo = useRef<HTMLButtonElement | null>(null);
+
+  const edicao = useEdicaoSecoesProfessor({
+    prontuarioId: prontuario.id,
+    secoesRemotas: prontuario.secoes,
+    aoDescartar: async () => {
+      setEditando(false);
+      await onAtualizar();
+    },
+  });
 
   useEffect(() => {
     const aoFicarOnline = () => setOffline(false);
@@ -68,7 +93,7 @@ function ConteudoRevisao({ prontuario, onAtualizar }: ConteudoProps) {
   }, [indice]);
 
   const secoes = useMemo(() => {
-    const bruto = prontuario.secoes;
+    const bruto = edicao.secoes as Record<string, unknown>;
     return {
       dadosPessoais: lerSecao(dadosPessoaisSchema, bruto["dados-pessoais"]),
       consentimento: lerSecao(consentimentoSchema, bruto["consentimento"]),
@@ -82,7 +107,9 @@ function ConteudoRevisao({ prontuario, onAtualizar }: ConteudoProps) {
       procedimentos: lerSecao(procedimentosSchema, bruto["procedimentos"]),
       conclusao: lerSecao(conclusaoSchema, bruto["conclusao"]),
     };
-  }, [prontuario.secoes]);
+  }, [edicao.secoes]);
+
+  const pendenciasFicha = useMemo(() => validarEnvio({ secoes: edicao.secoes as Record<string, any> }).pendencias, [edicao.secoes]);
 
   const divergenciaCPOD = useMemo(() => temDivergenciaCPOD(secoes.cpod.registros), [secoes.cpod.registros]);
 
@@ -92,11 +119,80 @@ function ConteudoRevisao({ prontuario, onAtualizar }: ConteudoProps) {
   const nascimento = prontuario.pacienteDataNascimento ?? secoes.dadosPessoais.dataNascimento;
   const idade = nascimento ? formatarIdade(nascimento) : "";
   const aguardando = prontuario.status.toUpperCase() === "ENVIADO";
-  const bloqueado = !podeAgir || offline;
+  const bloqueado = !podeAgir || offline || editando || edicao.pendentes > 0;
   const nomeProfessor = getSession()?.user.nome ?? "";
   const procedimentosPendentes = secoes.procedimentos.itens.length;
-  const voltarParaFila = () => navigate("/fila");
+  const podeEditar = aguardando && ehSupervisor;
+  const salvandoAlteracoes = edicao.pendentes > 0;
 
+  const valorEdicao = useMemo<EdicaoProfessor>(
+    () => ({
+      prontuario: {
+        id: prontuario.id,
+        pacienteNome: prontuario.pacienteNome,
+        pacienteDataNascimento: prontuario.pacienteDataNascimento ?? undefined,
+        status: "enviado" as const,
+        secoes: edicao.secoes as Record<string, any>,
+        criadoEm: 0,
+        atualizadoEm: 0,
+        sincronizado: true,
+        alunoTitularId: prontuario.alunoTitularId,
+        professorSupervisorId: prontuario.professorSupervisorId ?? undefined,
+      },
+      salvarSecao: edicao.salvarSecao,
+    }),
+    [prontuario.id, prontuario.pacienteNome, prontuario.pacienteDataNascimento, prontuario.alunoTitularId, prontuario.professorSupervisorId, edicao.secoes, edicao.salvarSecao],
+  );
+
+  async function voltarParaFila() {
+    await salvarSecoesPendentes();
+    if (
+      edicao.temPendentes() &&
+      !window.confirm("Há alterações ainda não salvas. Se sair agora, elas serão perdidas. Sair mesmo assim?")
+    ) {
+      return;
+    }
+    navigate("/fila");
+  }
+
+  async function concluirEdicao() {
+    await salvarSecoesPendentes();
+    setEditando(false);
+  }
+
+
+  function renderEditavel(id: SecaoId) {
+    const prontuarioId = prontuario.id;
+    switch (id) {
+      case "dados-pessoais":
+        return <DadosPessoaisForm prontuarioId={prontuarioId} />;
+      case "consentimento":
+        return (
+          <ConsentimentoForm
+            prontuarioId={prontuarioId}
+            onIrParaDadosPessoais={() => setIndice(SECOES.findIndex((s) => s.id === "dados-pessoais"))}
+          />
+        );
+      case "historia-medica":
+        return <HistoriaMedicaForm prontuarioId={prontuarioId} />;
+      case "historia-odontologica":
+        return <HistoriaOdontologicaForm prontuarioId={prontuarioId} />;
+      case "exames":
+        return <ExamesForm prontuarioId={prontuarioId} />;
+      case "sangramento":
+        return <SangramentoForm prontuarioId={prontuarioId} />;
+      case "ihos":
+        return <IHOSForm prontuarioId={prontuarioId} />;
+      case "cpod-ceod":
+        return <CPODForm prontuarioId={prontuarioId} />;
+      case "plano-preventivo":
+        return <PlanoForm prontuarioId={prontuarioId} />;
+      case "procedimentos":
+        return <ProcedimentosForm prontuarioId={prontuarioId} />;
+      case "conclusao":
+        return <ConclusaoForm prontuarioId={prontuarioId} />;
+    }
+  }
 
   function renderSecao(id: SecaoId) {
     switch (id) {
@@ -188,8 +284,77 @@ function ConteudoRevisao({ prontuario, onAtualizar }: ConteudoProps) {
         )}
 
 
+        {aguardando && pendenciasFicha.length > 0 && (
+          <section aria-label="Pendências da ficha" className="rounded-card border border-alt/30 bg-alt-tint p-4">
+            <p className="text-[13px] font-semibold text-alt">Enviado com pendências</p>
+            <p className="mt-1 text-[12.5px] leading-relaxed text-ink">
+              Para o aluno concluir, use “Devolver” e escolha o motivo “Campo incompleto”.
+            </p>
+            <ul className="mt-2 flex flex-col gap-1.5">
+              {pendenciasFicha.map((p) => (
+                <li key={p.secaoId}>
+                  <button
+                    type="button"
+                    onClick={() => setIndice(SECOES.findIndex((s) => s.id === p.secaoId))}
+                    className="w-full text-left text-[12.5px] text-ink"
+                  >
+                    <span className="font-semibold">{p.secao}</span>
+                    <span className="block text-ink-soft">{p.mensagem}</span>
+                  </button>
+                </li>
+              ))}
+            </ul>
+          </section>
+        )}
 
-        {renderSecao(secao.id)}
+        {podeEditar && (
+          <div className="flex flex-col gap-2">
+            {editando ? (
+              <>
+                <div role="note" className="rounded-card border border-line bg-raised px-3.5 py-3 text-[12.5px] leading-relaxed text-ink">
+                  Modo de edição: as alterações são salvas no servidor e ficam registradas no histórico de auditoria.
+                </div>
+                <button type="button" className="btn-ghost" onClick={() => void concluirEdicao()}>
+                  Concluir edição
+                </button>
+              </>
+            ) : (
+              <button type="button" className="btn-ghost" disabled={offline} onClick={() => setEditando(true)}>
+                Editar ficha
+              </button>
+            )}
+          </div>
+        )}
+
+        {edicao.erro && (
+          <div role="alert" className="banner-erro flex flex-col gap-2">
+            <span>{edicao.erro}</span>
+            <button type="button" className="btn-ghost" onClick={edicao.limparErro}>
+              Entendi
+            </button>
+          </div>
+        )}
+
+        {salvandoAlteracoes && (edicao.semConexao || offline) && (
+          <p role="alert" className="banner-erro flex items-start gap-2">
+            <WifiOff size={16} className="mt-0.5 shrink-0" aria-hidden="true" />
+            <span>
+              Sem conexão: {edicao.pendentes} {edicao.pendentes === 1 ? "seção" : "seções"} com alterações ainda não salvas. Elas serão
+              enviadas quando a internet voltar. Não feche nem recarregue esta tela.
+            </span>
+          </p>
+        )}
+        {salvandoAlteracoes && !edicao.semConexao && !offline && (
+          <p role="status" className="text-[12px] text-ink-soft">
+            Salvando alterações…
+          </p>
+        )}
+
+        {editando && podeEditar ? (
+          <EdicaoProfessorContext.Provider value={valorEdicao}>{renderEditavel(secao.id)}</EdicaoProfessorContext.Provider>
+        ) : (
+          renderSecao(secao.id)
+        )}
       </main>
 
       <footer className="sticky bottom-0 z-30 mt-2 flex flex-col gap-2.5 border-t border-line bg-paper px-5 py-3">
@@ -208,6 +373,11 @@ function ConteudoRevisao({ prontuario, onAtualizar }: ConteudoProps) {
         </div>
         {aguardando ? (
           <>
+            {podeAgir && !offline && (editando || salvandoAlteracoes) && (
+              <p role="status" className="mb-2 text-[12px] text-ink-soft">
+                Conclua a edição e aguarde o salvamento para assinar ou devolver.
+              </p>
+            )}
             {offline && podeAgir && (
               <p role="status" className="mb-2 flex items-center gap-1.5 text-[12px] text-ink-soft">
                 <WifiOff size={13} aria-hidden="true" />

@@ -1,9 +1,9 @@
 import { useEffect, useRef, useState } from "react";
 import { Controller, useWatch } from "react-hook-form";
-import { useLiveQuery } from "dexie-react-hooks";
 import { Plus, X } from "lucide-react";
 import { conclusaoSchema, type FotoAnexo } from "@prontuario/shared";
-import { lerProntuarioDecifrado, type LocalProntuario } from "../../db/dexie";
+import type { LocalProntuario } from "../../db/dexie";
+import { useProntuarioFicha } from "../../hooks/useProntuarioFicha";
 import { useSecao } from "../../hooks/useSecao";
 import { useSyncStatus } from "../../hooks/useSyncStatus";
 import { comprimirImagem, ErroImagem } from "../../lib/imagem";
@@ -153,9 +153,9 @@ function FormularioConclusao({ prontuario }: { prontuario: LocalProntuario }) {
           role="status"
           className="rounded-card border border-primary/25 bg-primary-tint px-3.5 py-3 text-[12.5px] leading-relaxed text-ink"
         >
-          <p className="font-semibold">Não conseguiu finalizar a ficha nesta aula?</p>
+          <p className="font-semibold">Ainda há campos pendentes na ficha.</p>
           <p className="mt-1">
-            Não precisa enviar agora. Você pode continuar preenchendo a ficha até a próxima aula e enviá-la quando estiver concluída.
+            Se Algum um exame será concluído no retorno do paciente, você pode enviar a ficha assim mesmo: o professor poderá devolvê-la para você concluir.
           </p>
         </div>
       )}
@@ -232,7 +232,7 @@ function FormularioConclusao({ prontuario }: { prontuario: LocalProntuario }) {
         )}
       </GrupoFicha>
 
-      <GrupoFicha titulo="Observações finais">
+      <GrupoFicha titulo="Observações Adicionais (opcional)">
         <Controller
           control={control}
           name="informacoesAdicionais"
@@ -241,7 +241,7 @@ function FormularioConclusao({ prontuario }: { prontuario: LocalProntuario }) {
               label="Informações adicionais"
               value={field.value}
               onChange={field.onChange}
-              placeholder="Observações finais sobre o caso (opcional)"
+              placeholder="Registre outras informações relevantes, peculiaridades do caso, etc."
               multiline
               rows={4}
               permiteMarcador={false}
@@ -329,7 +329,7 @@ function FormularioConclusao({ prontuario }: { prontuario: LocalProntuario }) {
 }
 
 export default function Conclusao({ prontuarioId }: { prontuarioId: string }) {
-  const prontuario = useLiveQuery(() => lerProntuarioDecifrado(prontuarioId), [prontuarioId]);
+  const prontuario = useProntuarioFicha(prontuarioId);
   if (!prontuario) return <EsqueletoSecao />;
   return <FormularioConclusao prontuario={prontuario} />;
 }
