@@ -66,7 +66,7 @@ await app.register(rateLimit, {
   allowList: (req) => !isApiPath(req.url),
   errorResponseBuilder: (_req, context) => ({
     statusCode: 429,
-    message: `Muitas requisições. Tente novamente em ${context.after}.`,
+    message: `Muitas requisições. Tente novamente após algum tempo.`,
   }),
 });
 await app.register(dbPlugin);

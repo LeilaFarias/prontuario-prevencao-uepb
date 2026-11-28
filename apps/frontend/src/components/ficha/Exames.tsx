@@ -9,6 +9,7 @@ import CampoTexto from "./CampoTexto";
 import ExamRow from "./ExamRow";
 import GrupoFicha from "./GrupoFicha";
 import SegmentedToggle from "./SegmentedToggle";
+import { EsqueletoSecao } from "../Skeleton";
 
 const OPCOES_SIM_NAO = [
   { value: "sim", label: "Sim" },
@@ -176,6 +177,6 @@ function FormularioExames({ prontuario }: { prontuario: LocalProntuario }) {
 
 export default function Exames({ prontuarioId }: { prontuarioId: string }) {
   const prontuario = useLiveQuery(() => lerProntuarioDecifrado(prontuarioId), [prontuarioId]);
-  if (!prontuario) return null;
+  if (!prontuario) return <EsqueletoSecao />;
   return <FormularioExames prontuario={prontuario} />;
 }

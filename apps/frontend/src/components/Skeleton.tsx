@@ -18,3 +18,17 @@ export function SkeletonCardLista() {
     </div>
   );
 }
+
+export function EsqueletoSecao() {
+  return (
+    <div aria-busy="true" aria-label="Carregando seção" className="flex flex-col gap-4 rounded-card border border-line-soft bg-raised p-4">
+      <Skeleton className="h-5 w-2/5 rounded-md" />
+      {[0, 1, 2, 3].map((i) => (
+        <div key={i} className="flex flex-col gap-2">
+          <Skeleton className="h-3 w-1/3 rounded-md" />
+          <Skeleton className="h-11 w-full rounded-field" />
+        </div>
+      ))}
+    </div>
+  );
+}

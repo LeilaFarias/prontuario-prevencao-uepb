@@ -5,6 +5,7 @@ import { Bell, Check, Plus, RefreshCw, RotateCcw, WifiOff, X } from "lucide-reac
 import BottomSheet from "../components/BottomSheet";
 import DevolucaoAlunoModal from "../components/DevolucaoAlunoModal";
 import ProntuarioCard from "../components/ProntuarioCard";
+import { SkeletonCardLista } from "../components/Skeleton";
 import { db, type LocalProntuario } from "../db/dexie";
 import { useNotificacoes } from "../hooks/useNotificacoes";
 import { useSyncDown } from "../hooks/useSyncDown";
@@ -69,6 +70,18 @@ function passaNoFiltro(p: LocalProntuario, filtro: Filtro): boolean {
   }
 }
 
+function EsqueletoLista() {
+  return (
+    <ul className="flex flex-col gap-2.5" aria-busy="true" aria-label="Carregando prontuários">
+      {[0, 1, 2].map((i) => (
+        <li key={i}>
+          <SkeletonCardLista />
+        </li>
+      ))}
+    </ul>
+  );
+}
+
 function iniciais(nome: string | undefined): string {
   const partes = (nome ?? "").trim().split(/\s+/).filter(Boolean);
   if (partes.length === 0) return "?";
@@ -81,7 +94,7 @@ export default function ListaProntuarios() {
   const sessao = getSession();
   const usuario = sessao?.user;
 
-  useSyncDown();
+  const { sincronizando } = useSyncDown();
   const { notificacoes, dispensar: dispensarNotificacao } = useNotificacoes();
 
   const [devolvidoId, setDevolvidoId] = useState<string | null>(null);
@@ -119,6 +132,8 @@ export default function ListaProntuarios() {
     },
     [usuario?.id],
   );
+
+  const carregando = prontuarios === undefined || (prontuarios.length === 0 && sincronizando);
 
   const visiveis = prontuarios?.filter((p) => passaNoFiltro(p, filtro)) ?? [];
   const rotuloContagem = `${visiveis.length} ${visiveis.length === 1 ? "prontuário" : "prontuários"}`;
@@ -279,7 +294,9 @@ export default function ListaProntuarios() {
           />
         )}
 
-        {prontuarios && prontuarios.length === 0 && (
+        {carregando && <EsqueletoLista />}
+
+        {!carregando && prontuarios && prontuarios.length === 0 && (
           <div className="my-auto flex flex-col items-center rounded-card border border-line-soft bg-raised px-6 py-10 text-center">
             <div className="flex h-14 w-14 items-center justify-center rounded-full bg-primary-tint text-primary">
               <Plus size={26} />

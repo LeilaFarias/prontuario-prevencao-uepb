@@ -12,6 +12,7 @@ import CampoTexto, { type CampoTextoProps } from "./CampoTexto";
 import GrupoFicha from "./GrupoFicha";
 import { ESCOLARIDADES } from "./opcoes";
 import SegmentedToggle from "./SegmentedToggle";
+import { EsqueletoSecao } from "../Skeleton";
 
 type ChaveTexto =
   | "nomeCompleto"
@@ -275,6 +276,6 @@ function FormularioDadosPessoais({ prontuario }: { prontuario: LocalProntuario }
 
 export default function DadosPessoais({ prontuarioId }: { prontuarioId: string }) {
   const prontuario = useLiveQuery(() => lerProntuarioDecifrado(prontuarioId), [prontuarioId]);
-  if (!prontuario) return null;
+  if (!prontuario) return <EsqueletoSecao />;
   return <FormularioDadosPessoais prontuario={prontuario} />;
 }

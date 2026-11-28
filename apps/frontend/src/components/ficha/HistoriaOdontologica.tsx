@@ -8,6 +8,7 @@ import CampoTexto from "./CampoTexto";
 import CheckboxGroup, { type OpcaoCheckbox } from "./CheckboxGroup";
 import GrupoFicha from "./GrupoFicha";
 import SegmentedToggle from "./SegmentedToggle";
+import { EsqueletoSecao } from "../Skeleton";
 
 type ChaveSimNao = "primeiraConsulta" | "dorDente" | "acoesPreventivasRecebidas" | "escovaDiariamente";
 type ChaveTextoCurto = "motivoUEPB" | "frequenciaHabitos";
@@ -282,6 +283,6 @@ function FormularioHistoriaOdontologica({ prontuario }: { prontuario: LocalPront
 
 export default function HistoriaOdontologica({ prontuarioId }: { prontuarioId: string }) {
   const prontuario = useLiveQuery(() => lerProntuarioDecifrado(prontuarioId), [prontuarioId]);
-  if (!prontuario) return null;
+  if (!prontuario) return <EsqueletoSecao />;
   return <FormularioHistoriaOdontologica prontuario={prontuario} />;
 }

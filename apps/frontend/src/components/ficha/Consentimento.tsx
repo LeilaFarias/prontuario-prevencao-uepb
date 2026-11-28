@@ -16,6 +16,7 @@ import CampoProfessor from "./CampoProfessor";
 import CampoTexto, { type CampoTextoProps } from "./CampoTexto";
 import GrupoFicha from "./GrupoFicha";
 import UploadAssinatura from "./UploadAssinatura";
+import { EsqueletoSecao } from "../Skeleton";
 
 type ChaveTexto = "semestreLetivo" | "alunoOperador" | "alunoAuxiliar";
 
@@ -318,6 +319,6 @@ export default function Consentimento({
   onIrParaDadosPessoais: () => void;
 }) {
   const prontuario = useLiveQuery(() => lerProntuarioDecifrado(prontuarioId), [prontuarioId]);
-  if (!prontuario) return null;
+  if (!prontuario) return <EsqueletoSecao />;
   return <FormularioConsentimento prontuario={prontuario} onIrParaDadosPessoais={onIrParaDadosPessoais} />;
 }

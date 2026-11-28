@@ -13,6 +13,7 @@ import CampoTexto from "./CampoTexto";
 import GrupoFicha from "./GrupoFicha";
 import SegmentedToggle from "./SegmentedToggle";
 import { validarEnvio } from "../../lib/validarEnvio";
+import { EsqueletoSecao } from "../Skeleton";
 
 const MAX_FOTOS = 9;
 const QUALIDADE_FOTO = 0.75;
@@ -310,6 +311,6 @@ function FormularioConclusao({ prontuario }: { prontuario: LocalProntuario }) {
 
 export default function Conclusao({ prontuarioId }: { prontuarioId: string }) {
   const prontuario = useLiveQuery(() => lerProntuarioDecifrado(prontuarioId), [prontuarioId]);
-  if (!prontuario) return null;
+  if (!prontuario) return <EsqueletoSecao />;
   return <FormularioConclusao prontuario={prontuario} />;
 }

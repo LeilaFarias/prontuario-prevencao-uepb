@@ -7,6 +7,7 @@ import { useSyncStatus } from "../../hooks/useSyncStatus";
 import CampoTexto from "./CampoTexto";
 import GrupoFicha from "./GrupoFicha";
 import SegmentedToggle from "./SegmentedToggle";
+import { EsqueletoSecao } from "../Skeleton";
 
 type ChaveSimNao = "temDoenca" | "emTratamento" | "usaMedicamento";
 type ChaveTexto = "qualDoenca" | "qualTratamento" | "qualMedicamento" | "tempoMedicamento";
@@ -131,6 +132,6 @@ function FormularioHistoriaMedica({ prontuario }: { prontuario: LocalProntuario 
 
 export default function HistoriaMedica({ prontuarioId }: { prontuarioId: string }) {
   const prontuario = useLiveQuery(() => lerProntuarioDecifrado(prontuarioId), [prontuarioId]);
-  if (!prontuario) return null;
+  if (!prontuario) return <EsqueletoSecao />;
   return <FormularioHistoriaMedica prontuario={prontuario} />;
 }

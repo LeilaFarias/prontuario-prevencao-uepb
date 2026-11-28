@@ -10,6 +10,7 @@ import { gerarDentesVazios } from "../../lib/odontograma";
 import { uuid } from "../../lib/uuid";
 import GrupoFicha from "./GrupoFicha";
 import RegistroSangramento from "./RegistroSangramento";
+import { EsqueletoSecao } from "../Skeleton";
 
 function IndicadorSalvamento({ salvando, jaSalvou }: { salvando: boolean; jaSalvou: boolean }) {
   const { pendentes, online } = useSyncStatus();
@@ -103,6 +104,6 @@ function FormularioSangramento({ prontuario }: { prontuario: LocalProntuario }) 
 
 export default function Sangramento({ prontuarioId }: { prontuarioId: string }) {
   const prontuario = useLiveQuery(() => lerProntuarioDecifrado(prontuarioId), [prontuarioId]);
-  if (!prontuario) return null;
+  if (!prontuario) return <EsqueletoSecao />;
   return <FormularioSangramento prontuario={prontuario} />;
 }

@@ -10,6 +10,7 @@ import { uuid } from "../../lib/uuid";
 import CampoData from "./CampoData";
 import CampoTexto from "./CampoTexto";
 import GrupoFicha from "./GrupoFicha";
+import { EsqueletoSecao } from "../Skeleton";
 
 function hojeISO(): string {
   const d = new Date();
@@ -171,6 +172,6 @@ function FormularioProcedimentos({ prontuario }: { prontuario: LocalProntuario }
 
 export default function Procedimentos({ prontuarioId }: { prontuarioId: string }) {
   const prontuario = useLiveQuery(() => lerProntuarioDecifrado(prontuarioId), [prontuarioId]);
-  if (!prontuario) return null;
+  if (!prontuario) return <EsqueletoSecao />;
   return <FormularioProcedimentos prontuario={prontuario} />;
 }

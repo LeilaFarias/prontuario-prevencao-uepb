@@ -25,7 +25,7 @@ const envSchema = z.object({
   JWT_ACCESS_TTL: z.string().default("5h"),
   JWT_REFRESH_TTL: z.string().default("5h"), 
   PORT: z.coerce.number().default(3333),
-  LOGIN_RATE_LIMIT_MAX: z.coerce.number().int().positive().default(5),
+  LOGIN_RATE_LIMIT_MAX: z.coerce.number().int().nonnegative().default(5),
   
   BREVO_API_KEY: z.string().optional(),
   MAIL_FROM_EMAIL: z.union([z.string().email(), z.literal("")]).optional().transform((v) => v || undefined),

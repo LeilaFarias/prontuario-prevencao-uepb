@@ -10,6 +10,7 @@ import { ausentesIHOSVazios, dentesIHOSVazios } from "../../lib/ihos";
 import { uuid } from "../../lib/uuid";
 import GrupoFicha from "./GrupoFicha";
 import RegistroIHOS from "./RegistroIHOS";
+import { EsqueletoSecao } from "../Skeleton";
 
 const LEGENDA = [
   { nota: "0", texto: "Ausência de biofilme na face avaliada", chip: "border border-[#1F6F64] bg-[#8FC4BB] text-[#124840]" },
@@ -126,6 +127,6 @@ function FormularioIHOS({ prontuario }: { prontuario: LocalProntuario }) {
 
 export default function IHOS({ prontuarioId }: { prontuarioId: string }) {
   const prontuario = useLiveQuery(() => lerProntuarioDecifrado(prontuarioId), [prontuarioId]);
-  if (!prontuario) return null;
+  if (!prontuario) return <EsqueletoSecao />;
   return <FormularioIHOS prontuario={prontuario} />;
 }

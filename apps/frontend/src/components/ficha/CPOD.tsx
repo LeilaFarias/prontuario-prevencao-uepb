@@ -10,6 +10,7 @@ import { hojeISO } from "../../lib/data";
 import { uuid } from "../../lib/uuid";
 import GrupoFicha from "./GrupoFicha";
 import RegistroCPOD from "./RegistroCPOD";
+import { EsqueletoSecao } from "../Skeleton";
 
 const INSTRUCOES = [
   "Toque no código abaixo do número do dente.",
@@ -141,6 +142,6 @@ function FormularioCPOD({ prontuario }: { prontuario: LocalProntuario }) {
 
 export default function CPOD({ prontuarioId }: { prontuarioId: string }) {
   const prontuario = useLiveQuery(() => lerProntuarioDecifrado(prontuarioId), [prontuarioId]);
-  if (!prontuario) return null;
+  if (!prontuario) return <EsqueletoSecao />;
   return <FormularioCPOD prontuario={prontuario} />;
 }

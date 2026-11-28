@@ -9,6 +9,7 @@ import { useSyncStatus } from "../../hooks/useSyncStatus";
 import { uuid } from "../../lib/uuid";
 import CampoTexto from "./CampoTexto";
 import GrupoFicha from "./GrupoFicha";
+import { EsqueletoSecao } from "../Skeleton";
 
 function IndicadorSalvamento({ salvando, jaSalvou }: { salvando: boolean; jaSalvou: boolean }) {
   const { pendentes, online } = useSyncStatus();
@@ -153,7 +154,7 @@ function FormularioPlano({ prontuario }: { prontuario: LocalProntuario }) {
 export default function Plano({ prontuarioId }: { prontuarioId: string }) {
   const prontuario = useLiveQuery(() => lerProntuarioDecifrado(prontuarioId), [prontuarioId]);
 
-  if (!prontuario) return null;
+  if (!prontuario) return <EsqueletoSecao />;
 
   return <FormularioPlano prontuario={prontuario} />;
 }
